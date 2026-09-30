@@ -1,0 +1,353 @@
+# Clarus Purchase Request App: Strategy
+
+**Status:** First draft, written 2026-09-30 during Max Wamsley's overnight build. Everything Max decided in his build prompt is marked **Decided**. Everything Claude chose where the prompt was silent is marked **Provisional (Claude, awaiting Max)** and is listed in `docs/QUESTIONS_FOR_MAX.md`. Nothing has been installed or changed in Microsoft 365.
+
+**Purpose of this document:** record what carries over from the Travel Expense App, what changes for purchases, the workflow, the output package, the flow design, and the order in which the app is built and finished. `docs/DECISIONS.md` is the formal log (P-001 onward); this document summarises it.
+
+**Labels used throughout**
+
+| Label | Meaning |
+|---|---|
+| **Decided** | Max decided it (the overnight build prompt, 2026-09-30, unless a date is given) |
+| **Carried over** | A Travel Expense App decision (D-number in the travel repository) that applies here unchanged |
+| **Provisional** | Claude's choice where the prompt was silent. Built as recommended, listed in `docs/QUESTIONS_FOR_MAX.md`, and changed only if Max chooses differently |
+| **Open** | Needs a decision that cannot be made by Claude |
+| **Verified** / **Unverified** | For Microsoft licensing, pricing and platform claims: whether Claude opened a source. Microsoft documentation hosts are blocked in this environment, so most platform claims are Unverified |
+
+---
+
+## 1. Purpose and scope
+
+**Goal (Decided):** a Purchase Request app for Clarus Labs employees. It is a near copy of the Travel Expense App, adapted for non-travel purchases. It replaces the current process, in which the F2 Purchase Request and Approval Form is completed in Word and sent through the Purchasing Receipt Team on Microsoft Teams, with the supervisor @-mentioned.
+
+**In scope**
+- A purchase request with a header (employee, department, business purpose, project or grant code) and one line per purchase (date, vendor, what was bought and why, amount, who paid, category).
+- Approval inside the app for any vendor total of $500 or more, with an email to the approver.
+- Receipts and invoices attached after buying, with the same receipt suggestions and vendor memory as the travel app (D-074, D-078, D-079).
+- On submission: a folder with receipt copies and one CSV in `Accounting/Purchases/Purchases_To_Process`, and an email to the administrator.
+- An SOP for employees, approvers and the administrator, written as the app is built.
+
+**Out of scope**
+- Travel. Travel purchases go to the Travel app. The Instructions say so.
+- Writing to QuickBooks, the tracker and log workbooks, `Clarus_Accounting_SOP.md`, or the chart of accounts. The QuickBooks connector is not used.
+- `Accounting/Receipts_To_Process`, and anything that already exists in the Accounting folder. The flow only creates new folders and files inside `Purchases/Purchases_To_Process`.
+- The current Power Apps apps and their lists, the travel app and its repository.
+- A purchasing policy. Max will write a new one with Claude after the app is complete (section 14, last stage). The old P4 policy is not used and was not looked for.
+- Changing Microsoft 365 or Entra ID configuration. Max makes all changes there.
+
+---
+
+## 2. What carries over from the Travel Expense App
+
+Decided: there is no architecture debate for this project. The answer is the same as travel.
+
+| Area | Carried over unchanged | Travel reference |
+|---|---|---|
+| Platform | SharePoint Framework web part (SPFx 1.23.2, Heft), React 17.0.1, TypeScript 5.8.3, full page on a SharePoint site and in Teams | D-001, D-059 |
+| Data | SharePoint lists, employees see only their own items, administrators (site Owners) see all, employees may edit their own items directly, receipts are list attachments | D-002, D-003, D-066 |
+| Flow | One Power Automate cloud flow owned by Max, standard connectors only (SharePoint, Office 365 Outlook), delivered as a legacy import package made by the Set-up page. No app registration, no Microsoft Graph, no Azure | D-006, D-047, D-068 |
+| Hand-off | The app writes a submission as Uploading, attaches the files, then sets Ready; the flow starts only on Ready, claims the item, creates the folder, copies the files and emails | D-066, D-068 |
+| Safety | Destination fixed in code; folder name cleaned again by the flow; nothing overwritten, moved or deleted; stored text never shown as HTML; email summary is plain text escaped by the flow | D-055, D-067 |
+| Records | One CSV, dates as `YYYY-MM-DD` text, amounts in whole cents, totals calculated in the app | D-043, D-045, D-048 |
+| Certification | A tick box with the certification sentence, recorded with the signed-in account; no signature | D-064 |
+| Receipts | PDF, JPG, PNG, HEIC, up to 15 MB, stored as uploaded; one row per dropped file; same-receipt-as-row; duplicate checks | D-038, D-041 |
+| Receipt reader | In-browser reader, suggestions marked until confirmed, vendor memory, all files shipped in the app package | D-074, D-078, D-079 |
+| Set-up | The app creates its lists from an administrator's Set-up page and never changes a list it did not create | D-063, D-077 |
+| Site | A shared "Forms and Apps" site; every Owner is an administrator | D-075 |
+| Design | KFA theme, Clarus logo, dark sidebar, header card, totals strip, drop box, grid, automatic saving, Instructions panel built from the SOP text | D-032 to D-036, D-061 |
+| Tooling | Vite preview on synthetic sample data, Vitest plus Jest, Playwright screenshot script, GitHub Actions build that keeps the `.sppkg` | D-054, D-062 |
+| Working rules | Records updated at every commit, implemented vs tested vs installed kept apart, Verified/Unverified evidence labels, no em dashes, synthetic data only | `CLAUDE.md` of the travel repo |
+
+**Removed because they are travel only (Decided):** trip dates, destination, mileage, GSA rate tables, the daily meal limit, the late-trip warning, the "date outside the trip" warning and the travel categories.
+
+**Changed because purchases differ:** section 3 onward.
+
+---
+
+## 3. What changes for purchases
+
+| Travel | Purchase request |
+|---|---|
+| A report is one trip | A request is one business purpose, with one or more purchases |
+| Trip name, destination, dates, "what was this trip for" | Business purpose (one line, also the request's name), project or grant code (optional, with a quick pick), department |
+| Seven travel categories, each with a QuickBooks account | Eight purchase categories, each with a suggested QuickBooks account name (Unverified, to confirm with Max) |
+| Payment type: personal, company card, paid by Clarus | Who paid: Company or Employee |
+| Submitted reports go straight to the administrator | A vendor total of $500 or more needs the approver's approval first |
+| Receipts are the only attachments | Attachments are receipts, invoices and quotes, each marked with its kind |
+| Statuses: Draft, Submitted, Returned, Processed | Adds Awaiting approval and Approved |
+| One email per submission | Adds an email to the approver when approval is needed |
+| Report number `TR-0042` | Request number `PR-0042` |
+| Folder `Accounting/Trips/Trips_To_Process` | Folder `Accounting/Purchases/Purchases_To_Process` |
+| Lists `Travel...` | Lists `Purchase...` |
+
+---
+
+## 4. Rules (all in one domain file)
+
+Decided by Max: the certification sentence, the $500 approval threshold, and that thresholds exist at all. Recommended by Claude and built, each listed in `docs/QUESTIONS_FOR_MAX.md`: everything else in this table.
+
+Every number and every piece of policy wording lives in `app/src/domain/purchaseRules.ts`, so the new purchasing policy can change them in one place. Tests in `purchaseRules.test.ts` cover each rule.
+
+| Rule | Value | Status |
+|---|---|---|
+| Approval threshold | A vendor total of **$500 or more** in a request needs approval in the app before the purchase. Under $500 needs no approval, but the request is still submitted with receipts | **Decided** (prompt) |
+| Quote rule | At **$500 or more**, the approval request also needs a quote, or a written no-quote reason. The threshold is the same as the approval threshold | Provisional. The attached F2 form (old P4 wording) says "over $500" |
+| How thresholds count | By **vendor total within a request**, not by line. All lines in a request share one business purpose and one project or grant code, so "the same vendor for the same business purpose" is "the same vendor in the request". Vendor names are matched ignoring capitals, spaces and punctuation. A line with no vendor yet counts on its own | Provisional (the prompt says "the same vendor for the same business purpose in a request, not each line") |
+| Bought before approval | A $500-or-more vendor total that was already bought when the request is sent for approval is flagged **Bought before approval**. "Already bought" means a line dated before the day it is sent, or a receipt or invoice already attached. It can still be sent. It still needs the approver's approval before processing, and the administrator sees the flag in the email and the CSV | Provisional (the prompt describes the behaviour; the test for "already bought" is Claude's) |
+| Approval covers what the approver saw | The approver approves each vendor total as shown. Later changes are allowed, but a vendor total that rises more than **10%** above what was approved, or a new vendor total of $500 or more, needs approval again | Provisional (Claude's rule; the percentage is a guess) |
+| Certification | "I certify that the listed purchases are for official Clarus Labs business purposes, are not personal expenses, have not been reimbursed elsewhere, and that the information provided is accurate to the best of my knowledge." Ticked at Submit, tied to the account | **Decided** (the form's sentence, exact) |
+| Who paid | Company, or Employee. Employee-paid lines are "To reimburse" | **Decided** |
+| Categories | R&D Materials & Supplies / Equipment; Advertising/Marketing/Website; Computer, H/W & S/W Supplies; Office Supplies; Training and Education; Shipping/Postage; Business Insurance; Other (with a description) | **Decided** |
+| Receipt needed | Every line needs a receipt or invoice, or a no-receipt reason, before Submit (as in travel, D-027) | Carried over |
+
+---
+
+## 5. How it works, end to end
+
+### Employee
+
+1. Opens the app and starts a request (step 1, Request details): business purpose, project or grant code (a quick pick offers "NSF SBIR Phase 1 (Award # 2528301)"; nothing is filled in by default), and department. The employee's name comes from the signed-in account. The approver is shown as the site Owners. The date submitted and the purchase dates are shown from the request itself.
+2. On step 2, Purchases, adds one line per purchase: date, vendor, what was bought and why, amount, who paid, and a suggested category. Files can be dropped in as receipts or invoices (each becomes a row, and the app reads it and suggests the date, amount and vendor, as in travel) or as quotes.
+3. The app works out the approval status of each line from the vendor totals, and shows it in the grid.
+4. On step 3, Review and submit, the employee sees what is needed:
+   - **Nothing over the threshold:** no approval is needed. The employee attaches receipts and submits.
+   - **A vendor total of $500 or more:** the request is sent for approval first. A quote or a no-quote reason is needed for each such vendor. If a purchase was already made, the app says so and flags it.
+5. After approval, the employee buys, attaches the receipts and invoices, and submits, ticking the certification.
+6. If the approver or the administrator returns the request, the employee sees the note, corrects it and sends or submits again.
+
+### Approver (the site Owners; today, Max)
+
+1. Receives an email with a link when a request is sent for approval.
+2. Opens **Approvals** in the app, reads the request, the vendor totals, the quotes and any "Bought before approval" flag, and confirms or changes each category.
+3. Chooses **Approve**, or **Return with a note**. Approving confirms the categories shown.
+4. An approver who is also the requester can approve their own request; it is recorded as self-approved (Provisional).
+
+### Flow (section 8 has the detail)
+
+For an approval request: emails the approver. For a submission: creates `Accounting/Purchases/Purchases_To_Process/<request folder>`, copies in the files, marks the submission Packaged and emails the administrator.
+
+### Administrator (site Owners; today, Max)
+
+As in travel: receives the email, opens the folder, processes the receipts with the receipt skill and QuickBooks (outside the app), moves the folder into `Purchases/<year>/`, and marks the request **Processed**. The administrator can also confirm or change a category (the CSV in the folder keeps the category as submitted), and can return a request with a note.
+
+### Request statuses
+
+| Status | Meaning | Who sets it | Employee can edit |
+|---|---|---|---|
+| Draft | Being prepared | App (new request) | Yes |
+| Awaiting approval | Sent to the approver | App (Send for approval) | No |
+| Approved | Approved; the employee buys, attaches receipts and submits | Approver | Yes |
+| Submitted | Sent for processing; package created | App (Submit) | No |
+| Returned | Sent back with a note, by the approver or the administrator | Approver or administrator | Yes |
+| Processed | Filed and entered; closed | Administrator | No |
+
+A request whose vendor totals are all under $500 goes Draft, Submitted, Processed. One with a vendor total of $500 or more goes Draft, Awaiting approval, Approved, Submitted, Processed. A return from either stage goes to Returned; the employee corrects it and sends or submits again (the next submission gets an `_R2` folder, D-042).
+
+Submission (package) statuses are unchanged: Uploading, Ready, Processing, Packaged, Failed. Each submission also has a type: **Approval request** (no files; the flow only emails the approver) or **Processing package**.
+
+---
+
+## 6. Data model
+
+The full list and column definitions are in `docs/DATA_MODEL.md`. In summary, three lists on the shared Forms and Apps site (Decided): `Lists/PurchaseRequests`, `Lists/PurchaseRequestLines`, `Lists/PurchaseSubmissions`. Every address starts with "Purchase" so the lists can sit beside the travel app's lists and other forms (D-075, D-077). Set-up never changes a list it did not create.
+
+- **Purchase Requests:** request number, business purpose (the item's title), department, project or grant code, status, return note and stage, totals (to reimburse, paid by Clarus, request total), submission count, the approval record, the bought-before-approval flag, and who approved and when.
+- **Purchase Request Lines:** request link, row, date, vendor, what was bought and why, category (with a description for Other), amount, who paid, no-receipt reason, no-quote reason, same receipt as row, file fingerprints (each file's kind, receipt or quote), suggested-not-confirmed marks, and who confirmed the category.
+- **Purchase Submissions:** as in travel, plus a type (approval request or processing package) and frozen approval details. The flow reads and completes it.
+
+---
+
+## 7. Output package
+
+### Location (Decided)
+
+`ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchases_To_Process/<request folder>/`. The flow creates only `Purchases`, `Purchases_To_Process` and new request folders, and first checks, read-only, that `01_Company Documents/Accounting` exists. It never touches `Accounting/Receipts_To_Process` or anything else. The test package sends folders to the test site's own Documents library, `Purchases_Test/Purchases_To_Process`.
+
+### Request folder name (Provisional)
+
+```
+YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042
+```
+
+The date is the earliest purchase date in the request, so the year shows where to file the folder (`Purchases/<year>/`). The business purpose is cleaned to letters, digits and hyphens, at most 40 characters. A resubmission adds `_R2`, `_R3` (D-012, D-042).
+
+### Folder contents
+
+| File | Contents |
+|---|---|
+| Receipt copies | Row number plus the original file name: `R01_IMG_4432.jpg`; a second file on the same row `R01-2_...`; a receipt shared by several rows appears once, under the first row's number |
+| Quote copies | `Q01_quote.pdf`, `Q01-2_...`, for quotes attached to a row |
+| `PR-0042_Purchases.csv` | One row per purchase line; UTF-8 with a byte-order mark; resubmissions `PR-0042_R2_Purchases.csv` |
+
+### The CSV (Decided: one CSV, with category, suggested account, grant code, approval status and approver)
+
+Purchase columns first, then the repeated request columns (as in travel D-048): Request, Row, Date, Vendor, What was bought and why, Category, Category confirmed by, Suggested QuickBooks account, Amount, Who paid, Reimbursable, Project or grant code, Approval status, Bought before approval, Approved by, Approved on, Quote files, Receipt files, No-quote reason, No-receipt reason, Warnings, Submission, Submitted by, Submitted on, Department, Purchase dates, Business purpose, Certified by.
+
+**The suggested QuickBooks account is Unverified, to confirm with Max.** Claude could not look up the chart of accounts (the QuickBooks connector is not used), so the suggestions are plain account names without numbers. The administrator decides the account, as in travel (D-020). The mapping is one table in `purchaseRules.ts`.
+
+### Emails (Provisional wording; same plain-text, escaped design as travel, D-046, D-067)
+
+- **Approval email**, to the approvers (the site Owners' addresses, read when the flow package is made): request, requester, department, business purpose, project or grant code, the vendor totals that need approval, quote status, any Bought before approval flag, and a link that opens the request in the app.
+- **Submission email**, to the administrator: as in travel, with "To reimburse", "Paid by Clarus" and "Request total", rows without receipts, warnings, the approval (who, when, note), the Bought before approval flag, and the certification.
+- **Failure email**, as in travel.
+
+---
+
+## 8. The flow
+
+One flow, as in travel. The approval email is a **branch of the same flow** (Provisional, P-018), not a second flow.
+
+### Fixed settings, held inside the flow (never taken from list data)
+
+| Setting | Value |
+|---|---|
+| Destination site | `https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam` |
+| Library | Shared Documents |
+| Destination folder | `01_Company Documents/Accounting/Purchases/Purchases_To_Process` |
+| Administrator email | The administrator who makes the package (v1: Max) |
+| Approver emails | The site Owners' addresses when the package is made (fallback: the administrator) |
+
+### Steps
+
+| Step | Action |
+|---|---|
+| Trigger | SharePoint "When an item is created or modified" on Purchase Submissions, condition Package status equals Ready, one at a time |
+| 1 | Set the status to Processing (claims the item) |
+| 2 | **If the submission's type is "Approval request":** send the approval email, then set Package status to Packaged. On failure, set Failed and email the administrator |
+| 3 | **Otherwise (a processing package):** the same steps as the travel flow: clean the folder name, check and create `Purchases` and `Purchases_To_Process` if missing, stop if the request folder exists, create it, copy each attachment, set Packaged, email the administrator. On failure, set Failed and email |
+
+**Why a branch, not a second flow (P-018).** One flow to import, turn on and monitor; one trigger and one set of connections; the approval hand-off gets the same Uploading, Ready, Packaged and Failed protocol and the same Needs attention monitoring as packaging. A second flow would double the import steps and the things that can be turned off. Cost: the flow definition has one more level of nesting. Not chosen: Power Automate's Approvals actions (approval happens in the app, as Max decided); an email sent by the app (the app has no mail access).
+
+**Unverified:** that the branch structure imports and runs as written. The package is checked with the same checker as travel. The travel flow's other points were confirmed at its Stage 8 checkpoint (`flow/FLOW.md` of the travel repository); the approval branch is new and is tested at this project's checkpoint.
+
+---
+
+## 9. Security and permissions
+
+Carried over from the travel app (D-002, D-003, D-066, D-067) with these additions:
+
+- **Approvers are the site Owners** (people with the SharePoint "Manage web site" permission), the same test the travel app uses for administrators.
+- **Employees can edit their own list items in SharePoint** (D-002). So an employee could, outside the app, set their own request to Approved. Accepted risk, as in travel: SharePoint version history records who changed what, and the submission email and CSV name the approver and the time, so the administrator can see an approval that does not match the approver's own record. Revisit at the security review (Provisional; Max to confirm).
+- **A self-approval** (the approver is the requester) is allowed and shown as such in the record, email and CSV (Provisional).
+- The approval email is built from plain text stored by the app and escaped by the flow. The approver's address list is fixed inside the flow package.
+- Commit synthetic data only: fictional vendors and people.
+
+---
+
+## 10. Scale and cost
+
+As in travel: $0 beyond the existing Microsoft 365 licence; standard connectors only; adding an employee means adding them to the site's Members; adding an approver means adding them as an Owner and making a new flow package from Set-up (the approval email addresses are fixed in the package). Unverified platform limits are carried over from the travel strategy (section 16).
+
+---
+
+## 11. Maintenance with Claude and GitHub
+
+Same repository layout as the travel app:
+
+| Path | Contents |
+|---|---|
+| `app/` | SPFx solution and the local preview |
+| `app/src/domain/` | Every business rule. `purchaseRules.ts` holds the policy numbers and wording |
+| `app/src/data/` | The only code that talks to SharePoint, plus the mock for the preview and tests |
+| `app/src/export/` | CSV, email text, submission package, flow package |
+| `app/src/reading/` | The receipt reader (unchanged from travel) |
+| `app/src/ui/` | Screens |
+| `flow/` | `FLOW.md`, an example definition, the package checker |
+| `.github/workflows/` | The GitHub build |
+| `docs/` | This strategy, the SOP, decisions, status, changelog, data model, questions, checkpoint steps |
+| `test/fixtures/` | Synthetic receipts and data only |
+
+Testing: unit tests run under Vitest and again under Jest in the SharePoint build; screenshots are taken from the local preview; real SharePoint and flow testing happens on a test site at the checkpoint (`docs/CHECKPOINT.md`).
+
+---
+
+## 12. Visual design
+
+Unchanged from travel (D-032 to D-036): purple primary buttons, dark purple sidebar with the Clarus logo, lavender workspace with white cards, a header card on every page, a totals strip, a large drop box, an automatic-saving grid, an Instructions panel. The app name is **Purchase Requests**.
+
+Changes for purchases (Provisional):
+- Three steps: **Request details**, **Purchases**, **Review and submit**. The Review step shows the approval state and offers **Send for approval** or **Submit**, whichever applies.
+- The totals strip shows **To reimburse**, **Paid by Clarus**, **Request total** and a fourth card for what needs attention, or the approval state for a locked request.
+- The drop box has a switch: the dropped files are **receipts or invoices** (the default) or **quotes**.
+- Each grid row shows its approval status: Not required, Approval needed, Awaiting approval, Approved, Bought before approval, or Changed since approval.
+- Administrator pages: **Approvals** (new), Requests to process, Needs attention, All requests, Set-up. The request page for an approver has Approve and Return, editable categories, and the vendor totals.
+
+---
+
+## 13. SOP
+
+`docs/SOP.md`, started with the build and kept current. Part A (employees) is generated from the in-app Instructions text, as in travel (D-061). Part B covers the approver and the administrator, Part C troubleshooting. The Instructions say that travel purchases go to the Travel app and that the old Teams form is replaced.
+
+---
+
+## 14. Stage plan
+
+Each stage ends with a commit on the project branch and an entry in `docs/CHANGELOG.md`, all under one draft pull request. Nothing is merged, deployed or changed in Microsoft 365 without Max's approval.
+
+| Stage | Output | State |
+|---|---|---|
+| 1. Read and records | This document, `CLAUDE.md`, `docs/DECISIONS.md`, `STATUS.md`, `CHANGELOG.md`, `DATA_MODEL.md`, `SOP.md`, `QUESTIONS_FOR_MAX.md` | Overnight build |
+| 2. Copy | The travel app, tooling and CI under the new name and new IDs | Overnight build |
+| 3. Rules | `purchaseRules.ts` and the domain rules, with tests | Overnight build |
+| 4. Data | The data model, SharePoint lists, mapping, mock and SharePoint services, fake SharePoint tests | Overnight build |
+| 5. Screens | Request, lines grid, approver screens, administrator screens, Set-up | Overnight build |
+| 6. Export and flows | CSV, email text, submission package, approval email, Test and Live flow packages, `flow/FLOW.md` | Overnight build |
+| 7. Checks | Preview sample data, screenshots, Instructions, SOP Part A, full build | Overnight build |
+| 8. Checkpoint steps | `docs/CHECKPOINT.md` | Overnight build |
+| 9. Morning report | `docs/STATUS.md`, the draft pull request | Overnight build |
+| 10. Review | Max answers `docs/QUESTIONS_FOR_MAX.md`; Claude makes the changes | Max |
+| 11. Test-site checkpoint | Max installs on a test site from `docs/CHECKPOINT.md` and runs a request through, including approval | Max |
+| 12. Security review and SOP proof pass | Permissions, flow safety, repository check; SOP read against the built app | Claude and Max |
+| 13. Pilot | Production site and flow, used on real purchases by a few employees | Max |
+| 14. Production | Teams app; the Word form and the Teams posting are retired when Max decides | Max |
+| 15. **New purchasing policy (last stage)** | Max writes a new purchasing policy with Claude. The thresholds, quote rule, categories, certification sentence and account mapping in `purchaseRules.ts` are changed to match, in one place; the Instructions, SOP and the form text are updated | Max and Claude |
+
+---
+
+## 15. What the first version will not do
+
+- Write to QuickBooks, the tracker, the receipt log or `Receipts_To_Process`.
+- Rename, move or delete anything in the Accounting folder. The only writes are new folders and files inside `Purchases/Purchases_To_Process`.
+- File requests into year folders (the administrator does this).
+- Handle travel.
+- Enforce a purchasing policy beyond the rules in section 4. The policy is written last (section 14).
+- Let an employee withdraw a request that is awaiting approval (the approver returns it).
+- Count a vendor across different requests. A threshold applies within one request (Provisional; a question for Max).
+- Send the employee an email. The app shows the status (as in travel, D-046).
+
+---
+
+## 16. Open decisions
+
+Every open or provisional choice is in `docs/QUESTIONS_FOR_MAX.md`, numbered, with options, a recommendation, and where the change would go. The first five to answer are listed at the top of that file.
+
+---
+
+## 17. Evidence for platform claims
+
+Microsoft's documentation sites are blocked in this environment. Claims below marked Unverified come from Claude's knowledge or from the travel project's evidence table (`docs/STRATEGY.md` section 16 of the travel repository), which was not re-checked on 2026-09-30.
+
+| Claim | Source | Evidence |
+|---|---|---|
+| Everything in section 16 of the travel strategy (licensing, SPFx, SharePoint limits, flow limits, import format, action formats) applies here | Travel repository, commit b1af343, dated 2026-09-24 to 2026-09-29 | Carried over; each row keeps its own label there. Not re-checked |
+| The travel packaging flow imported and ran on a real test site, including the `_R2` resubmission | Max's Stage 8 checkpoint, 2026-09-28 and 2026-09-29, recorded in the travel `docs/STATUS.md` | Confirmed for travel. Not yet for this project |
+| The site Owners group's members can be read with `web/AssociatedOwnerGroup/users` by an administrator | Claude's knowledge of the SharePoint REST interface; not checked | Unverified. The Set-up page falls back to the administrator's own address, and the employee screens show the generic label "Site Owners" |
+| A nested scope with its own failure scope inside a condition branch works in a legacy import package | Standard Power Automate and Logic Apps structure; not checked against a package | Unverified. Tested at the checkpoint |
+| The F2 form's wording ($100 approval, "over $500" quote) is old policy and is not used | The attached form itself, read 2026-09-30 | Confirmed (what the form says). Which thresholds Max wants is decided in his prompt and recorded as P-005 |
+| QuickBooks account names suggested per category | Claude's suggestion only | **Unverified, to confirm with Max** |
+
+---
+
+## 18. Environment notes
+
+- Node.js 22.22.0 and npm are available; npm and GitHub are reachable. Microsoft hosts are blocked.
+- The Microsoft 365, Outlook, Teams, SharePoint and QuickBooks connectors were not used during the overnight build.
+- The source repository `MaxWamsley-ClarusLabs/clarus-travel-expense` (branch `claude/travel-expense-evaluation-uo38kg`, commit b1af343) was cloned read-only. Nothing was written, committed or opened there.
+
+---
+
+## Revision history
+
+| Date | Change |
+|---|---|
+| 2026-09-30 | First draft, written during the overnight build from Max's prompt and the F2 form |

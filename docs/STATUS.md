@@ -1,0 +1,44 @@
+# Status
+
+**Last updated:** 2026-09-30 (see `docs/CHANGELOG.md` for every change)
+**Current stage:** Overnight build, started 2026-09-30. Stage 1 (read and records) done. Stages 2 to 9 follow in order; this file is brought up to date at the end of the build.
+
+## Summary
+
+| Area | State |
+|---|---|
+| Implemented | Nothing yet beyond the records (Stage 1) |
+| Tested | Nothing yet |
+| Installed in Microsoft 365 (test) | Nothing |
+| Piloted | Nothing |
+| In production | Nothing. The current Word form and the Teams posting are unchanged and still in use |
+
+## Stages
+
+| Stage | State | Notes |
+|---|---|---|
+| 1. Read and records | Done, 2026-09-30 | `CLAUDE.md`, `docs/STRATEGY.md`, `DECISIONS.md` (P-001 to P-031), `DATA_MODEL.md`, `SOP.md`, `QUESTIONS_FOR_MAX.md`. The travel project and the F2 form were read; the attached form's $100 and "over $500" wording differs from Max's $500 decision (P-005, question 2) |
+| 2. Copy | Not started | |
+| 3. Rules | Not started | |
+| 4. Data | Not started | |
+| 5. Screens | Not started | |
+| 6. Export and flows | Not started | |
+| 7. Checks | Not started | |
+| 8. Checkpoint steps | Not started | |
+| 9. Morning report | Not started | |
+| 10. Review with Max | Waiting on the build | Max answers `docs/QUESTIONS_FOR_MAX.md` |
+| 11. Test-site checkpoint | Not started | Max follows `docs/CHECKPOINT.md` |
+| 12. Security review and SOP proof pass | Not started | |
+| 13. Pilot | Not started | |
+| 14. Production | Not started | |
+| 15. New purchasing policy (last stage) | Not started | Max writes the policy with Claude; `purchaseRules.ts`, the Instructions, the SOP and the form text follow |
+
+## Pending items
+
+- Max to answer `docs/QUESTIONS_FOR_MAX.md`.
+- For the test-site checkpoint: Max follows `docs/CHECKPOINT.md` (written in Stage 8).
+- The travel app's own open items (colleague test, Mark processed, site choice, Teams app details) are tracked in its repository and do not block this project.
+
+## Next step
+
+Stage 2: copy the travel app, tooling and CI under the new name and new IDs.

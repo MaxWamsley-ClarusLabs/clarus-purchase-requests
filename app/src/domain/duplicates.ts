@@ -1,11 +1,12 @@
-// Possible duplicates (D-031): the same receipt file, or the same date, vendor
-// and amount. These are warnings; they never block a submission.
+// Possible duplicates (travel D-031): the same receipt file, or the same date,
+// vendor and amount. These are warnings; they never block a submission. Quote
+// files are not compared: one quote can support several lines of a vendor.
 
-import { ExpenseLine } from './types';
+import { PurchaseLine } from './types';
 
 export interface LineRef {
-  line: ExpenseLine;
-  reportNumber: string;
+  line: PurchaseLine;
+  requestNumber: string;
   ownerEmail: string;
 }
 
@@ -15,23 +16,28 @@ export interface DuplicateMatch {
   kind: 'file' | 'entry';
 }
 
-function entryKey(line: ExpenseLine): string | null {
+function entryKey(line: PurchaseLine): string | null {
   if (!line.date || !line.vendor.trim() || line.amountCents === null) return null;
   return `${line.date}|${line.vendor.trim().toLowerCase().replace(/\s+/g, ' ')}|${line.amountCents}`;
 }
 
-/** Fingerprints of the files a row holds itself (shared receipts are not duplicates). */
-function ownFingerprints(line: ExpenseLine): string[] {
-  return line.sameReceiptAsRow === null ? line.receipts.map((r) => r.fingerprint).filter((f) => f) : [];
+/** Fingerprints of the receipt files a row holds itself (shared receipts and quotes are not duplicates). */
+function ownFingerprints(line: PurchaseLine): string[] {
+  return line.sameReceiptAsRow === null
+    ? line.files
+        .filter((f) => f.kind === 'receipt')
+        .map((f) => f.fingerprint)
+        .filter((f) => f)
+    : [];
 }
 
 /**
- * Compares each row of a report with the other rows of the same report and
- * with the rows of other reports in `others`.
+ * Compares each row of a request with the other rows of the same request and
+ * with the rows of other requests in `others`.
  */
-export function findDuplicates(reportNumber: string, lines: readonly ExpenseLine[], others: readonly LineRef[]): DuplicateMatch[] {
+export function findDuplicates(requestNo: string, lines: readonly PurchaseLine[], others: readonly LineRef[]): DuplicateMatch[] {
   const matches: DuplicateMatch[] = [];
-  const candidates: LineRef[] = [...lines.map((line) => ({ line, reportNumber, ownerEmail: '' })), ...others];
+  const candidates: LineRef[] = [...lines.map((line) => ({ line, requestNumber: requestNo, ownerEmail: '' })), ...others];
   for (const line of lines) {
     const prints = ownFingerprints(line);
     const key = entryKey(line);
@@ -53,7 +59,7 @@ export interface CrossEmployeeMatch {
   kind: 'file' | 'entry';
 }
 
-/** For the admin view: possible duplicates between different employees' reports. */
+/** For the admin view: possible duplicates between different employees' requests. */
 export function findCrossEmployeeDuplicates(all: readonly LineRef[]): CrossEmployeeMatch[] {
   const result: CrossEmployeeMatch[] = [];
   for (let i = 0; i < all.length; i++) {

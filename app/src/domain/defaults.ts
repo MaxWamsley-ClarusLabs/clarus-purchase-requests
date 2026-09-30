@@ -1,39 +1,39 @@
-// Default values and suggestions (D-057). Defaults only fill empty fields; the
-// employee can always change them.
+// Default values and suggestions (travel D-057). Defaults only fill empty
+// fields; the employee can always change them.
 
-import { CategoryId, ExpenseLine, PaymentTypeId, SuggestedField, TravelReport } from './types';
-
-/** Company card is by far the most common payment (checked against the current app's exports, 2026-09-24). */
-export const FIRST_ROW_PAYMENT_TYPE: PaymentTypeId = 'companyCard';
+import { vendorKey } from './purchaseRules';
+import { CategoryId, PaidById, PurchaseLine, PurchaseRequest, SuggestedField } from './types';
 
 /**
- * "Paid with" for a new row: the same as the row above, or Company card for the
- * first row of a report.
+ * "Who paid" for the first row of a request (P-023, Provisional). Max has not
+ * said which is more common for purchases; in travel, company card was by far
+ * the most common payment (travel D-057).
  */
-export function defaultPaymentType(existingLines: readonly ExpenseLine[]): PaymentTypeId {
+export const FIRST_ROW_PAID_BY: PaidById = 'company';
+
+/**
+ * "Who paid" for a new row: the same as the row above, or the first-row
+ * default for the first row of a request.
+ */
+export function defaultPaidBy(existingLines: readonly PurchaseLine[]): PaidById {
   const above = [...existingLines].sort((a, b) => a.rowNumber - b.rowNumber).pop();
-  return above && above.paymentType ? above.paymentType : FIRST_ROW_PAYMENT_TYPE;
+  return above && above.paidBy ? above.paidBy : FIRST_ROW_PAID_BY;
 }
 
 function normalise(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-/** A vendor name for matching: capitals, spaces and punctuation ignored ("City Cab Co." is "city cab co"). */
-export function vendorKey(vendor: string): string {
-  return normalise(vendor.replace(/['\u2019]/g, '').replace(/[^A-Za-z0-9\u00C0-\u024F\s]/g, ' '));
-}
-
 /**
  * The latest value of `field` on the employee's earlier rows with this vendor.
  * `history` is ordered oldest first. Values the employee has not confirmed
- * (D-078) are not remembered.
+ * (travel D-078) are not remembered.
  */
-function lastUsed<K extends 'category' | 'paymentType'>(vendor: string, history: readonly ExpenseLine[], field: K): ExpenseLine[K] | undefined {
+function lastUsed<K extends 'category' | 'paidBy'>(vendor: string, history: readonly PurchaseLine[], field: K): PurchaseLine[K] | undefined {
   const key = vendorKey(vendor);
   if (!key) return undefined;
-  const unconfirmed = (line: ExpenseLine, f: SuggestedField) => (line.suggested ?? []).includes(f);
-  let found: ExpenseLine[K] | undefined;
+  const unconfirmed = (line: PurchaseLine, f: SuggestedField) => (line.suggested ?? []).includes(f);
+  let found: PurchaseLine[K] | undefined;
   for (const line of history) {
     if (line[field] && vendorKey(line.vendor) === key && !unconfirmed(line, 'vendor') && !unconfirmed(line, field)) found = line[field];
   }
@@ -42,20 +42,20 @@ function lastUsed<K extends 'category' | 'paymentType'>(vendor: string, history:
 
 /**
  * The category used the last time this vendor appeared in the employee's
- * expenses, or undefined if the vendor is new. `history` should be ordered
+ * purchases, or undefined if the vendor is new. `history` should be ordered
  * oldest first; the latest use wins.
  */
-export function suggestCategoryForVendor(vendor: string, history: readonly ExpenseLine[]): CategoryId | undefined {
+export function suggestCategoryForVendor(vendor: string, history: readonly PurchaseLine[]): CategoryId | undefined {
   return (lastUsed(vendor, history, 'category') as CategoryId | '' | undefined) || undefined;
 }
 
-/** "Paid with" from the last time the employee used this vendor (vendor memory, D-074). */
-export function suggestPaymentTypeForVendor(vendor: string, history: readonly ExpenseLine[]): PaymentTypeId | undefined {
-  return (lastUsed(vendor, history, 'paymentType') as PaymentTypeId | '' | undefined) || undefined;
+/** "Who paid" from the last time the employee used this vendor (vendor memory, travel D-074). */
+export function suggestPaidByForVendor(vendor: string, history: readonly PurchaseLine[]): PaidById | undefined {
+  return (lastUsed(vendor, history, 'paidBy') as PaidById | '' | undefined) || undefined;
 }
 
 /** The employee's own spelling of a vendor they used before ("City Cab Co." for "CITY CAB CO"), or undefined. */
-export function knownVendorName(vendor: string, history: readonly ExpenseLine[]): string | undefined {
+export function knownVendorName(vendor: string, history: readonly PurchaseLine[]): string | undefined {
   const key = vendorKey(vendor);
   if (!key) return undefined;
   let found: string | undefined;
@@ -66,17 +66,26 @@ export function knownVendorName(vendor: string, history: readonly ExpenseLine[])
 }
 
 /** Vendors the employee has used before, most used first, for autocomplete. */
-export function vendorSuggestions(history: readonly ExpenseLine[]): string[] {
+export function vendorSuggestions(history: readonly PurchaseLine[]): string[] {
   return mostUsed(history.map((l) => l.vendor));
 }
 
-/** Destinations of the employee's earlier reports, most used first. */
-export function destinationSuggestions(reports: readonly TravelReport[]): string[] {
-  return mostUsed(reports.map((r) => r.destination));
+/** Departments on the employee's earlier requests, most used first. */
+export function departmentSuggestions(requests: readonly PurchaseRequest[]): string[] {
+  return mostUsed(requests.map((r) => r.department));
+}
+
+/** The department on the employee's latest request that has one, to fill in a new request (P-022). */
+export function latestDepartment(requests: readonly PurchaseRequest[]): string {
+  const sorted = requests.filter((r) => r.department.trim()).sort((a, b) => b.lastChanged.localeCompare(a.lastChanged));
+  return sorted.length > 0 ? sorted[0].department.trim() : '';
 }
 
 /** Quick picks for "No receipt: say why". Free text is still allowed. */
-export const NO_RECEIPT_REASONS: readonly string[] = ['Receipt lost', 'No receipt given (cash, tip or meter)'];
+export const NO_RECEIPT_REASONS: readonly string[] = ['Receipt lost', 'No receipt given'];
+
+/** Quick picks for "No quote: say why". Free text is still allowed. */
+export const NO_QUOTE_REASONS: readonly string[] = ['Already purchased'];
 
 function mostUsed(values: readonly string[]): string[] {
   const counts = new Map<string, { text: string; count: number }>();

@@ -1,4 +1,4 @@
-import { isValidIsoDate, toLocalDateTime } from './dates';
+import { dateRange, dateRangeText, isValidIsoDate, toLocalDateTime } from './dates';
 
 describe('isValidIsoDate', () => {
   it('accepts real dates only', () => {
@@ -14,5 +14,17 @@ describe('isValidIsoDate', () => {
 describe('toLocalDateTime', () => {
   it('formats as YYYY-MM-DD HH:MM', () => {
     expect(toLocalDateTime(new Date(2026, 9, 20, 9, 5))).toBe('2026-10-20 09:05');
+  });
+});
+
+describe('dateRange', () => {
+  it('finds the earliest and latest valid dates, ignoring blanks and invalid text', () => {
+    expect(dateRange(['2026-10-14', '', '2026-10-12', 'soon', '2026-10-13'])).toEqual({ first: '2026-10-12', last: '2026-10-14' });
+    expect(dateRange([])).toEqual({ first: '', last: '' });
+  });
+  it('writes the purchase dates as one date or a range', () => {
+    expect(dateRangeText(['2026-10-12', '2026-10-14'])).toBe('2026-10-12 to 2026-10-14');
+    expect(dateRangeText(['2026-10-12', '2026-10-12'])).toBe('2026-10-12');
+    expect(dateRangeText([''])).toBe('');
   });
 });

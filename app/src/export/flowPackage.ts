@@ -17,8 +17,8 @@ export type FlowMode = 'test' | 'live';
 
 export interface FlowConfig {
   mode: FlowMode;
-  /** The travel site holding the Submissions list. */
-  travelSiteUrl: string;
+  /** The Forms and Apps site holding the Purchase Submissions list. */
+  siteUrl: string;
   submissionsListId: string;
   /** Where report folders are created. */
   destinationSiteUrl: string;
@@ -26,8 +26,10 @@ export interface FlowConfig {
   libraryUrlName: string;
   /** Folders inside the library, parent first; the last is the landing folder. */
   folders: string[];
-  /** Who receives the emails (v1: Max, D-029). */
+  /** Who receives the submission and failure emails (v1: the administrator who makes the package, travel D-029). */
   adminEmail: string;
+  /** Who receives the approval email: the site Owners' addresses when the package is made (P-018). */
+  approverEmails: string[];
   /** The page the app runs on, for the "open the report" link. */
   appPageUrl: string;
 }
@@ -38,11 +40,11 @@ export const LIVE_DESTINATION = {
   libraryUrlName: 'Shared Documents',
   /** Must already exist; the flow never creates or changes it. */
   existingParent: '01_Company Documents/Accounting',
-  folders: ['01_Company Documents/Accounting/Trips', '01_Company Documents/Accounting/Trips/Trips_To_Process']
+  folders: ['01_Company Documents/Accounting/Purchases', '01_Company Documents/Accounting/Purchases/Purchases_To_Process']
 } as const;
 
 /** The test destination: the test site's own library, outside Accounting (strategy section 10). */
-export const TEST_FOLDERS = ['Trips_Test', 'Trips_Test/Trips_To_Process'];
+export const TEST_FOLDERS = ['Purchases_Test', 'Purchases_Test/Purchases_To_Process'];
 
 export const FLOW_NAMES: Record<FlowMode, string> = {
   test: 'Purchase Requests packaging (test site)',
@@ -135,7 +137,7 @@ function patchSubmission(runAfter: Record<string, string[]>, config: FlowConfig,
     type: 'OpenApiConnection',
     inputs: {
       host: spHost('PatchItem'),
-      parameters: { dataset: config.travelSiteUrl, table: config.submissionsListId, id: "@triggerBody()?['ID']", ...item },
+      parameters: { dataset: config.siteUrl, table: config.submissionsListId, id: "@triggerBody()?['ID']", ...item },
       authentication: "@parameters('$authentication')"
     }
   };
@@ -191,7 +193,7 @@ export function buildFlowDefinition(config: FlowConfig): Record<string, unknown>
     type: 'OpenApiConnection',
     inputs: {
       host: spHost('GetItemAttachments'),
-      parameters: { dataset: config.travelSiteUrl, table: config.submissionsListId, itemId: "@triggerBody()?['ID']" },
+      parameters: { dataset: config.siteUrl, table: config.submissionsListId, itemId: "@triggerBody()?['ID']" },
       authentication: "@parameters('$authentication')"
     }
   };
@@ -236,7 +238,7 @@ export function buildFlowDefinition(config: FlowConfig): Record<string, unknown>
           inputs: {
             host: spHost('GetAttachmentContent'),
             parameters: {
-              dataset: config.travelSiteUrl,
+              dataset: config.siteUrl,
               table: config.submissionsListId,
               itemId: "@triggerBody()?['ID']",
               attachmentId: "@items('Copy_files')?['Id']"
@@ -323,7 +325,7 @@ export function buildFlowDefinition(config: FlowConfig): Record<string, unknown>
         runtimeConfiguration: { concurrency: { runs: 1 } },
         inputs: {
           host: spHost('GetOnUpdatedItems'),
-          parameters: { dataset: config.travelSiteUrl, table: config.submissionsListId },
+          parameters: { dataset: config.siteUrl, table: config.submissionsListId },
           authentication: "@parameters('$authentication')"
         }
       }

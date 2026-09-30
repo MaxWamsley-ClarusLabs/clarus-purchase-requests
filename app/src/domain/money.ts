@@ -31,3 +31,11 @@ export function centsToPlain(cents: number): string {
   const abs = Math.abs(cents);
   return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
 }
+
+/**
+ * "$500" for whole-dollar amounts and "$500.50" otherwise, for prose such as
+ * the approval threshold in messages and the Instructions.
+ */
+export function formatDollars(cents: number): string {
+  return cents % 100 === 0 ? formatCents(cents).replace(/\.00$/, '') : formatCents(cents);
+}

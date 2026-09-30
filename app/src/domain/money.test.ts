@@ -1,4 +1,4 @@
-import { centsToPlain, formatCents, parseAmountToCents } from './money';
+import { centsToPlain, formatCents, formatDollars, parseAmountToCents } from './money';
 
 describe('parseAmountToCents', () => {
   it('reads plain, currency and thousands formats', () => {
@@ -22,5 +22,13 @@ describe('formatting', () => {
     expect(formatCents(5)).toBe('$0.05');
     expect(centsToPlain(123456)).toBe('1234.56');
     expect(centsToPlain(5)).toBe('0.05');
+  });
+});
+
+describe('formatDollars', () => {
+  it('drops the cents from whole-dollar amounts, for prose', () => {
+    expect(formatDollars(50000)).toBe('$500');
+    expect(formatDollars(123400)).toBe('$1,234');
+    expect(formatDollars(50050)).toBe('$500.50');
   });
 });

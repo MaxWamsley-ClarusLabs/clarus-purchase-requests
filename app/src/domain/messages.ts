@@ -1,41 +1,45 @@
 // User-facing wording for rules and checks. Keeping it here means a wording
-// change is made once (strategy section 10).
+// change is made once (travel strategy section 10). The policy numbers come
+// from purchaseRules.ts; the certification sentence is CERTIFICATION there.
+
+import { APPROVAL_THRESHOLD_TEXT, OVERRUN_TOLERANCE_PERCENT, QUOTE_THRESHOLD_TEXT } from './purchaseRules';
+
+const thisVendor = (vendor: string): string => (vendor.trim() ? vendor.trim() : 'A purchase with no vendor yet');
 
 export const messages = {
-  tripNameRequired: 'Enter a trip name.',
-  destinationRequired: 'Enter the destination.',
-  businessPurposeRequired: 'Say what the trip was for, in a sentence or two.',
-  tripPurposeRequired: 'Choose what the trip was for. "Not sure" is fine.',
-  tripStartRequired: 'Enter the trip start date.',
-  tripEndRequired: 'Enter the trip end date.',
-  tripEndBeforeStart: 'The trip end date is before the start date.',
-  noRows: 'Add at least one expense.',
+  businessPurposeRequired: 'Say what the purchases are for, in one line.',
+  departmentRequired: 'Enter your department.',
+  noRows: 'Add at least one purchase.',
 
-  dateRequired: 'Enter the date of the expense.',
+  dateRequired: 'Enter the purchase date.',
   vendorRequired: 'Enter the vendor.',
+  descriptionRequired: 'Say what was bought and why.',
   categoryRequired: 'Choose a category.',
+  categoryOtherRequired: 'Describe the category, for "Other".',
   amountRequired: 'Enter an amount greater than zero, like 45.10.',
-  paymentTypeRequired: 'Choose how it was paid.',
-  descriptionRequiredForOther: 'Say what this was. A description is needed for "Other travel".',
-  receiptOrReason: 'Attach a receipt, or give a reason there is none.',
+  paidByRequired: 'Choose who paid.',
+  receiptOrReason: 'Attach a receipt or invoice, or give a reason there is none.',
   sameReceiptBroken: (row: number) => `Row ${row} has no receipt of its own to share. Choose a row that has a receipt.`,
   suggestionsNotConfirmed: (fields: string) => `Filled in by the app: ${fields}. Check against the receipt, then confirm or correct.`,
 
-  lateSubmission: (days: number) => `Submitted ${days} days after the trip ended. The travel policy asks for reports within 30 days.`,
-  mealsOverLimit: (date: string, total: string, limit: string) => `Meals on ${date} total ${total}, over the ${limit} daily meal limit.`,
-  mealsProjectedOver: (date: string, total: string, count: number, projected: string, limit: string) =>
-    `Meals on ${date}: ${total} for ${count === 1 ? 'one meal' : `${count} meals`}. At that rate, three meals would be about ${projected}, over the ${limit} daily meal limit.`,
-  rateNotCurrent: 'The GSA rate for this date is not in the app yet, so the last known rate was used. The administrator will check it.',
-  mileageNone: 'Add your drives, or turn off "I drove my own car" on Trip details.',
-  mileageFromRequired: 'Enter where the drive started.',
-  mileageToRequired: 'Enter where the drive ended.',
-  mileageMilesRequired: 'Enter the miles, like 42 or 12.5.',
-  mileageNoRate: (date: string) => `The app has no GSA mileage rate for ${date}. Tell the administrator.`,
-  dateOutsideTrip: 'This date is outside the trip dates. Check it is right.',
-  duplicateFileInReport: (row: number) => `Same receipt file as row ${row}. Check it is not entered twice.`,
-  duplicateFileElsewhere: (report: string, row: number) => `Same receipt file as ${report} row ${row}. Check it is not entered twice.`,
-  duplicateEntryInReport: (row: number) => `Same date, vendor and amount as row ${row}. Check it is not entered twice.`,
-  duplicateEntryElsewhere: (report: string, row: number) => `Same date, vendor and amount as ${report} row ${row}. Check it is not entered twice.`,
+  // Approval and quotes (P-005, P-015, P-017, P-019)
+  quoteOrReason: (vendor: string, total: string) =>
+    `${thisVendor(vendor)} totals ${total}, which is ${QUOTE_THRESHOLD_TEXT} or more. Attach a quote, or say why there is none.`,
+  boughtBeforeWarning: (vendor: string, total: string) =>
+    `${thisVendor(vendor)} totals ${total} and looks already bought (dated before today, or a receipt is attached). It can still be sent for approval, flagged Bought before approval.`,
+  vendorNeedsApproval: (vendor: string, total: string) =>
+    `${thisVendor(vendor)} totals ${total}, which is ${APPROVAL_THRESHOLD_TEXT} or more, so it needs approval before you buy.`,
+  changedSinceApproval: (vendor: string, total: string, approved: string) =>
+    `${thisVendor(vendor)} now totals ${total}, above the ${approved} that was approved (up to ${OVERRUN_TOLERANCE_PERCENT}% more is allowed). Send the request for approval again.`,
+  notApproved: (vendor: string, total: string) =>
+    `${thisVendor(vendor)} totals ${total} and was not part of the approval. Send the request for approval again.`,
+  approvalRequiredToSubmit: 'This request needs approval first. Send it for approval, then submit it once it is approved.',
+  approvalNotNeeded: 'Every vendor total is under the approval threshold, so this request does not need approval. Submit it instead.',
+
+  duplicateFileInRequest: (row: number) => `Same receipt file as row ${row}. Check it is not entered twice.`,
+  duplicateFileElsewhere: (request: string, row: number) => `Same receipt file as ${request} row ${row}. Check it is not entered twice.`,
+  duplicateEntryInRequest: (row: number) => `Same date, vendor and amount as row ${row}. Check it is not entered twice.`,
+  duplicateEntryElsewhere: (request: string, row: number) => `Same date, vendor and amount as ${request} row ${row}. Check it is not entered twice.`,
 
   fileWrongType: (name: string) => `${name} is not a PDF, JPG, PNG or HEIC file, so it was not added.`,
   fileTooLarge: (name: string) => `${name} is larger than 15 MB, so it was not added. Try a smaller scan or photo.`,
@@ -48,15 +52,8 @@ export const messages = {
   loadFailed: 'This could not be loaded. Refresh the page. If it keeps happening, tell the administrator.',
   actionFailed: (detail: string) => `That did not work. ${detail} Try again. If it keeps happening, tell the administrator.`,
 
-  /**
-   * The employee's certification at Submit (D-064), from the Travel
-   * Reimbursement Policy (P3), Appendix A, part c, without "By signing below,".
-   * Changing this text changes what employees certify: record it in DECISIONS.
-   */
-  certification:
-    "I certify that these expenses were incurred for official business purposes, are in compliance with the company's travel policy, and that the information provided is accurate.",
   certificationRequired: 'Tick the certification to submit.',
-  // SharePoint problems, shown inside actionFailed (D-060).
+  // SharePoint problems, shown inside actionFailed (travel D-060).
   spForbidden: 'You do not have permission for this.',
   spNotFound: 'It could not be found; it may have been deleted. Refresh the page.',
   spConflict: 'Someone else changed it at the same time. Refresh the page.',
@@ -65,11 +62,10 @@ export const messages = {
   spOther: (status: number) => `SharePoint returned error ${status}.`,
   flowNeedsLists: 'Create the lists first (step 1).',
   flowLibraryMissing: (path: string) => `The folder ${path} could not be found, or you do not have access to it.`,
-  ratesOutdated: (names: string) =>
-    `The GSA rates in the app have run out (${names}). Ask Claude to add the new rates, then upload the new app package. Until then the last known rate is used.`,
   notSetUp: 'Purchase Requests is not set up on this site yet. An administrator needs to open Set-up in the app.',
 
-  submitConfirm: 'After you submit, the report is locked. It can only be changed if an administrator returns it to you.',
+  submitConfirm: 'After you submit, the request is locked. It can only be changed if an administrator returns it to you.',
+  sendConfirm: 'After you send it, the request is locked while the approver decides. The approver can approve it or return it to you with a note.',
   saved: 'Saved',
   saving: 'Saving'
 } as const;

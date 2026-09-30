@@ -1,6 +1,7 @@
-// Receipt rules: accepted files (D-041) and whether a row has a receipt (D-038).
+// File rules: accepted files (travel D-041), receipts and quotes (P-021), and
+// whether a row has a receipt (travel D-038).
 
-import { ExpenseLine } from './types';
+import { AttachedFile, PurchaseLine } from './types';
 
 export const MAX_RECEIPT_BYTES = 15 * 1024 * 1024;
 
@@ -33,11 +34,21 @@ export function canPreview(fileName: string): 'image' | 'pdf' | 'none' {
   return 'none';
 }
 
+/** A row's receipt and invoice files (not quotes). */
+export function receiptFiles(line: Pick<PurchaseLine, 'files'>): AttachedFile[] {
+  return line.files.filter((f) => f.kind === 'receipt');
+}
+
+/** A row's quote files. */
+export function quoteFiles(line: Pick<PurchaseLine, 'files'>): AttachedFile[] {
+  return line.files.filter((f) => f.kind === 'quote');
+}
+
 /**
  * The row whose receipt files a row uses: itself, or the row it points to with
  * "Same receipt as row N". Returns undefined if the pointer is broken.
  */
-export function receiptSourceRow(line: ExpenseLine, lines: readonly ExpenseLine[]): ExpenseLine | undefined {
+export function receiptSourceRow(line: PurchaseLine, lines: readonly PurchaseLine[]): PurchaseLine | undefined {
   if (line.sameReceiptAsRow === null) return line;
   if (line.sameReceiptAsRow === line.rowNumber) return undefined;
   const target = lines.find((l) => l.rowNumber === line.sameReceiptAsRow);
@@ -46,7 +57,12 @@ export function receiptSourceRow(line: ExpenseLine, lines: readonly ExpenseLine[
   return target;
 }
 
-export function hasReceipt(line: ExpenseLine, lines: readonly ExpenseLine[]): boolean {
+/** A row has a receipt if it holds a receipt or invoice file, or shares one. A quote never counts (P-021). */
+export function hasReceipt(line: PurchaseLine, lines: readonly PurchaseLine[]): boolean {
   const source = receiptSourceRow(line, lines);
-  return !!source && source.receipts.length > 0;
+  return !!source && receiptFiles(source).length > 0;
+}
+
+export function hasQuote(line: Pick<PurchaseLine, 'files'>): boolean {
+  return quoteFiles(line).length > 0;
 }

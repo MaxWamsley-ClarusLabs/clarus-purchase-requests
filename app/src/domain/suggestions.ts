@@ -1,24 +1,24 @@
-// Receipt suggestions and vendor memory (D-074, D-078). Reading a receipt
-// fills in only empty fields, and only when a row has an empty date, amount or
-// vendor; anything the employee typed is never changed or compared. Values the
-// app fills in from the receipt, and a "Paid with" changed by vendor memory,
-// are marked Suggested until the employee edits them or confirms the row. A
-// row with unconfirmed suggestions cannot be submitted.
+// Receipt suggestions and vendor memory (travel D-074, D-078; carried over).
+// Reading a receipt fills in only empty fields, and only when a row has an
+// empty date, amount or vendor; anything the employee typed is never changed
+// or compared. Values the app fills in from the receipt, and a "Who paid"
+// changed by vendor memory, are marked Suggested until the employee edits them
+// or confirms the row. A row with unconfirmed suggestions cannot be submitted.
+// Only receipt files are read; quotes are typed (P-021).
 
-import { knownVendorName, suggestCategoryForVendor, suggestPaymentTypeForVendor } from './defaults';
-import { TEXT_MAX_LENGTH } from './lists';
+import { knownVendorName, suggestCategoryForVendor, suggestPaidByForVendor } from './defaults';
 import { ReceiptGuess } from './receiptText';
-import { ExpenseLine, IsoDate, SuggestedField } from './types';
+import { IsoDate, PurchaseLine, SuggestedField, TEXT_MAX_LENGTH } from './types';
 
 /** In the order the grid shows them. */
-export const SUGGESTED_FIELDS: readonly SuggestedField[] = ['date', 'vendor', 'category', 'amount', 'paymentType'];
+export const SUGGESTED_FIELDS: readonly SuggestedField[] = ['date', 'vendor', 'category', 'amount', 'paidBy'];
 
 const LABELS: Record<SuggestedField, string> = {
   date: 'date',
   vendor: 'vendor',
   category: 'category',
   amount: 'amount',
-  paymentType: 'paid with'
+  paidBy: 'who paid'
 };
 
 /** "date, vendor and amount" */
@@ -27,34 +27,34 @@ export function suggestedFieldsText(fields: readonly SuggestedField[]): string {
   return names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-export type SuggestionChanges = Partial<Pick<ExpenseLine, 'date' | 'vendor' | 'category' | 'amountCents' | 'paymentType' | 'suggested'>>;
+export type SuggestionChanges = Partial<Pick<PurchaseLine, 'date' | 'vendor' | 'category' | 'amountCents' | 'paidBy' | 'suggested'>>;
 
-type RowValues = Pick<ExpenseLine, 'date' | 'vendor' | 'category' | 'amountCents' | 'paymentType' | 'sameReceiptAsRow' | 'suggested'>;
+type RowValues = Pick<PurchaseLine, 'date' | 'vendor' | 'category' | 'amountCents' | 'paidBy' | 'sameReceiptAsRow' | 'suggested'>;
 
 const ordered = (marks: ReadonlySet<SuggestedField>): SuggestedField[] => SUGGESTED_FIELDS.filter((f) => marks.has(f));
 
 /**
  * Whether to read a row's receipt: only if it could fill something, that is
- * the date, amount or vendor is empty (Max, 2026-09-29). A row that uses
- * another row's receipt is not read.
+ * the date, amount or vendor is empty (travel D-078). A row that uses another
+ * row's receipt is not read.
  */
 export function shouldReadReceipt(line: RowValues): boolean {
   return line.sameReceiptAsRow === null && (!line.date || line.amountCents === null || !line.vendor.trim());
 }
 
 /**
- * Vendor memory for a vendor just filled in, typed or read (D-074): the
- * employee's last category for it if the row has none, and their last "Paid
- * with" if it differs and they have not chosen "Paid with" on this row. A
- * changed "Paid with" is always marked Suggested, because it replaces a value
- * and decides who is paid. The category is marked when the vendor itself came
- * from the receipt; after a typed vendor it fills in unmarked, as before (D-057).
+ * Vendor memory for a vendor just filled in, typed or read (travel D-074): the
+ * employee's last category for it if the row has none, and their last "Who
+ * paid" if it differs and they have not chosen "Who paid" on this row. A
+ * changed "Who paid" is always marked Suggested, because it replaces a value
+ * and decides who is reimbursed. The category is marked when the vendor itself
+ * came from the receipt; after a typed vendor it fills in unmarked (travel D-057).
  */
 export function vendorMemoryChanges(
   vendor: string,
   line: RowValues,
-  history: readonly ExpenseLine[],
-  options: { paidWithChosen: boolean; vendorSuggested: boolean }
+  history: readonly PurchaseLine[],
+  options: { paidByChosen: boolean; vendorSuggested: boolean }
 ): SuggestionChanges {
   const changes: SuggestionChanges = {};
   const marks = new Set(line.suggested);
@@ -65,11 +65,11 @@ export function vendorMemoryChanges(
       if (options.vendorSuggested) marks.add('category');
     }
   }
-  if (!options.paidWithChosen) {
-    const paid = suggestPaymentTypeForVendor(vendor, history);
-    if (paid && paid !== line.paymentType) {
-      changes.paymentType = paid;
-      marks.add('paymentType');
+  if (!options.paidByChosen) {
+    const paid = suggestPaidByForVendor(vendor, history);
+    if (paid && paid !== line.paidBy) {
+      changes.paidBy = paid;
+      marks.add('paidBy');
     }
   }
   if (marks.size !== line.suggested.length) changes.suggested = ordered(marks);
@@ -86,9 +86,9 @@ export function vendorMemoryChanges(
 export function readingChanges(
   line: RowValues,
   guess: ReceiptGuess,
-  history: readonly ExpenseLine[],
+  history: readonly PurchaseLine[],
   today: IsoDate,
-  paidWithChosen: boolean
+  paidByChosen: boolean
 ): SuggestionChanges | null {
   let changes: SuggestionChanges = {};
   let marks = new Set(line.suggested);
@@ -104,7 +104,7 @@ export function readingChanges(
     const vendor = (knownVendorName(guess.vendor, history) ?? guess.vendor.trim()).slice(0, TEXT_MAX_LENGTH);
     changes.vendor = vendor;
     marks.add('vendor');
-    const memory = vendorMemoryChanges(vendor, { ...line, suggested: ordered(marks) }, history, { paidWithChosen, vendorSuggested: true });
+    const memory = vendorMemoryChanges(vendor, { ...line, suggested: ordered(marks) }, history, { paidByChosen, vendorSuggested: true });
     if (memory.suggested) marks = new Set(memory.suggested);
     changes = { ...changes, ...memory };
   }
@@ -117,14 +117,14 @@ const FIELD_FOR_CHANGE: Record<string, SuggestedField | undefined> = {
   vendor: 'vendor',
   category: 'category',
   amountCents: 'amount',
-  paymentType: 'paymentType'
+  paidBy: 'paidBy'
 };
 
 /**
  * The marks left after the employee changes some of a row's fields: a value
  * the employee edited is their own. Undefined when no mark goes.
  */
-export function marksAfterEdit(line: Pick<ExpenseLine, 'suggested'>, changedKeys: readonly string[]): SuggestedField[] | undefined {
+export function marksAfterEdit(line: Pick<PurchaseLine, 'suggested'>, changedKeys: readonly string[]): SuggestedField[] | undefined {
   const edited = changedKeys.map((k) => FIELD_FOR_CHANGE[k]).filter((f): f is SuggestedField => !!f);
   const left = line.suggested.filter((f) => !edited.includes(f));
   return left.length === line.suggested.length ? undefined : left;

@@ -1,36 +1,28 @@
-// Report totals (D-024): reimbursable rows are those paid personally, plus
-// mileage (D-071). The trip total counts every row with an amount; while a
-// draft still has rows without a payment type, it can be more than To
-// reimburse plus Company-paid.
+// Request totals (P-011): lines the employee paid are "To reimburse", lines the
+// company paid are "Paid by Clarus", and the request total counts every line
+// with an amount. While a draft still has rows without "who paid", the request
+// total can be more than the other two added together.
 
-import { findPaymentType } from './lists';
-import { mileageAmountCents } from './mileage';
-import { ExpenseLine, MileageTrip } from './types';
+import { findPaidBy } from './purchaseRules';
+import { PurchaseLine } from './types';
 
 export interface Totals {
   reimburseCents: number;
   companyCents: number;
-  tripCents: number;
+  requestCents: number;
 }
 
-/** `trips` are the drives that count (activeTrips), paid to the employee. */
-export function computeTotals(lines: readonly ExpenseLine[], trips: readonly MileageTrip[] = []): Totals {
+export function computeTotals(lines: readonly PurchaseLine[]): Totals {
   let reimburseCents = 0;
   let companyCents = 0;
-  let tripCents = 0;
+  let requestCents = 0;
   for (const line of lines) {
     if (line.amountCents === null) continue;
-    tripCents += line.amountCents;
-    const payment = findPaymentType(line.paymentType);
-    if (!payment) continue;
-    if (payment.reimbursable) reimburseCents += line.amountCents;
+    requestCents += line.amountCents;
+    const paidBy = findPaidBy(line.paidBy);
+    if (!paidBy) continue;
+    if (paidBy.reimbursable) reimburseCents += line.amountCents;
     else companyCents += line.amountCents;
   }
-  for (const trip of trips) {
-    const cents = mileageAmountCents(trip);
-    if (cents === null) continue;
-    reimburseCents += cents;
-    tripCents += cents;
-  }
-  return { reimburseCents, companyCents, tripCents };
+  return { reimburseCents, companyCents, requestCents };
 }

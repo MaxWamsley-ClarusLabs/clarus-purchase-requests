@@ -108,7 +108,7 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ## 12. Folder and file names (P-026)
 
-- **Built:** `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042` using the earliest purchase date (so the date shows the filing year); `_R2` for a resubmission; CSV `PR-0042_Purchases.csv`. The 27 CSV columns are listed in `docs/STRATEGY.md` section 7.
+- **Built:** `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042` using the earliest purchase date (so the date shows the filing year); `_R2` for a resubmission; CSV `PR-0042_Purchases.csv`. The 28 CSV columns are listed in `docs/STRATEGY.md` section 7.
 - **Options:** A. As built. B. Date the folder by the submission date.
 - **Recommendation:** A.
 - **If you choose differently:** `naming.ts`, `csv.ts`.

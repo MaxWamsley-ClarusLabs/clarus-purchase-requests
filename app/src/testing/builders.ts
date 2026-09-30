@@ -1,50 +1,63 @@
-// Builders for synthetic test data. Used by unit tests only.
+// Builders for synthetic test data. Used by unit tests only. Vendors and
+// people are made up.
 
-import { ExpenseLine, ReceiptFile, TravelReport } from '../domain/types';
+import { AttachedFile, PurchaseLine, PurchaseRequest } from '../domain/types';
 
-export function receipt(overrides: Partial<ReceiptFile> = {}): ReceiptFile {
-  return { id: 'f1', fileName: 'receipt.pdf', sizeBytes: 1000, fingerprint: 'aaa', contentType: 'application/pdf', ...overrides };
+export function file(overrides: Partial<AttachedFile> = {}): AttachedFile {
+  return { id: 'f1', fileName: 'receipt.pdf', sizeBytes: 1000, fingerprint: 'aaa', contentType: 'application/pdf', kind: 'receipt', ...overrides };
 }
 
-export function line(overrides: Partial<ExpenseLine> = {}): ExpenseLine {
+/** A quote file. */
+export function quote(overrides: Partial<AttachedFile> = {}): AttachedFile {
+  return file({ id: 'q1', fileName: 'quote.pdf', fingerprint: 'qqq', kind: 'quote', ...overrides });
+}
+
+export function line(overrides: Partial<PurchaseLine> = {}): PurchaseLine {
   return {
     id: 'l1',
-    reportId: 42,
+    requestId: 42,
     rowNumber: 1,
     date: '2026-10-12',
-    vendor: 'Delta Air Lines',
-    category: 'airfare',
-    description: '',
-    amountCents: 45230,
-    paymentType: 'personal',
+    vendor: 'Acme Lab Supply',
+    description: 'Pipette tips for the Phase 1 assay',
+    category: 'rdMaterials',
+    categoryOther: '',
+    categoryConfirmedBy: '',
+    amountCents: 12500,
+    paidBy: 'company',
+    noQuoteReason: '',
     noReceiptReason: '',
     sameReceiptAsRow: null,
-    receipts: [receipt()],
+    files: [file()],
     suggested: [],
     ...overrides
   };
 }
 
-export function report(overrides: Partial<TravelReport> = {}): TravelReport {
+export function request(overrides: Partial<PurchaseRequest> = {}): PurchaseRequest {
   return {
     id: 42,
-    reportNumber: 'TR-0042',
-    tripName: 'Boston Conference',
-    destination: 'Boston, MA',
-    businessPurpose: 'Present results at the conference',
-    tripPurpose: 'nsfPhase1',
-    tripStart: '2026-10-12',
-    tripEnd: '2026-10-15',
-    hasMileage: false,
-    mileageTrips: [],
+    requestNumber: 'PR-0042',
+    businessPurpose: 'Lab supplies for the Phase 1 assay',
+    department: 'R&D',
+    projectCode: '',
     status: 'Draft',
     returnNote: '',
+    returnStage: '',
     ownerName: 'Jane Doe',
     ownerEmail: 'jane.doe@example.com',
     submissionCount: 0,
+    approvalRounds: 0,
     totalReimburseCents: 0,
     totalCompanyCents: 0,
-    totalTripCents: 0,
+    totalRequestCents: 0,
+    sentForApprovalOn: '',
+    boughtBeforeApproval: false,
+    approval: { sent: [], approved: [] },
+    approvalNote: '',
+    approvedOn: '',
+    approvedBy: '',
+    approvedByEmail: '',
     submittedOn: '',
     processedOn: '',
     processedBy: '',

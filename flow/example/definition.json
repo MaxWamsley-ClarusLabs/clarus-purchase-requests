@@ -1,0 +1,558 @@
+{
+  "name": "00000000-0000-0000-0000-000000000001",
+  "id": "/providers/Microsoft.Flow/flows/00000000-0000-0000-0000-000000000001",
+  "type": "Microsoft.Flow/flows",
+  "properties": {
+    "apiId": "/providers/Microsoft.PowerApps/apis/shared_logicflows",
+    "displayName": "Purchase Requests packaging",
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$connections": {
+          "defaultValue": {},
+          "type": "Object"
+        },
+        "$authentication": {
+          "defaultValue": {},
+          "type": "SecureObject"
+        }
+      },
+      "triggers": {
+        "When_a_submission_is_ready": {
+          "recurrence": {
+            "frequency": "Minute",
+            "interval": 5
+          },
+          "splitOn": "@triggerOutputs()?['body/value']",
+          "type": "OpenApiConnection",
+          "conditions": [
+            {
+              "expression": "@equals(triggerBody()?['PackageStatus']?['Value'], 'Ready')"
+            }
+          ],
+          "runtimeConfiguration": {
+            "concurrency": {
+              "runs": 1
+            }
+          },
+          "inputs": {
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+              "connectionName": "shared_sharepointonline",
+              "operationId": "GetOnUpdatedItems"
+            },
+            "parameters": {
+              "dataset": "https://contoso.sharepoint.com/sites/Travel",
+              "table": "00000000-0000-0000-0000-000000000003"
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        }
+      },
+      "actions": {
+        "Claim_the_submission": {
+          "runAfter": {},
+          "type": "OpenApiConnection",
+          "inputs": {
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+              "connectionName": "shared_sharepointonline",
+              "operationId": "PatchItem"
+            },
+            "parameters": {
+              "dataset": "https://contoso.sharepoint.com/sites/Travel",
+              "table": "00000000-0000-0000-0000-000000000003",
+              "id": "@triggerBody()?['ID']",
+              "item/PackageStatus/Value": "Processing"
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        },
+        "Package": {
+          "runAfter": {
+            "Claim_the_submission": [
+              "Succeeded"
+            ]
+          },
+          "type": "Scope",
+          "actions": {
+            "Cleaned_folder_name": {
+              "runAfter": {},
+              "type": "Compose",
+              "inputs": "@trim(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(coalesce(triggerBody()?['FolderName'], ''), '\"', '-'), '*', '-'), ':', '-'), '<', '-'), '>', '-'), '?', '-'), '/', '-'), '\\', '-'), '|', '-'), '#', '-'), '%', '-'), '~', '-'), '&', '-'), '{', '-'), '}', '-'), '''', '-'), '..', '-'), decodeUriComponent('%09'), '-'), decodeUriComponent('%0A'), '-'), decodeUriComponent('%0D'), '-'))"
+            },
+            "Safe_folder_name": {
+              "runAfter": {
+                "Cleaned_folder_name": [
+                  "Succeeded"
+                ]
+              },
+              "type": "Compose",
+              "inputs": "@if(empty(outputs('Cleaned_folder_name')), concat('Submission-', string(triggerBody()?['ID'])), substring(outputs('Cleaned_folder_name'), 0, min(length(outputs('Cleaned_folder_name')), 120)))"
+            },
+            "Get_attachments": {
+              "runAfter": {
+                "Safe_folder_name": [
+                  "Succeeded"
+                ]
+              },
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                  "connectionName": "shared_sharepointonline",
+                  "operationId": "GetItemAttachments"
+                },
+                "parameters": {
+                  "dataset": "https://contoso.sharepoint.com/sites/Travel",
+                  "table": "00000000-0000-0000-0000-000000000003",
+                  "itemId": "@triggerBody()?['ID']"
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            },
+            "Check_folder_1": {
+              "runAfter": {
+                "Get_attachments": [
+                  "Succeeded"
+                ]
+              },
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                  "connectionName": "shared_sharepointonline",
+                  "operationId": "HttpRequest"
+                },
+                "parameters": {
+                  "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                  "parameters/method": "GET",
+                  "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Trips')/Exists",
+                  "parameters/headers": {
+                    "Accept": "application/json;odata=verbose"
+                  }
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            },
+            "If_folder_1_is_missing": {
+              "runAfter": {
+                "Check_folder_1": [
+                  "Succeeded"
+                ]
+              },
+              "type": "If",
+              "expression": {
+                "and": [
+                  {
+                    "equals": [
+                      "@body('Check_folder_1')?['d']?['Exists']",
+                      false
+                    ]
+                  }
+                ]
+              },
+              "actions": {
+                "Create_folder_1": {
+                  "runAfter": {},
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                      "connectionName": "shared_sharepointonline",
+                      "operationId": "HttpRequest"
+                    },
+                    "parameters": {
+                      "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                      "parameters/method": "POST",
+                      "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Trips')",
+                      "parameters/headers": {
+                        "Accept": "application/json;odata=verbose"
+                      }
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                }
+              },
+              "else": {
+                "actions": {}
+              }
+            },
+            "Check_folder_2": {
+              "runAfter": {
+                "If_folder_1_is_missing": [
+                  "Succeeded"
+                ]
+              },
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                  "connectionName": "shared_sharepointonline",
+                  "operationId": "HttpRequest"
+                },
+                "parameters": {
+                  "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                  "parameters/method": "GET",
+                  "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Trips/Trips_To_Process')/Exists",
+                  "parameters/headers": {
+                    "Accept": "application/json;odata=verbose"
+                  }
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            },
+            "If_folder_2_is_missing": {
+              "runAfter": {
+                "Check_folder_2": [
+                  "Succeeded"
+                ]
+              },
+              "type": "If",
+              "expression": {
+                "and": [
+                  {
+                    "equals": [
+                      "@body('Check_folder_2')?['d']?['Exists']",
+                      false
+                    ]
+                  }
+                ]
+              },
+              "actions": {
+                "Create_folder_2": {
+                  "runAfter": {},
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                      "connectionName": "shared_sharepointonline",
+                      "operationId": "HttpRequest"
+                    },
+                    "parameters": {
+                      "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                      "parameters/method": "POST",
+                      "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Trips/Trips_To_Process')",
+                      "parameters/headers": {
+                        "Accept": "application/json;odata=verbose"
+                      }
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                }
+              },
+              "else": {
+                "actions": {}
+              }
+            },
+            "Check_report_folder": {
+              "runAfter": {
+                "If_folder_2_is_missing": [
+                  "Succeeded"
+                ]
+              },
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                  "connectionName": "shared_sharepointonline",
+                  "operationId": "HttpRequest"
+                },
+                "parameters": {
+                  "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                  "parameters/method": "GET",
+                  "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('@{concat('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Trips/Trips_To_Process/', outputs('Safe_folder_name'))}')/Exists",
+                  "parameters/headers": {
+                    "Accept": "application/json;odata=verbose"
+                  }
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            },
+            "If_the_report_folder_is_new": {
+              "runAfter": {
+                "Check_report_folder": [
+                  "Succeeded"
+                ]
+              },
+              "type": "If",
+              "expression": {
+                "and": [
+                  {
+                    "equals": [
+                      "@body('Check_report_folder')?['d']?['Exists']",
+                      false
+                    ]
+                  },
+                  {
+                    "greater": [
+                      "@length(body('Get_attachments'))",
+                      0
+                    ]
+                  }
+                ]
+              },
+              "actions": {
+                "Create_report_folder": {
+                  "runAfter": {},
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                      "connectionName": "shared_sharepointonline",
+                      "operationId": "HttpRequest"
+                    },
+                    "parameters": {
+                      "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                      "parameters/method": "POST",
+                      "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='@{concat('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Trips/Trips_To_Process/', outputs('Safe_folder_name'))}')",
+                      "parameters/headers": {
+                        "Accept": "application/json;odata=verbose"
+                      }
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                },
+                "Copy_files": {
+                  "runAfter": {
+                    "Create_report_folder": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "Foreach",
+                  "foreach": "@body('Get_attachments')",
+                  "runtimeConfiguration": {
+                    "concurrency": {
+                      "repetitions": 1
+                    }
+                  },
+                  "actions": {
+                    "Get_attachment_content": {
+                      "runAfter": {},
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                          "connectionName": "shared_sharepointonline",
+                          "operationId": "GetAttachmentContent"
+                        },
+                        "parameters": {
+                          "dataset": "https://contoso.sharepoint.com/sites/Travel",
+                          "table": "00000000-0000-0000-0000-000000000003",
+                          "itemId": "@triggerBody()?['ID']",
+                          "attachmentId": "@items('Copy_files')?['Id']"
+                        },
+                        "authentication": "@parameters('$authentication')"
+                      }
+                    },
+                    "Create_file": {
+                      "runAfter": {
+                        "Get_attachment_content": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                          "connectionName": "shared_sharepointonline",
+                          "operationId": "CreateFile"
+                        },
+                        "parameters": {
+                          "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                          "folderPath": "@{concat('/Shared Documents/01_Company Documents/Accounting/Trips/Trips_To_Process/', outputs('Safe_folder_name'))}",
+                          "name": "@items('Copy_files')?['DisplayName']",
+                          "body": "@body('Get_attachment_content')"
+                        },
+                        "authentication": "@parameters('$authentication')"
+                      },
+                      "runtimeConfiguration": {
+                        "contentTransfer": {
+                          "transferMode": "Chunked"
+                        }
+                      }
+                    }
+                  }
+                },
+                "Mark_packaged": {
+                  "runAfter": {
+                    "Copy_files": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                      "connectionName": "shared_sharepointonline",
+                      "operationId": "PatchItem"
+                    },
+                    "parameters": {
+                      "dataset": "https://contoso.sharepoint.com/sites/Travel",
+                      "table": "00000000-0000-0000-0000-000000000003",
+                      "id": "@triggerBody()?['ID']",
+                      "item/PackageStatus/Value": "Packaged",
+                      "item/FolderLink": "@{concat('https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Trips/Trips_To_Process/', encodeUriComponent(outputs('Safe_folder_name')))}",
+                      "item/PackagedAt": "@{utcNow()}",
+                      "item/ErrorMessage": ""
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                },
+                "Send_notification": {
+                  "runAfter": {
+                    "Mark_packaged": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                      "connectionName": "shared_office365",
+                      "operationId": "SendEmailV2"
+                    },
+                    "parameters": {
+                      "emailMessage/To": "administrator@example.com",
+                      "emailMessage/Subject": "@{triggerBody()?['EmailSubject']}",
+                      "emailMessage/Body": "<div style=\"font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;\"><h3>@{if(greater(triggerBody()?['SubmissionNumber'], 1), 'Travel report resubmitted', 'Travel report submitted')}</h3><p>@{replace(replace(replace(replace(replace(replace(coalesce(triggerBody()?['EmailSummary'], ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '\"', '&quot;'), decodeUriComponent('%0D'), ''), decodeUriComponent('%0A'), '<br>')}</p><p><b>Folder:</b> <a href=\"@{concat('https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Trips/Trips_To_Process/', encodeUriComponent(outputs('Safe_folder_name')))}\">@{outputs('Safe_folder_name')}</a><br><b>All reports waiting:</b> <a href=\"https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Trips/Trips_To_Process\">Trips_To_Process</a><br><b>Open the report in Purchase Requests:</b> <a href=\"https://contoso.sharepoint.com/sites/Travel/SitePages/Travel-Expenses.aspx#/admin/report/@{triggerBody()?['ReportId']}\">Purchase Requests</a></p></div>",
+                      "emailMessage/Importance": "Normal"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                }
+              },
+              "else": {
+                "actions": {
+                  "Mark_not_packaged": {
+                    "runAfter": {},
+                    "type": "OpenApiConnection",
+                    "inputs": {
+                      "host": {
+                        "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                        "connectionName": "shared_sharepointonline",
+                        "operationId": "PatchItem"
+                      },
+                      "parameters": {
+                        "dataset": "https://contoso.sharepoint.com/sites/Travel",
+                        "table": "00000000-0000-0000-0000-000000000003",
+                        "id": "@triggerBody()?['ID']",
+                        "item/PackageStatus/Value": "Failed",
+                        "item/ErrorMessage": "@{if(equals(body('Check_report_folder')?['d']?['Exists'], true), 'A folder with this name already exists in Trips_To_Process, so nothing was copied or overwritten. Delete that folder, then choose Retry packaging.', 'The submission has no files to copy. Ask the employee to submit again.')}"
+                      },
+                      "authentication": "@parameters('$authentication')"
+                    }
+                  },
+                  "Send_not_packaged_email": {
+                    "runAfter": {
+                      "Mark_not_packaged": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "OpenApiConnection",
+                    "inputs": {
+                      "host": {
+                        "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                        "connectionName": "shared_office365",
+                        "operationId": "SendEmailV2"
+                      },
+                      "parameters": {
+                        "emailMessage/To": "administrator@example.com",
+                        "emailMessage/Subject": "Travel report not packaged: @{coalesce(triggerBody()?['Title'], 'a travel report')}",
+                        "emailMessage/Body": "<div style=\"font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;\"><p>@{if(equals(body('Check_report_folder')?['d']?['Exists'], true), 'A folder with this name already exists in Trips_To_Process, so nothing was copied or overwritten. Delete that folder, then choose Retry packaging.', 'The submission has no files to copy. Ask the employee to submit again.')}</p><p><a href=\"https://contoso.sharepoint.com/sites/Travel/SitePages/Travel-Expenses.aspx#/admin/attention\">Open Needs attention</a></p></div>",
+                        "emailMessage/Importance": "Normal"
+                      },
+                      "authentication": "@parameters('$authentication')"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "On_failure": {
+          "runAfter": {
+            "Package": [
+              "Failed",
+              "TimedOut"
+            ]
+          },
+          "type": "Scope",
+          "actions": {
+            "Failed_steps": {
+              "runAfter": {},
+              "type": "Query",
+              "inputs": {
+                "from": "@result('Package')",
+                "where": "@equals(item()?['status'], 'Failed')"
+              }
+            },
+            "Mark_failed": {
+              "runAfter": {
+                "Failed_steps": [
+                  "Succeeded"
+                ]
+              },
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                  "connectionName": "shared_sharepointonline",
+                  "operationId": "PatchItem"
+                },
+                "parameters": {
+                  "dataset": "https://contoso.sharepoint.com/sites/Travel",
+                  "table": "00000000-0000-0000-0000-000000000003",
+                  "id": "@triggerBody()?['ID']",
+                  "item/PackageStatus/Value": "Failed",
+                  "item/ErrorMessage": "@{coalesce(first(body('Failed_steps'))?['error']?['message'], 'Packaging stopped. See the flow run.')}"
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            },
+            "Send_failure_email": {
+              "runAfter": {
+                "Mark_failed": [
+                  "Succeeded",
+                  "Failed"
+                ]
+              },
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                  "connectionName": "shared_office365",
+                  "operationId": "SendEmailV2"
+                },
+                "parameters": {
+                  "emailMessage/To": "administrator@example.com",
+                  "emailMessage/Subject": "Travel report packaging failed: @{coalesce(triggerBody()?['Title'], 'a travel report')}",
+                  "emailMessage/Body": "<div style=\"font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;\"><p>Packaging failed: @{replace(replace(replace(replace(replace(replace(coalesce(coalesce(first(body('Failed_steps'))?['error']?['message'], 'Packaging stopped. See the flow run.'), ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '\"', '&quot;'), decodeUriComponent('%0D'), ''), decodeUriComponent('%0A'), '<br>')}</p><p><a href=\"@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}\">Open the flow run</a> &middot; <a href=\"https://contoso.sharepoint.com/sites/Travel/SitePages/Travel-Expenses.aspx#/admin/attention\">Open Needs attention</a></p></div>",
+                  "emailMessage/Importance": "Normal"
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            }
+          }
+        }
+      }
+    },
+    "connectionReferences": {
+      "shared_sharepointonline": {
+        "connectionName": "shared-sharepointonline-00000000-0000-0000-0000-000000000003",
+        "source": "Embedded",
+        "id": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+        "tier": "NotSpecified"
+      },
+      "shared_office365": {
+        "connectionName": "shared-office365-00000000-0000-0000-0000-000000000005",
+        "source": "Embedded",
+        "id": "/providers/Microsoft.PowerApps/apis/shared_office365",
+        "tier": "NotSpecified"
+      }
+    },
+    "flowFailureAlertSubscribed": false,
+    "isManaged": false
+  }
+}

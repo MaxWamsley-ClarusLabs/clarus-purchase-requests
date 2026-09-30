@@ -1,0 +1,20 @@
+node_modules/
+dist/
+preview-dist/
+*.log
+.DS_Store
+
+# SharePoint Framework build output (app/)
+lib/
+lib-dts/
+lib-commonjs/
+lib-esm/
+jest-output/
+release/
+temp/
+.heft/
+coverage/
+app/sharepoint/solution/
+*.sppkg
+*.resx.ts
+*.scss.ts

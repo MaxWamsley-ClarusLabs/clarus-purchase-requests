@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="/node_modules/tesseract.js/dist/tesseract.min.js"></script>
+  </head>
+  <body>
+    <script type="module">
+      import * as pdfjs from '/node_modules/pdfjs-dist/build/pdf.min.mjs';
+      import { guessFields } from '/parse.mjs';
+      pdfjs.GlobalWorkerOptions.workerSrc = '/node_modules/pdfjs-dist/build/pdf.worker.min.mjs';
+
+      let worker;
+      async function getWorker() {
+        if (!worker) {
+          worker = await Tesseract.createWorker('eng', 1, {
+            workerPath: '/node_modules/tesseract.js/dist/worker.min.js',
+            corePath: '/node_modules/tesseract.js-core',
+            langPath: '/node_modules/@tesseract.js-data/eng/4.0.0_best_int',
+            gzip: true,
+            workerBlobURL: false
+          });
+        }
+        return worker;
+      }
+
+      // Text layer of a digital PDF, rebuilt into lines by vertical position.
+      function pdfLines(items) {
+        const rows = [];
+        for (const it of items) {
+          if (!it.str.trim()) continue;
+          const y = it.transform[5];
+          let row = rows.find((r) => Math.abs(r.y - y) < 3);
+          if (!row) rows.push((row = { y, parts: [] }));
+          row.parts.push({ x: it.transform[4], s: it.str });
+        }
+        return rows.sort((a, b) => b.y - a.y).map((r) => r.parts.sort((a, b) => a.x - b.x).map((p) => p.s).join(' '));
+      }
+
+      async function toCanvas(image) {
+        if (image instanceof HTMLCanvasElement) return image;
+        const img = new Image();
+        img.src = image;
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        c.getContext('2d').drawImage(img, 0, 0);
+        return c;
+      }
+
+      // Second attempt for poor images: enlarge, grey, smooth out speckle, then black and white (Otsu).
+      function cleanUp(src) {
+        const k = src.width < 1200 ? 2 : 1;
+        const c = document.createElement('canvas');
+        c.width = src.width * k;
+        c.height = src.height * k;
+        const g = c.getContext('2d');
+        g.filter = 'grayscale(1) blur(' + (1.2 * k) + 'px)';
+        g.drawImage(src, 0, 0, c.width, c.height);
+        const d = g.getImageData(0, 0, c.width, c.height);
+        const hist = new Array(256).fill(0);
+        for (let i = 0; i < d.data.length; i += 4) hist[d.data[i]]++;
+        const total = c.width * c.height;
+        let sum = 0;
+        for (let t = 0; t < 256; t++) sum += t * hist[t];
+        let sumB = 0, wB = 0, best = 0, threshold = 128;
+        for (let t = 0; t < 256; t++) {
+          wB += hist[t];
+          if (!wB) continue;
+          const wF = total - wB;
+          if (!wF) break;
+          sumB += t * hist[t];
+          const between = wB * wF * (sumB / wB - (sum - sumB) / wF) ** 2;
+          if (between > best) { best = between; threshold = t; }
+        }
+        for (let i = 0; i < d.data.length; i += 4) {
+          const v = d.data[i] > threshold ? 255 : 0;
+          d.data[i] = d.data[i + 1] = d.data[i + 2] = v;
+        }
+        g.putImageData(d, 0, 0);
+        return c;
+      }
+
+      async function ocr(image) {
+        const w = await getWorker();
+        const first = (await w.recognize(image)).data;
+        let lines = first.text.split('\n');
+        let confidence = first.confidence, retried = false;
+        const guess = guessFields(lines);
+        if (confidence < 60 || !guess.total || !guess.date) {
+          const second = (await w.recognize(cleanUp(await toCanvas(image)))).data;
+          retried = true;
+          if (second.confidence > confidence) {
+            lines = second.text.split('\n');
+            confidence = second.confidence;
+          }
+        }
+        return { lines, confidence, retried };
+      }
+
+      window.readReceipt = async (url) => {
+        const t0 = performance.now();
+        let lines, method, confidence = null;
+        if (url.endsWith('.pdf')) {
+          const doc = await pdfjs.getDocument(url).promise;
+          const page = await doc.getPage(1);
+          const text = await page.getTextContent();
+          const textLines = pdfLines(text.items);
+          if (textLines.join('').replace(/\s/g, '').length >= 20) {
+            lines = textLines;
+            method = 'PDF text';
+          } else {
+            const viewport = page.getViewport({ scale: 2.5 });
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            ({ lines, confidence } = await ocr(canvas));
+            method = 'PDF page read as image';
+          }
+        } else {
+          ({ lines, confidence } = await ocr(url));
+          method = 'image read';
+        }
+        // Too unclear to trust: suggest nothing, so the employee types the details.
+        const fields = confidence !== null && confidence < 45 ? { vendor: '', date: '', total: '' } : guessFields(lines);
+        return { ...fields, method, confidence, ms: Math.round(performance.now() - t0), text: lines.join('\n') };
+      };
+      window.ready = true;
+    </script>
+  </body>
+</html>

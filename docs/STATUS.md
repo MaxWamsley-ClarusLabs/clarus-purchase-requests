@@ -1,7 +1,7 @@
 # Status
 
 **Last updated:** 2026-09-30 (see `docs/CHANGELOG.md` for every change)
-**Current stage:** Overnight build, started 2026-09-30. Stage 1 (read and records) done. Stages 2 to 9 follow in order; this file is brought up to date at the end of the build.
+**Current stage:** Overnight build, started 2026-09-30. Stages 1 and 2 done. Stages 3 to 9 follow in order; this file is brought up to date at the end of the build.
 
 ## Summary
 
@@ -18,7 +18,7 @@
 | Stage | State | Notes |
 |---|---|---|
 | 1. Read and records | Done, 2026-09-30 | `CLAUDE.md`, `docs/STRATEGY.md`, `DECISIONS.md` (P-001 to P-031), `DATA_MODEL.md`, `SOP.md`, `QUESTIONS_FOR_MAX.md`. The travel project and the F2 form were read; the attached form's $100 and "over $500" wording differs from Max's $500 decision (P-005, question 2) |
-| 2. Copy | Not started | |
+| 2. Copy | Done, 2026-09-30 | The travel app, tooling and CI under the new name and IDs. Still travel rules inside; replaced in Stages 3 to 6. Build and 144 tests pass here |
 | 3. Rules | Not started | |
 | 4. Data | Not started | |
 | 5. Screens | Not started | |
@@ -41,4 +41,4 @@
 
 ## Next step
 
-Stage 2: copy the travel app, tooling and CI under the new name and new IDs.
+Stage 3: the domain rules (`purchaseRules.ts` and the rest of `app/src/domain`), with tests.

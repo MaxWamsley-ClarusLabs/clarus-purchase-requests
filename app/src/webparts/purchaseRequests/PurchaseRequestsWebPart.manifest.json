@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx/client-side-web-part-manifest.schema.json",
+  "id": "ba6bd39c-1a35-43a3-b140-ac059d857346",
+  "alias": "PurchaseRequestsWebPart",
+  "componentType": "WebPart",
+
+  // The "*" signifies that the version should be taken from the package.json
+  "version": "*",
+  "manifestVersion": 2,
+
+  // The app does not let anyone embed script, so custom script is not needed.
+  "requiresCustomScript": false,
+  // Full-page app on the Forms and Apps site and an app in Teams (strategy section 3).
+  // SharePointWebPart also allows placing it on an ordinary page.
+  "supportedHosts": ["SharePointFullPage", "SharePointWebPart", "TeamsPersonalApp", "TeamsTab"],
+  // The app uses its own Clarus styling, not the site's section colours.
+  "supportsThemeVariants": false,
+  "supportsFullBleed": true,
+
+  "preconfiguredEntries": [
+    {
+      "groupId": "5c03119e-3074-46fd-976b-c60198311f70", // Advanced
+      "group": { "default": "Advanced" },
+      "title": { "default": "Purchase Requests" },
+      "description": { "default": "Clarus Labs purchase requests and approvals" },
+      "officeFabricIconFontName": "ShoppingCart",
+      "properties": {}
+    }
+  ]
+}

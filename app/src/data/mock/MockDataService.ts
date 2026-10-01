@@ -499,12 +499,13 @@ export class MockDataService implements PurchaseDataService {
     const stage = returnStageFor(request.status, request.buyer);
     if (!stage) throw new NotAllowedError(notAllowed.returnWhen);
     if (request.status === 'Approved') {
-      // The approver who was to buy it may send it back to the employee instead (P-037). Rows the approver
-      // added would stop counting once the approval is taken back, so they must be deleted first.
-      const refusal = buyRefusal(request, this.user);
-      if (refusal) throw new NotAllowedError(refusal);
+      // Any administrator may send a request the approver was to buy back to the employee (P-037, P-042). Rows the
+      // approver added would stop counting once the approval is taken back, so they must be deleted first.
       const added = this.linesOf(requestId).filter((l) => (this.store.approverLineIds ?? []).includes(l.id));
-      if (added.length > 0) throw new NotAllowedError(notAllowed.addedRowsFirst(rowsPhrase(added)));
+      if (added.length > 0) {
+        const rows = rowsPhrase(added);
+        throw new NotAllowedError(mayBuy(request, this.user) ? notAllowed.addedRowsFirst(rows) : notAllowed.addedRowsByApprover(request.approvedBy, rows));
+      }
     }
     // As on SharePoint, the approver, time and note are cleared only if the request holds an approval.
     const clearApproval = holdsApproval(request);

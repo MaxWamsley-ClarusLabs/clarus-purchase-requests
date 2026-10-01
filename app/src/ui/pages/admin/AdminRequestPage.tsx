@@ -273,12 +273,14 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                 </button>
               </>
             ) : null}
+            {approverBuys && request.status === 'Approved' ? (
+              <button className="ctx-btn ctx-btn-secondary" disabled={busy} onClick={() => setDialog('return')}>
+                <Icon name="undo" size={16} />
+                Return to the employee
+              </button>
+            ) : null}
             {buys ? (
               <>
-                <button className="ctx-btn ctx-btn-secondary" disabled={busy} onClick={() => setDialog('return')}>
-                  <Icon name="undo" size={16} />
-                  Return to the employee
-                </button>
                 <button
                   className="ctx-btn ctx-btn-primary"
                   disabled={busy}
@@ -364,7 +366,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
             ) : (
               <>
                 <strong>{request.approvedBy || 'The approver'} approved this request and buys it.</strong> Only they can change its rows, attach the receipt or
-                mark it purchased.
+                mark it purchased. If they cannot buy it, you can return it to {request.ownerName}.
               </>
             )}
             {request.returnStage === 'processing' && request.returnNote.trim() ? ` Returned at processing: ${request.returnNote.trim()}` : ''}

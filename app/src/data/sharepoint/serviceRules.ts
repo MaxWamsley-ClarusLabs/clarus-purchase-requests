@@ -57,12 +57,18 @@ export const notAllowed = {
   certificationMissing: "The employee's certification is missing from this request. Return it to the employee, who can send it again with the certification.",
   addedRowsFirst: (rows: string) =>
     `You added ${rows} to this request, so it cannot be returned yet. Delete ${rows.startsWith('rows ') ? 'them' : 'it'}, then return it.`,
+  /** Another Owner returns a request the approver was buying, but the approver's own rows would be left behind (P-042). */
+  addedRowsByApprover: (who: string, rows: string) =>
+    `${who || 'The approver'} added ${rows} to this request while buying it, so it cannot be returned yet. They need to delete ${
+      rows.startsWith('rows ') ? 'them' : 'it'
+    }, and then it can be returned.`,
   reviewFirst: (rows: string) =>
     `Confirm the category of ${rows} first: the account depends on a decision. Use Confirm categories, then mark the request processed.`,
   approveWhen: 'Only a request that is awaiting approval can be approved.',
   changedSinceSent:
     'This request was changed after it was sent for approval, so it cannot be approved as it stands. Return it with a note; the employee can correct it and send it again.',
-  returnWhen: 'Only a request that is awaiting approval or submitted can be returned. The approver can also return an approved request they were to buy.',
+  returnWhen:
+    'Only a request that is awaiting approval or submitted can be returned. An administrator can also return an approved request that the approver was to buy.',
   confirmWhen: 'Categories can be confirmed only on a request that is awaiting approval, approved or submitted.',
   processWhen: 'Only submitted requests can be marked processed.',
   sharedReceiptHasOwn: 'This row has a receipt of its own. Remove it first, then choose the row whose receipt this row uses.',
@@ -95,9 +101,11 @@ export function statusAfterReturn(stage: 'approval' | 'processing', buyer: Buyer
 }
 
 /**
- * Why this person may not change a request's rows or files, mark it
- * purchased, or return it from Approved, or '' when they may (P-037, P-040):
- * the approver who approved a request the approver buys, while it is approved.
+ * Why this person may not change a request's rows or files, or mark it
+ * purchased, or '' when they may (P-037, P-040): the approver who approved a
+ * request the approver buys, while it is approved. Returning it to the
+ * employee is open to any administrator (P-042), so that a request is never
+ * stuck when the approver cannot act.
  */
 export function buyRefusal(
   request: Pick<PurchaseRequest, 'buyer' | 'status' | 'approvedByEmail'>,

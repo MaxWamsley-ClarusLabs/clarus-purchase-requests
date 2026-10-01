@@ -4,7 +4,7 @@ Written during the overnight build (2026-09-30). Every choice Claude made where 
 
 From your next message the normal rule applies again: Claude pauses and asks, at most five numbered questions at a time. So these are listed in order of how much they matter, and the first five are the ones to answer first.
 
-**Answered by Max on 2026-10-01:** questions 2, 4 and 5: yes. Question 3: "do whatever you think", so the recommendation stands. Question 1: answered with the account list (the categories are now the QuickBooks accounts, P-038). Questions 24 (do the recommendation), 25 (A, and the employee also gives the item's web page), 26 (A), 27 (yes), 28 (A) and 29 (A): the approver buys by default, and the approver-buys build is on the branch (P-037 to P-042). **New and open: questions 30 to 32**, at the end of this file. Nothing else in the file is waiting on Max except the provisional choices, which stay in force until he answers.
+**Answered by Max on 2026-10-01:** questions 2, 4 and 5: yes. Question 3: "do whatever you think", so the recommendation stands. Question 1: answered with the account list (the categories are now the QuickBooks accounts, P-038). Questions 24 (do the recommendation), 25 (A, and the employee also gives the item's web page), 26 (A), 27 (yes), 28 (A) and 29 (A): the approver buys by default, and the approver-buys build is on the branch (P-037 to P-042). **Answered on 2026-10-01 (his second message):** question 30 ("sure": accept it), question 31 (any Owner should be able to return a request, built) and question 32 ("not sure": it stays with the purchasing policy, the last stage). He also pasted the QuickBooks account list again, and the 13 categories were compared with it (all match). Nothing else in the file is waiting on Max except the provisional choices, which stay in force until he answers.
 
 **The first five, as asked**
 
@@ -252,21 +252,27 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 - **Asked:** A. The approver may change every row and add or remove rows (shipping, tax), and the rows as the employee sent them are kept to show what changed. B. Amounts only. **Answered (Max, 2026-10-01): A.** Built.
 
-## 30. The employee will not see the rows or receipts the approver adds (new, 2026-10-01)
+## 30. The employee will not see the rows or receipts the approver adds (answered 2026-10-01: accept)
+
+- **Answered (Max, 2026-10-01): "sure"**, so option A stands: nothing to build. Still Unverified until the checkpoint (step 33, Checks 7 and 8).
 
 - **What happens:** SharePoint shows each person only the items they created. When the approver adds a row to an employee's request, the employee does not see that row; receipts the approver attaches to a row the employee made stay visible to them. The employee's list shows the stored request total, which includes the added row, and the request page adds up only the rows they can see, so the two can differ. I expect this, but it is **Unverified** until the test-site checkpoint (step 33, Checks 7 and 8).
 - **Options:** A. Accept it: the employee sees the status and totals, and the folder and CSV are the record (recommended: nothing to build, and the employee has no part in what the approver buys). B. Copy the rows as bought onto the request so the employee can read them (a second copy to keep true). C. Give the employee read access to the approver's rows (a second permission model).
 - **Recommendation:** A. Tell me if employees need to see what was bought.
 - **If you choose differently:** the data layer and `docs/DATA_MODEL.md`.
 
-## 31. Only the Owner who approved a request can buy it (new)
+## 31. Only the Owner who approved a request can buy it (answered 2026-10-01: any Owner can return it, built)
+
+- **Answered (Max, 2026-10-01): "should be able to return it"**, so option D is built: only the Owner who approved a request can buy it or change its rows, and any Owner can return it to the employee (P-040, P-042). A return is refused while rows the approver added would be left behind; the message names the approver, who deletes them first.
 
 - **What happens:** the Owner who approved the request is the one who can change its rows, return it to the employee and mark it purchased. Another Owner can view it and confirm categories, but not return or buy it. If the recorded approver is blank or can no longer act, nobody else can return or buy the request. Today you are the only Owner, so nothing changes for you.
 - **Options:** A. As built (recommended: the record says who bought it). B. Any Owner can buy any approved request (then "approved by" no longer says who bought). C. Hand a request to another Owner. D. Any Owner can return an approved request, only the approver buys (so a request is never stuck).
 - **Recommendation:** A until there is a second Owner; then decide whether C is needed.
 - **If you choose differently:** `mayBuy` in `statuses.ts` and `buyRefusal` in `serviceRules.ts`.
 
-## 32. Where Equipment is capitalized, and whether a class is needed (new)
+## 32. Where Equipment is capitalized, and whether a class is needed (deferred 2026-10-01: Max is not sure)
+
+- **Max, 2026-10-01: "not sure".** Option A stands: both wait for the purchasing policy (the last stage); Equipment shows both accounts and the administrator decides. Nothing is blocked.
 
 - **What happens:** Equipment shows "Administrator decides" (expense it to 6175, or capitalize it to 1415 Fixed Assets:Equipment), and the app has no dollar threshold for capitalizing. The CSV also has no QuickBooks class column.
 - **Options:** A. Leave both to the purchasing policy, the last stage (recommended). B. Tell me a capitalization threshold now (for example "$5,000 or more"), and the app can mark such a row for review. C. Tell me which class each project or category uses, and a class column can be added.
@@ -275,8 +281,8 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ## Reminders (no answer needed)
 
-- Before go-live: export the QuickBooks account list again and compare it with `purchaseRules.ts` (`docs/CHECKPOINT.md` step 35).
-- The suggested-account Unverified label is gone because you supplied the accounts, but the numbers and names are from your message, not from a file Claude opened.
+- Before go-live: if the QuickBooks chart of accounts has changed since the list Max pasted on 2026-10-01 (which matches all 13 categories), export it again and compare it with `purchaseRules.ts` (`docs/CHECKPOINT.md` step 35).
+- The suggested-account Unverified label is gone because you supplied the accounts. The numbers and names were checked against the list you pasted on 2026-10-01; Claude did not open the spreadsheet.
 
 ## Not built, on purpose
 

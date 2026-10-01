@@ -1901,10 +1901,36 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect((await refusal(olive.deleteLine(lines[0].id))).message).toBe(notAllowed.buyerOnly);
       expect((await refusal(olive.addFileToLine(lines[0].id, pdf('r.pdf'), 'receipt'))).message).toBe(notAllowed.buyerOnly);
       expect((await refusal(olive.markPurchased(id))).message).toBe(notAllowed.buyerOnly);
-      expect((await refusal(olive.returnRequest(id, 'No'))).message).toBe(notAllowed.buyerOnly);
       // Another employee cannot reach it at all.
       expect((await refusal(h.as(SAM, NOW).updateLine(lines[0].id, { vendor: 'Changed' }))).message).toBe(messages.spNotFound);
       expect((await h.as(MAX, APPROVED_AT).updateLine(lines[0].id, { vendor: 'Acme Lab Supply Inc.' })).vendor).toBe('Acme Lab Supply Inc.');
+    });
+
+    it('lets any administrator return an approved request to the employee, so it is never stuck (Max, question 31)', async () => {
+      const h = await makeHarness();
+      const { id } = await approvedForMax(h);
+      const returned = await h.as(OLIVE, APPROVED_AT).returnRequest(id, 'Max is away. Please correct it and send it again.');
+      expect(returned).toMatchObject({ status: 'Returned', returnStage: 'approval', approvedBy: '', approvedByEmail: '', approvalNote: '' });
+      expect((await h.as(JANE, NOW).getRequest(id)).request).toMatchObject({
+        status: 'Returned',
+        returnNote: 'Max is away. Please correct it and send it again.'
+      });
+      // An employee cannot return it, nor can anyone return an approved request the employee buys.
+      const again = await approvedForMax(h);
+      expect((await refusal(h.as(JANE, NOW).returnRequest(again.id, 'No'))).message).toBe(notAllowed.administratorsOnly);
+    });
+
+    it('does not let another administrator return it while rows the approver added would be left behind (P-042)', async () => {
+      const h = await makeHarness();
+      const { id } = await approvedForMax(h);
+      const max = h.as(MAX, APPROVED_AT);
+      const extra = await max.addEmptyLine(id);
+      const message = (await refusal(h.as(OLIVE, APPROVED_AT).returnRequest(id, 'Max is away.'))).message;
+      expect(message).toBe(notAllowed.addedRowsByApprover('Max Wamsley', 'row 3'));
+      expect(message).toContain('Max Wamsley added row 3');
+      // Max deletes the row, and then anyone may return it.
+      await max.deleteLine(extra.id);
+      expect((await h.as(OLIVE, APPROVED_AT).returnRequest(id, 'Max is away.')).status).toBe('Returned');
     });
 
     it('is refused to anyone but an administrator, and only while it is approved and the approver buys it', async () => {

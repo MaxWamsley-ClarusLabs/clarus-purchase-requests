@@ -126,7 +126,7 @@ export const INSTRUCTIONS: InstructionSection[] = [
       'To buy it, open the approved request and choose Open to buy. Change each row to what you bought: the vendor, the amount, the date, and extra rows for shipping or tax. The rows as the employee sent them stay on the page. You may spend more than was approved.',
       'Attach the receipt or invoice to each row (row menu, "Attach a receipt or invoice"), or point rows that share one at it ("Same receipt as row"). On Review and mark purchased, choose Mark purchased. A folder with the receipts, the quotes and a spreadsheet is made for the administrator, who is emailed.',
       'If you cannot buy it, return it to the employee with a note from its page. Delete any rows you added first. If the administrator returns it to you after you marked it purchased, fix it and mark it purchased again.',
-      'Only the approver who approved a request buys it. Another site Owner can read it, and can return it once it is purchased, but cannot change its rows or mark it purchased.'
+      'Only the approver who approved a request buys it. Another site Owner can read it and can return it to the employee with a note, so it is never stuck, but cannot change its rows or mark it purchased.'
     ]
   },
   {

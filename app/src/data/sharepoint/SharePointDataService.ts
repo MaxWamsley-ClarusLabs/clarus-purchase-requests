@@ -554,12 +554,13 @@ export class SharePointDataService implements PurchaseDataService {
     const stage = returnStageFor(request.status, request.buyer);
     if (!stage) throw new NotAllowedError(notAllowed.returnWhen);
     if (request.status === 'Approved') {
-      // The approver who was to buy it may send it back to the employee instead (P-037). Rows the approver
-      // added are not the employee's and would stop counting once the approval is taken back, so they go first.
-      const refusal = buyRefusal(request, me);
-      if (refusal) throw new NotAllowedError(refusal);
+      // Any administrator may send a request the approver was to buy back to the employee (P-037, P-042). Rows the
+      // approver added are not the employee's and would stop counting once the approval is taken back, so they go first.
       const added = (await this.readLinesMadeBy(requestId, stored)).filter((l) => l.madeByApprover);
-      if (added.length > 0) throw new NotAllowedError(notAllowed.addedRowsFirst(rowsPhrase(added.map((a) => a.line))));
+      if (added.length > 0) {
+        const rows = rowsPhrase(added.map((a) => a.line));
+        throw new NotAllowedError(mayBuy(request, me) ? notAllowed.addedRowsFirst(rows) : notAllowed.addedRowsByApprover(request.approvedBy, rows));
+      }
     }
     const write: RequestWrite = { status: statusAfterReturn(stage, request.buyer), returnNote: note, returnStage: stage };
     // A return at the approval step takes the approval back, keeping the earlier ones; one at processing

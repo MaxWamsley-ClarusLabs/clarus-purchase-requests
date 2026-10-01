@@ -298,7 +298,7 @@ Each stage ends with a commit on the project branch and an entry in `docs/CHANGE
 | 7. Checks | Preview sample data, screenshots, Instructions, SOP Part A, full build | Overnight build |
 | 8. Checkpoint steps | `docs/CHECKPOINT.md` | Overnight build |
 | 9. Morning report | `docs/STATUS.md`, the draft pull request | Overnight build |
-| 10. Review | Max answers `docs/QUESTIONS_FOR_MAX.md`; Claude makes the changes. On 2026-10-01 Max answered questions 1 to 5 and 24 to 29, and Claude built the approver-buys workflow, the item link and the 13 QuickBooks categories (P-037 to P-042); the new questions 30 to 32 wait for him | Max and Claude |
+| 10. Review | Max answers `docs/QUESTIONS_FOR_MAX.md`; Claude makes the changes. On 2026-10-01 Max answered questions 1 to 5 and 24 to 29, and Claude built the approver-buys workflow, the item link and the 13 QuickBooks categories (P-037 to P-042); questions 30 to 32 were answered the same day (any Owner can return an approved request, built) | Max and Claude |
 | 11. Test-site checkpoint | Max installs on a test site from `docs/CHECKPOINT.md` and runs a request through, including approval | Max |
 | 12. Security review and SOP proof pass | Permissions, flow safety, repository check; SOP read against the built app | Claude and Max |
 | 13. Pilot | Production site and flow, used on real purchases by a few employees | Max |

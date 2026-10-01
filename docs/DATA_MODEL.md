@@ -132,7 +132,7 @@ Attachments: for a package, the receipt copies, quote copies and the CSV file, e
 |---|---|---|
 | Draft | Edit; delete the request or any row; send to the approver (every vendor total goes, whatever the amount; the employee ticks the certification) | View |
 | Awaiting approval | View only | Approve (confirming or changing categories; refused if the rows no longer match what was sent, P-019); return with a note; retry the approval email (only if it failed or is stuck, P-030) |
-| Approved | View only. Approving the request means the approver buys it, so the rows are locked to the employee | The approver who approved it: change anything, add or remove rows, attach the receipts, Mark purchased (P-040); return it to the employee (refused while rows the approver added exist, P-042). Any administrator: view, confirm or change categories |
+| Approved | View only. Approving the request means the approver buys it, so the rows are locked to the employee | The approver who approved it: change anything, add or remove rows, attach the receipts, Mark purchased (P-040). Any administrator: return it to the employee, which takes the approval back (refused while rows the approver added exist, P-042), view, confirm or change categories |
 | Submitted (shown as Purchased) | View only | Mark processed; return it to the approver with a note (the status goes back to Approved, P-042); confirm or change categories; retry packaging |
 | Returned | Edit; send to the approver again | View |
 | Processed | View only | View |

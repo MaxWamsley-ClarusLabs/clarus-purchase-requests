@@ -134,14 +134,15 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 - **Recommendation:** A for the pilot; look again at the security review.
 - **If you choose differently:** a new list in `schema.ts` and the data services.
 
-## 15a. Small choices, for information (P-030, P-031)
+## 15a. Small choices, for information (P-030, P-031, P-032)
 
-- Approval emails that were not sent within 30 minutes, or failed, show under Needs attention with Retry. The sidebar counts Approvals and Requests to process.
+- Approval emails that were not sent within 30 minutes, or failed, show under Needs attention with Retry. The sidebar counts Approvals, Requests to process and Needs attention (P-030).
+- The screens: a request is made in three steps (Request details, Purchases, Review and submit); the Purchases step has a Vendor totals table; the approver's page has category drop-downs, an Approve dialog (with an optional note) and a Return dialog (the note is required) (P-032). The screenshots are in `docs/prototype/`.
 - The preview uses Jane Doe and Sam Lee as employees and Max Wamsley as administrator and approver, with made-up vendors and generated sample receipts. The name Max Wamsley was already in the travel app's sample data; no real address or data is used.
 - Not built, on purpose: a late-submission warning, a "future purchase date" warning, withdrawing a request, counting a vendor across requests, a separate approver role, emails to the employee.
 
 ## 16. Things the build could not check
 
-- Whether the Owners' addresses can be read by the Set-up page with `web/AssociatedOwnerGroup/users` (Unverified). If not, the approval email goes to your own address, and the Set-up page says so.
-- Whether the flow's new approval branch imports and runs as written (Unverified). Tested at the checkpoint, `docs/CHECKPOINT.md`, step 15 onward.
+- Whether the Owners' addresses can be read by the Set-up page with `web/AssociatedOwnerGroup/users` (Unverified). If not, the approval email goes to your own address, and the Set-up page says so. Checkpoint steps 3 and 13 (with a second Owner added) test it, and step 33 tests whether an employee can read the Owners group for the Approver line.
+- Whether the flow's new approval branch imports and runs as written (Unverified). Tested at the checkpoint, `docs/CHECKPOINT.md`: the import and turning it on in steps 14 and 15, the branch and the approval email in steps 21 to 31, and the failure scope in step 34 (optional).
 - Everything Microsoft-side from the travel strategy's evidence table, which was not re-checked.

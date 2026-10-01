@@ -1,8 +1,8 @@
 import * as React from 'react';
 import { formatCents } from '../../domain/money';
-import { APPROVAL_THRESHOLD_TEXT } from '../../domain/purchaseRules';
+import { APPROVAL_THRESHOLD_TEXT, QUOTE_THRESHOLD_TEXT } from '../../domain/purchaseRules';
 import { BadgeTone } from '../../domain/statuses';
-import { PurchaseLine, PurchaseRequest } from '../../domain/types';
+import { BuyerId, PurchaseLine, PurchaseRequest } from '../../domain/types';
 import { VENDOR_APPROVAL_LABEL, quoteText, rowsText, vendorRows } from '../vendorRows';
 import { Badge, Tag } from './common';
 
@@ -22,7 +22,7 @@ const APPROVAL_TONE: Record<keyof typeof VENDOR_APPROVAL_LABEL, BadgeTone> = {
  */
 export function VendorTotals(props: {
   lines: PurchaseLine[];
-  request: Pick<PurchaseRequest, 'status' | 'approval'>;
+  request: Pick<PurchaseRequest, 'status' | 'approval'> & { buyer?: BuyerId };
   showApproved?: boolean;
   showIntro?: boolean;
 }): React.ReactElement {
@@ -31,7 +31,9 @@ export function VendorTotals(props: {
     <div>
       {props.showIntro ? (
         <div className="ctx-hint" style={{ marginBottom: 10 }}>
-          A vendor total of {APPROVAL_THRESHOLD_TEXT} or more needs approval before you buy, and a quote or a reason.
+          {props.request.buyer === 'approver'
+            ? `Every vendor total goes to the approver, whatever the amount. A vendor total of ${QUOTE_THRESHOLD_TEXT} or more needs a quote, or a reason there is none.`
+            : `A vendor total of ${APPROVAL_THRESHOLD_TEXT} or more needs approval before you buy, and a quote or a reason.`}
         </div>
       ) : null}
       {rows.length === 0 ? (

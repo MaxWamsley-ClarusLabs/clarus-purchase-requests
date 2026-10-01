@@ -8,10 +8,12 @@ export type IsoDate = string;
 export const TEXT_MAX_LENGTH = 255;
 
 /**
- * Where a request is (docs/STRATEGY.md section 5). A request with no vendor
- * total of $500 or more goes Draft, Submitted, Processed; one with a vendor
- * total at or over the threshold goes Draft, Awaiting approval, Approved,
- * Submitted, Processed. Returned can come from the approver or the administrator.
+ * Where a request is (docs/STRATEGY.md section 5). A request the approver buys
+ * (the default, P-037) goes Draft, Awaiting approval, Approved, Submitted
+ * (shown as Purchased), Processed. A request the employee buys, with no vendor
+ * total of $500 or more, goes Draft, Submitted, Processed; with a vendor total
+ * at or over the threshold, Draft, Awaiting approval, Approved, Submitted,
+ * Processed. Returned can come from the approver or the administrator.
  */
 export type RequestStatus = 'Draft' | 'Awaiting approval' | 'Approved' | 'Submitted' | 'Returned' | 'Processed';
 export type PackageStatus = 'Uploading' | 'Ready' | 'Processing' | 'Packaged' | 'Failed';
@@ -22,9 +24,30 @@ export type SubmissionType = 'approval' | 'package';
 /** Which step a return came at, for wording only. */
 export type ReturnStage = 'approval' | 'processing' | '';
 
-export type CategoryId = 'rdMaterials' | 'advertising' | 'computer' | 'office' | 'training' | 'shipping' | 'insurance' | 'other';
+/** One per QuickBooks account the employee may choose, plus Other (P-038). */
+export type CategoryId =
+  | 'rdMaterials'
+  | 'equipment'
+  | 'advertising'
+  | 'computer'
+  | 'office'
+  | 'training'
+  | 'shipping'
+  | 'insurance'
+  | 'subscriptions'
+  | 'telecom'
+  | 'repairs'
+  | 'professional'
+  | 'other';
 
 export type PaidById = 'company' | 'employee';
+
+/**
+ * Who buys the purchase (P-037). 'approver': the person who approves the
+ * request buys it, which is the usual case and the default. 'self': the
+ * employee buys it and submits the receipts, as in the first build.
+ */
+export type BuyerId = 'approver' | 'self';
 
 /** An attached file is a receipt (which includes an invoice) or a quote (P-021). */
 export type FileKind = 'receipt' | 'quote';
@@ -65,6 +88,10 @@ export interface PurchaseLine {
   paidBy: PaidById | '';
   noQuoteReason: string;
   noReceiptReason: string;
+  /** The web address of the item, so the approver can open it and buy (P-039). '' when there is none. Shown as a link only if `safeLink` accepts it. */
+  itemLink: string;
+  /** Why there is no web address ("No web page, because ..."), for a request the approver buys (P-039). */
+  noLinkReason: string;
   /** Row number of another row in the same request whose receipt this row uses. */
   sameReceiptAsRow: number | null;
   /** Every attached file, receipts and quotes (P-021). */
@@ -104,6 +131,27 @@ export interface ApprovalRecord {
    * bought (P-017, `approvalsSoFar`).
    */
   earlier: ApprovalGroup[];
+  /**
+   * The rows as the employee sent them, for a request the approver buys: the
+   * approver may change the rows when buying (P-040), and the request page
+   * shows what was sent next to what was bought. Replaced each time the
+   * request is sent; absent on a request the employee buys and on a record
+   * stored before this existed.
+   */
+  rows?: SentRow[];
+}
+
+/** One row as it was sent for approval (P-040). Text and numbers only; never shown as HTML. */
+export interface SentRow {
+  rowNumber: number;
+  date: string;
+  vendor: string;
+  description: string;
+  /** The category as written in the CSV and emails, "Other: ..." included. */
+  category: string;
+  amountCents: number | null;
+  itemLink: string;
+  noLinkReason: string;
 }
 
 export interface PurchaseRequest {
@@ -113,6 +161,8 @@ export interface PurchaseRequest {
   businessPurpose: string;
   department: string;
   projectCode: string;
+  /** Who buys it (P-037). The employee chooses while the request is a Draft or Returned. */
+  buyer: BuyerId;
   status: RequestStatus;
   returnNote: string;
   returnStage: ReturnStage;

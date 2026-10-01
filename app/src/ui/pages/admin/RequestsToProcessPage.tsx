@@ -67,7 +67,10 @@ export function RequestsToProcessPage(): React.ReactElement {
                       <td>{pkg ? <Badge tone={pkg.tone}>{pkg.label}</Badge> : null}</td>
                       <td className="num">{formatCents(r.totalReimburseCents)}</td>
                       <td className="num">{formatCents(r.totalRequestCents)}</td>
-                      <td>{r.boughtBeforeApproval ? <Tag>Bought before approval</Tag> : null}</td>
+                      <td>
+                        {r.boughtBeforeApproval ? <Tag>Bought before approval</Tag> : null}
+                        {r.buyer === 'approver' ? <Tag>Bought by {r.approvedBy || 'the approver'}</Tag> : null}
+                      </td>
                     </tr>
                   );
                 })}

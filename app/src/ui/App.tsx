@@ -14,7 +14,7 @@ import { SetupPage } from './pages/admin/SetupPage';
 import { SetupStatus } from '../data/setup';
 import { NeedsAttentionPage } from './pages/admin/NeedsAttentionPage';
 import { RequestsToProcessPage } from './pages/admin/RequestsToProcessPage';
-import { requestsAwaitingApproval, requestsToProcess, stuckSubmissions } from './pages/admin/adminData';
+import { requestsAwaitingApproval, requestsToBuy, requestsToProcess, stuckSubmissions } from './pages/admin/adminData';
 import { Route, useLocation } from './routing';
 import { injectTheme } from './theme';
 import { errorText } from './errors';
@@ -95,7 +95,8 @@ export function App(props: { service: PurchaseDataService; logoUrl: string; read
     try {
       const [requests, submissions] = await Promise.all([service.listAllRequests(), service.listSubmissions()]);
       setAdminCounts({
-        approvals: requestsAwaitingApproval(requests).length,
+        // What waits for this person: requests to approve, and approved requests they are to buy (P-037).
+        approvals: requestsAwaitingApproval(requests).length + requestsToBuy(requests, user).length,
         process: requestsToProcess(requests).length,
         attention: stuckSubmissions(requests, submissions).length
       });

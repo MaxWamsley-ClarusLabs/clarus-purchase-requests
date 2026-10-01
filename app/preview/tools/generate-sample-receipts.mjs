@@ -4,7 +4,7 @@
 // the vendor at the top, a date line and a Total line, a layout the receipt
 // reader reads (src/domain/receiptText.ts). Also writes truth.json, the answers
 // for preview/tools/check-reader.mjs.
-// Run: node preview/tools/generate-sample-receipts.mjs (from app/)
+// Run: node preview/tools/generate-sample-receipts.mjs (from app/); ONLY=<file name> makes one file.
 import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -112,6 +112,18 @@ const documents = [
     footer: 'Valid for 30 days.'
   },
   {
+    file: 'cobalt-biosupply-invoice.pdf',
+    kind: 'invoice',
+    vendor: 'Cobalt Biosupply',
+    date: '2026-10-09',
+    lines: [
+      ['Cell culture medium, 500 mL, 6 bottles', '168.00'],
+      ['Culture flasks, T-75, case of 100', '47.50']
+    ],
+    total: '215.50',
+    footer: 'Paid: Card ending 0000'
+  },
+  {
     file: 'kestrel-instruments-invoice.pdf',
     kind: 'invoice',
     vendor: 'Kestrel Instruments',
@@ -146,7 +158,10 @@ function html(d) {
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium' });
 const page = await browser.newPage({ viewport: { width: 420, height: 520 }, deviceScaleFactor: 2 });
+// ONLY=<file name> makes just that file, so adding a sample does not rewrite the others (their bytes differ on every run).
+const only = process.env.ONLY;
 for (const d of documents) {
+  if (only && d.file !== only) continue;
   await page.setContent(html(d));
   if (d.file.endsWith('.pdf')) {
     await page.pdf({ path: outDir + d.file, width: '4.5in', height: '6in', printBackground: true });
@@ -159,4 +174,4 @@ await browser.close();
 // What the reader should find on each file, in the format check-reader.mjs reads.
 const truth = documents.map((d) => ({ file: d.file, kind: d.kind, date: d.date, total: d.total.replace(/,/g, ''), vendor: d.vendor }));
 writeFileSync(outDir + 'truth.json', JSON.stringify(truth, null, 2) + '\n');
-console.log(`Wrote ${documents.length} synthetic files and truth.json to ${outDir}`);
+console.log(`Wrote ${only ? 1 : documents.length} synthetic file(s) and truth.json to ${outDir}`);

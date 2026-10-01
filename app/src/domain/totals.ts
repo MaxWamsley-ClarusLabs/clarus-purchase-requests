@@ -4,7 +4,7 @@
 // total can be more than the other two added together.
 
 import { findPaidBy } from './purchaseRules';
-import { PurchaseLine } from './types';
+import { BuyerId, PurchaseLine } from './types';
 
 export interface Totals {
   reimburseCents: number;
@@ -12,14 +12,18 @@ export interface Totals {
   requestCents: number;
 }
 
-export function computeTotals(lines: readonly PurchaseLine[]): Totals {
+/**
+ * When the approver buys (P-037), the company pays for every row, whatever a
+ * row's stored "who paid" says, so nothing is "To reimburse".
+ */
+export function computeTotals(lines: readonly PurchaseLine[], buyer: BuyerId = 'self'): Totals {
   let reimburseCents = 0;
   let companyCents = 0;
   let requestCents = 0;
   for (const line of lines) {
     if (line.amountCents === null) continue;
     requestCents += line.amountCents;
-    const paidBy = findPaidBy(line.paidBy);
+    const paidBy = findPaidBy(buyer === 'approver' ? 'company' : line.paidBy);
     if (!paidBy) continue;
     if (paidBy.reimbursable) reimburseCents += line.amountCents;
     else companyCents += line.amountCents;

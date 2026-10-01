@@ -4,10 +4,33 @@
 // SharePoint calls and no stored state.
 
 import { messages } from '../../domain/messages';
-import { approvalsSoFar, categoryNeedsDescription, categoryText, findCategory, findPaidBy } from '../../domain/purchaseRules';
+import {
+  CERTIFICATION,
+  ITEM_LINK_MAX_LENGTH,
+  approvalsSoFar,
+  categoryNeedsDescription,
+  categoryNeedsReview,
+  categoryText,
+  findBuyer,
+  findCategory,
+  findPaidBy
+} from '../../domain/purchaseRules';
 import { receiptFiles } from '../../domain/receipts';
-import { PACKAGE_ATTENTION_MINUTES, STATUS_FOR_SUBMISSION, submissionNeedsAttention } from '../../domain/statuses';
-import { ApprovalGroup, ApprovalRecord, CategoryId, PurchaseLine, PurchaseRequest, RequestStatus, Submission, SubmissionType } from '../../domain/types';
+import { PACKAGE_ATTENTION_MINUTES, STATUS_FOR_SUBMISSION, mayBuy, submissionNeedsAttention } from '../../domain/statuses';
+import {
+  ApprovalGroup,
+  ApprovalRecord,
+  BuyerId,
+  CategoryId,
+  CurrentUser,
+  PurchaseLine,
+  PurchaseRequest,
+  RequestStatus,
+  SentRow,
+  Submission,
+  SubmissionType
+} from '../../domain/types';
+import { Certification } from '../../export/submission';
 import { CategoryChoice, LineChanges, RequestChanges } from '../PurchaseDataService';
 import { line255, parseSuggested } from './mapping';
 
@@ -23,10 +46,21 @@ export const notAllowed = {
   locked: 'This request is locked.',
   administratorsOnly: 'Administrators only.',
   draftsOnly: 'Only drafts can be deleted.',
+  /** The approver buys the request, so the employee has nothing to submit (P-037). */
+  approverBuys: 'The approver buys this request, so there is nothing for you to submit.',
+  /** The one who approved a request the approver buys is the one who buys it (P-037). */
+  buyerOnly: 'Only the approver who approved this request can change it, attach files to it or mark it purchased.',
+  buyWhen: 'Only an approved request that the approver buys can be marked purchased.',
+  employeeBuys: 'The employee buys this request, so it is submitted by the employee.',
+  certificationMissing:
+    "The employee's certification is missing from this request. Return it to the employee, who can send it again with the certification.",
+  addedRowsFirst: (rows: string) => `You added ${rows} to this request, so it cannot be returned yet. Delete ${rows.startsWith('rows ') ? 'them' : 'it'}, then return it.`,
+  reviewFirst: (rows: string) =>
+    `Confirm the category of ${rows} first: the account depends on a decision. Use Confirm categories, then mark the request processed.`,
   approveWhen: 'Only a request that is awaiting approval can be approved.',
   changedSinceSent:
     'This request was changed after it was sent for approval, so it cannot be approved as it stands. Return it with a note; the employee can correct it and send it again.',
-  returnWhen: 'Only a request that is awaiting approval or submitted can be returned.',
+  returnWhen: 'Only a request that is awaiting approval or submitted can be returned. The approver can also return an approved request they were to buy.',
   confirmWhen: 'Categories can be confirmed only on a request that is awaiting approval, approved or submitted.',
   processWhen: 'Only submitted requests can be marked processed.',
   sharedReceiptHasOwn: 'This row has a receipt of its own. Remove it first, then choose the row whose receipt this row uses.',
@@ -36,13 +70,62 @@ export const notAllowed = {
 
 /**
  * Which step a return comes at (P-006): the approver returns a request that is
- * awaiting approval, the administrator one that is submitted. Undefined when
- * the request cannot be returned from this status.
+ * awaiting approval, the administrator one that is submitted. The approver who
+ * was to buy an approved request may also return it to the employee, which
+ * takes the approval back (P-037). Undefined when the request cannot be
+ * returned from this status.
  */
-export function returnStageFor(status: RequestStatus): 'approval' | 'processing' | undefined {
+export function returnStageFor(status: RequestStatus, buyer: BuyerId = 'self'): 'approval' | 'processing' | undefined {
   if (status === 'Awaiting approval') return 'approval';
   if (status === 'Submitted') return 'processing';
+  if (status === 'Approved' && buyer === 'approver') return 'approval';
   return undefined;
+}
+
+/**
+ * The status a return leaves a request in. A request the approver bought and the
+ * administrator returns at processing goes back to the approver, who fixes it
+ * and marks it purchased again; every other return goes to the employee
+ * (P-037).
+ */
+export function statusAfterReturn(stage: 'approval' | 'processing', buyer: BuyerId): RequestStatus {
+  return stage === 'processing' && buyer === 'approver' ? 'Approved' : 'Returned';
+}
+
+/**
+ * Why this person may not change a request's rows or files, mark it
+ * purchased, or return it from Approved, or '' when they may (P-037, P-040):
+ * the approver who approved a request the approver buys, while it is approved.
+ */
+export function buyRefusal(request: Pick<PurchaseRequest, 'buyer' | 'status' | 'approvedByEmail'>, user: Pick<CurrentUser, 'email' | 'isAdministrator'>): string {
+  if (!user.isAdministrator) return notAllowed.administratorsOnly;
+  if (request.buyer !== 'approver') return notAllowed.employeeBuys;
+  if (request.status !== 'Approved') return notAllowed.buyWhen;
+  return mayBuy(request, user) ? '' : notAllowed.buyerOnly;
+}
+
+/** The rows whose account depends on a decision and that nobody has confirmed yet, which hold up "Mark processed" (P-038). */
+export function rowsToReview(lines: readonly PurchaseLine[]): PurchaseLine[] {
+  return lines.filter((l) => categoryNeedsReview(l.category) && !l.categoryConfirmedBy);
+}
+
+/** "row 2" or "rows 1 and 3", for a refusal. */
+export function rowsPhrase(rows: readonly PurchaseLine[]): string {
+  const numbers = [...rows].sort((a, b) => a.rowNumber - b.rowNumber).map((l) => l.rowNumber);
+  if (numbers.length === 1) return `row ${numbers[0]}`;
+  return `rows ${numbers.slice(0, -1).join(', ')} and ${numbers[numbers.length - 1]}`;
+}
+
+/**
+ * What the employee certified when sending a request the approver buys (P-037),
+ * from the newest approval request, which keeps it. Throws NotAllowedError when
+ * it is not there or is not the current sentence: the approver then returns the
+ * request, so the employee sends it again with the tick.
+ */
+export function employeeCertification(submissions: readonly Submission[], request: Pick<PurchaseRequest, 'ownerName'>): Certification {
+  const newest = sortSubmissionsForRequest(submissions.filter((s) => s.type === 'approval'))[0];
+  if (!newest || newest.certificationText !== CERTIFICATION || !newest.submitterEmail) throw new NotAllowedError(notAllowed.certificationMissing);
+  return { text: newest.certificationText, email: newest.submitterEmail, name: request.ownerName, on: newest.submittedOn };
 }
 
 /** The number for a new row. Rows are numbered 1, 2, 3 in the order shown in the grid. */
@@ -58,6 +141,8 @@ export function applyRequestChanges(request: PurchaseRequest, changes: RequestCh
   if (changes.businessPurpose !== undefined) next.businessPurpose = line255(changes.businessPurpose);
   if (changes.department !== undefined) next.department = line255(changes.department);
   if (changes.projectCode !== undefined) next.projectCode = line255(changes.projectCode);
+  // A buyer that is not one of the two is ignored, so a bad value cannot turn the approval rules off.
+  if (changes.buyer !== undefined && findBuyer(changes.buyer)) next.buyer = changes.buyer;
   return next;
 }
 
@@ -71,6 +156,8 @@ const LINE_CHANGE_KEYS: readonly (keyof LineChanges)[] = [
   'paidBy',
   'noQuoteReason',
   'noReceiptReason',
+  'itemLink',
+  'noLinkReason',
   'sameReceiptAsRow',
   'suggested'
 ];
@@ -91,6 +178,9 @@ function normalizeLineChanges(changes: LineChanges): LineChanges {
   if (out.categoryOther !== undefined) out.categoryOther = line255(out.categoryOther);
   if (out.noQuoteReason !== undefined) out.noQuoteReason = line255(out.noQuoteReason);
   if (out.noReceiptReason !== undefined) out.noReceiptReason = line255(out.noReceiptReason);
+  if (out.noLinkReason !== undefined) out.noLinkReason = line255(out.noLinkReason);
+  // A web address is kept whole, never cut to a shorter one that opens another page: one past the longest allowed is kept so the check can refuse it.
+  if (out.itemLink !== undefined) out.itemLink = typeof out.itemLink === 'string' ? out.itemLink.slice(0, ITEM_LINK_MAX_LENGTH + 1) : '';
   if (out.category !== undefined && !findCategory(out.category)) out.category = '';
   if (out.paidBy !== undefined && !findPaidBy(out.paidBy)) out.paidBy = '';
   if (out.amountCents !== undefined)
@@ -108,6 +198,17 @@ export interface AppliedLineChanges {
   written: Partial<PurchaseLine>;
 }
 
+/** Who is changing the row, and for which request (P-037, P-040). */
+export interface LineEditor {
+  /** Who buys the request the row is in. When the approver buys, "who paid" is always the company. */
+  buyer: BuyerId;
+  /** Set when the approver changes the row while buying: a category they choose is confirmed by them, not left as the employee's suggestion. */
+  approverName?: string;
+}
+
+/** The employee changing a row of a request they buy. */
+export const EMPLOYEE_EDITS: LineEditor = { buyer: 'self' };
+
 /**
  * Applies the employee's change to a row.
  * - Only a category that needs a description (Other) keeps one: a change to
@@ -120,8 +221,10 @@ export interface AppliedLineChanges {
  *   (travel D-038): pointing a row that holds a receipt at another row is
  *   refused with NotAllowedError, before anything is written.
  */
-export function applyLineChanges(line: PurchaseLine, changes: LineChanges): AppliedLineChanges {
+export function applyLineChanges(line: PurchaseLine, changes: LineChanges, editor: LineEditor = EMPLOYEE_EDITS): AppliedLineChanges {
   const written: Partial<PurchaseLine> = normalizeLineChanges(changes);
+  // The company pays for what the approver buys, whatever is sent (P-037).
+  if (editor.buyer === 'approver' && written.paidBy !== undefined) written.paidBy = 'company';
   if (written.sameReceiptAsRow !== undefined && written.sameReceiptAsRow !== null && receiptFiles(line).length > 0) {
     throw new NotAllowedError(notAllowed.sharedReceiptHasOwn);
   }
@@ -130,7 +233,11 @@ export function applyLineChanges(line: PurchaseLine, changes: LineChanges): Appl
     if (!categoryNeedsDescription(category) && (written.categoryOther ?? line.categoryOther) !== '') written.categoryOther = '';
     const before = categoryText(line.category, line.categoryOther);
     const after = categoryText(category, written.categoryOther ?? line.categoryOther);
-    if (after !== before && line.categoryConfirmedBy !== '') written.categoryConfirmedBy = '';
+    // A change to the category is the employee's suggestion again, or, if the approver made it, confirmed by them (P-024, P-040).
+    if (after !== before) {
+      if (editor.approverName) written.categoryConfirmedBy = line255(editor.approverName);
+      else if (line.categoryConfirmedBy !== '') written.categoryConfirmedBy = '';
+    }
   }
   return { line: { ...line, ...written }, written };
 }
@@ -222,18 +329,18 @@ export function holdsApproval(request: Pick<PurchaseRequest, 'approvedOn' | 'app
  * later return cannot make a vendor bought after its approval look bought
  * before it.
  */
-export function approvalWhenSent(previous: ApprovalRecord, sent: ApprovalGroup[]): ApprovalRecord {
-  return { sent, approved: [], earlier: approvalsSoFar(previous) };
+export function approvalWhenSent(previous: ApprovalRecord, sent: ApprovalGroup[], rows: SentRow[] = []): ApprovalRecord {
+  return { sent, approved: [], earlier: approvalsSoFar(previous), ...(rows.length > 0 ? { rows } : {}) };
 }
 
 /** The record once the approver approves: what was sent, what is approved now, and the earlier approvals as they were. */
 export function approvalWhenApproved(previous: ApprovalRecord, approved: ApprovalGroup[]): ApprovalRecord {
-  return { sent: previous.sent, approved, earlier: previous.earlier };
+  return { sent: previous.sent, approved, earlier: previous.earlier, ...(previous.rows ? { rows: previous.rows } : {}) };
 }
 
 /** The record once the request is returned at the approval step: nothing approved now; what was sent and the earlier approvals are kept. */
 export function approvalWhenReturned(previous: ApprovalRecord): ApprovalRecord {
-  return { sent: previous.sent, approved: [], earlier: previous.earlier };
+  return { sent: previous.sent, approved: [], earlier: previous.earlier, ...(previous.rows ? { rows: previous.rows } : {}) };
 }
 
 // ---- Submissions ------------------------------------------------------------

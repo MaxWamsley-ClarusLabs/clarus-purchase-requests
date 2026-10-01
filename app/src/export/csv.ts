@@ -1,8 +1,9 @@
 // The purchases CSV in each request folder (travel D-045, D-048; P-009, P-026).
 // UTF-8 with a byte-order mark, commas, CRLF line endings, one header row,
-// YYYY-MM-DD dates and plain two-decimal amounts. The suggested QuickBooks
-// account is UNVERIFIED, TO CONFIRM WITH MAX (purchaseRules.ts, P-025), and
-// its column header says so.
+// YYYY-MM-DD dates and plain two-decimal amounts. The QuickBooks account is
+// the number and exact name from the May 1, 2026 account list Max supplied
+// (purchaseRules.ts, P-038), and its column header says where it is from.
+// Equipment and Other say that the administrator decides.
 
 import { dateRangeText } from '../domain/dates';
 import { centsToPlain } from '../domain/money';
@@ -12,8 +13,8 @@ import { QUICKBOOKS_MAPPING_STATUS, categoryText, findCategory, findPaidBy, isSe
 import { Issue } from '../domain/validation';
 import { PurchaseLine, PurchaseRequest } from '../domain/types';
 
-/** "Suggested QuickBooks account (Unverified, to confirm with Max)": the mapping's status is part of the header wherever the CSV is opened. */
-export const SUGGESTED_ACCOUNT_COLUMN = `Suggested QuickBooks account (${QUICKBOOKS_MAPPING_STATUS})` as const;
+/** "QuickBooks account (from the May 1, 2026 account list)": where the mapping is from is part of the header wherever the CSV is opened. */
+export const ACCOUNT_COLUMN = `QuickBooks account (${QUICKBOOKS_MAPPING_STATUS})` as const;
 
 // Purchase columns come first so the useful part is visible when the file is
 // opened in Excel; the request columns repeat on every row after them (travel D-048).
@@ -23,10 +24,12 @@ export const CSV_COLUMNS = [
   'Date',
   'Vendor',
   'What was bought and why',
+  'Item link',
   'Category',
   'Category confirmed by',
-  SUGGESTED_ACCOUNT_COLUMN,
+  ACCOUNT_COLUMN,
   'Amount',
+  'Who bought',
   'Who paid',
   'Reimbursable',
   'Project or grant code',
@@ -38,6 +41,7 @@ export const CSV_COLUMNS = [
   'Receipt files',
   'No-quote reason',
   'No-receipt reason',
+  'No-link reason',
   'Warnings',
   'Submission',
   'Submitted by',
@@ -60,14 +64,21 @@ export function csvCell(value: string): string {
   return text;
 }
 
+/** Who certified the request, and when (travel D-064). The employee, when sending it to the approver who buys it (P-037), or at Submit. */
+export interface CertifiedBy {
+  name: string;
+  /** The signed-in account that ticked the certification. */
+  email: string;
+}
+
 export interface CsvInput {
   request: PurchaseRequest;
   lines: readonly PurchaseLine[];
   submissionNumber: number;
+  /** Who submitted the package: the employee, or the approver who bought it (P-037). */
   submitterName: string;
-  /** The account that certified the request at Submit (travel D-064). */
-  submitterEmail: string;
   submittedOn: string;
+  certifiedBy: CertifiedBy;
   /** Warnings shown to the employee at submission; blocking issues cannot exist here. */
   warnings: readonly Issue[];
 }
@@ -80,12 +91,13 @@ export function approverText(request: Pick<PurchaseRequest, 'approvedBy' | 'appr
 
 export function buildPurchasesCsv(input: CsvInput): string {
   const { request, lines } = input;
-  const approvals = lineApprovals(lines, request.status, request.approval);
+  const approvals = lineApprovals(lines, request.status, request.approval, request.buyer);
   const purchaseDates = dateRangeText(lines.map((l) => l.date));
   const rows: string[][] = [CSV_COLUMNS.slice()];
   for (const line of lines) {
     const category = findCategory(line.category);
-    const paidBy = findPaidBy(line.paidBy);
+    // When the approver buys, the company pays for every row, whatever a row's stored "who paid" says (P-037).
+    const paidBy = findPaidBy(request.buyer === 'approver' ? 'company' : line.paidBy);
     const approval = approvals.get(line.id) ?? { status: 'notRequired' as const, boughtBefore: false };
     const approved = approval.status === 'approved';
     // Request-level warnings repeat on every row, like the request columns (travel D-048).
@@ -96,10 +108,12 @@ export function buildPurchasesCsv(input: CsvInput): string {
       Date: line.date,
       Vendor: line.vendor,
       'What was bought and why': line.description,
+      'Item link': line.itemLink,
       Category: categoryText(line.category, line.categoryOther),
       'Category confirmed by': line.categoryConfirmedBy,
-      [SUGGESTED_ACCOUNT_COLUMN]: category ? category.suggestedAccount : '',
+      [ACCOUNT_COLUMN]: category ? category.accountText : '',
       Amount: line.amountCents === null ? '' : centsToPlain(line.amountCents),
+      'Who bought': request.buyer === 'approver' ? 'Approver' : 'Employee',
       'Who paid': paidBy ? paidBy.label : '',
       Reimbursable: paidBy ? (paidBy.reimbursable ? 'Yes' : 'No') : '',
       'Project or grant code': request.projectCode,
@@ -111,6 +125,7 @@ export function buildPurchasesCsv(input: CsvInput): string {
       'Receipt files': fileNamesForRow(line, lines, 'receipt').join('; '),
       'No-quote reason': line.noQuoteReason,
       'No-receipt reason': line.noReceiptReason,
+      'No-link reason': line.noLinkReason,
       Warnings: lineWarnings.join('; '),
       Submission: String(input.submissionNumber),
       'Submitted by': input.submitterName,
@@ -118,7 +133,7 @@ export function buildPurchasesCsv(input: CsvInput): string {
       Department: request.department,
       'Purchase dates': purchaseDates,
       'Business purpose': request.businessPurpose,
-      'Certified by': `${input.submitterName} (${input.submitterEmail})`
+      'Certified by': `${input.certifiedBy.name} (${input.certifiedBy.email})`
     };
     rows.push(CSV_COLUMNS.map((c) => values[c]));
   }

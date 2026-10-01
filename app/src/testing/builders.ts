@@ -27,6 +27,8 @@ export function line(overrides: Partial<PurchaseLine> = {}): PurchaseLine {
     paidBy: 'company',
     noQuoteReason: '',
     noReceiptReason: '',
+    itemLink: '',
+    noLinkReason: '',
     sameReceiptAsRow: null,
     files: [file()],
     suggested: [],
@@ -45,6 +47,8 @@ export function request(overrides: RequestOverrides = {}): PurchaseRequest {
     businessPurpose: 'Lab supplies for the Phase 1 assay',
     department: 'R&D',
     projectCode: '',
+    // The tests of the first build are about a request the employee buys; the approver-buys tests say so.
+    buyer: 'self',
     status: 'Draft',
     returnNote: '',
     returnStage: '',

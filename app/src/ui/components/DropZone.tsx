@@ -15,9 +15,17 @@ const KINDS: { kind: FileKind; label: string }[] = [
  * default) or quotes (P-021). `quoteHint` adds a reminder that a vendor total
  * of $500 or more needs a quote.
  */
-export function DropZone(props: { onFiles: (files: File[], kind: FileKind) => void; disabled?: boolean; quoteHint?: boolean }): React.ReactElement {
+export function DropZone(props: {
+  onFiles: (files: File[], kind: FileKind) => void;
+  disabled?: boolean;
+  quoteHint?: boolean;
+  /** Only this kind of file is dropped here, and the switch is not shown (P-037: the employee sends quotes; the approver attaches the receipts). */
+  only?: FileKind;
+}): React.ReactElement {
   const [over, setOver] = React.useState(false);
-  const [kind, setKind] = React.useState<FileKind>('receipt');
+  const [chosen, setChosen] = React.useState<FileKind>('receipt');
+  const kind = props.only ?? chosen;
+  const setKind = setChosen;
   const inputRef = React.useRef<HTMLInputElement>(null);
   const switchRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
 
@@ -50,27 +58,29 @@ export function DropZone(props: { onFiles: (files: File[], kind: FileKind) => vo
         <Icon name="upload" size={22} />
       </div>
       <div className="ctx-drop-body">
-        <div className="ctx-drop-title">Drop receipts, invoices or quotes here</div>
+        <div className="ctx-drop-title">{props.only === 'quote' ? 'Drop quotes here' : 'Drop receipts, invoices or quotes here'}</div>
         <div className="ctx-hint">Each file becomes a row. PDF, JPG, PNG or HEIC, up to 15 MB each.</div>
-        <div className="ctx-drop-kind">
-          <span className="ctx-hint">These files are</span>
-          <div className="ctx-segmented" role="radiogroup" aria-label="These files are" onKeyDown={onSwitchKey}>
-            {KINDS.map((k) => (
-              <button
-                key={k.kind}
-                ref={(el) => {
-                  switchRefs.current[k.kind] = el;
-                }}
-                role="radio"
-                aria-checked={kind === k.kind}
-                tabIndex={kind === k.kind ? 0 : -1}
-                onClick={() => setKind(k.kind)}
-              >
-                {k.label}
-              </button>
-            ))}
+        {props.only ? null : (
+          <div className="ctx-drop-kind">
+            <span className="ctx-hint">These files are</span>
+            <div className="ctx-segmented" role="radiogroup" aria-label="These files are" onKeyDown={onSwitchKey}>
+              {KINDS.map((k) => (
+                <button
+                  key={k.kind}
+                  ref={(el) => {
+                    switchRefs.current[k.kind] = el;
+                  }}
+                  role="radio"
+                  aria-checked={kind === k.kind}
+                  tabIndex={kind === k.kind ? 0 : -1}
+                  onClick={() => setKind(k.kind)}
+                >
+                  {k.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         {props.quoteHint ? (
           <div className="ctx-hint ctx-drop-note">A vendor total of {QUOTE_THRESHOLD_TEXT} or more needs a quote. Choose Quotes for a quote.</div>
         ) : null}

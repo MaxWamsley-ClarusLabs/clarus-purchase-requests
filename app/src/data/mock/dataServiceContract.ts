@@ -22,6 +22,8 @@ export const JANE: Person = { name: 'Jane Doe', email: 'jane.doe@example.com', a
 export const SAM: Person = { name: 'Sam Lee', email: 'sam.lee@example.com', admin: false };
 /** An administrator, who is also the approver (P-020). */
 export const MAX: Person = { name: 'Max Wamsley', email: 'max.wamsley@example.com', admin: true };
+/** A second site Owner, who is an administrator and approver too, but did not approve Max's requests (P-037). */
+export const OLIVE: Person = { name: 'Olive Owner', email: 'olive.owner@example.com', admin: true };
 
 /** A change made to a row directly in SharePoint, outside the app and its locks (travel D-002). */
 export interface DirectLineEdit {
@@ -65,6 +67,8 @@ interface Row {
   noReceiptReason?: string;
   quotes?: string[];
   receipts?: string[];
+  /** The item's web address; filled in for a request the approver buys when not given (P-039). */
+  itemLink?: string;
 }
 
 /** A vendor total of $1,000.00, which needs approval and has a quote. */
@@ -95,12 +99,24 @@ const POSTAGE: Row = {
   receipts: ['postage.pdf']
 };
 
-const HEADER: RequestChanges = { businessPurpose: 'Lab supplies for the Phase 1 assay', department: 'R&D' };
+// The tests below are about a request the employee buys, as in the first build; the approver-buys tests say so (P-037).
+const HEADER: RequestChanges = { businessPurpose: 'Lab supplies for the Phase 1 assay', department: 'R&D', buyer: 'self' };
+
+/** A new request the employee buys (P-037): the tests of rows, files, totals and submitting are about that case. */
+async function createOwn(svc: PurchaseDataService): Promise<{ id: number }> {
+  const created = await svc.createRequest();
+  await svc.updateRequest(created.id, { buyer: 'self' });
+  return { id: created.id };
+}
 
 /** Makes a request with its header and rows, as an employee would, and returns it as saved. */
 async function fill(svc: PurchaseDataService, rows: readonly Row[], header: RequestChanges = HEADER): Promise<{ id: number; lines: PurchaseLine[] }> {
   const created = await svc.createRequest();
-  await svc.updateRequest(created.id, header);
+  // The employee buys unless a test says the approver does.
+  const asked: RequestChanges = { buyer: 'self', ...header };
+  await svc.updateRequest(created.id, asked);
+  // When the approver buys, every row needs the item's web address, or a reason there is none (P-039).
+  const needsLink = asked.buyer === 'approver';
   for (const row of rows) {
     const line = await svc.addEmptyLine(created.id);
     await svc.updateLine(line.id, {
@@ -111,7 +127,8 @@ async function fill(svc: PurchaseDataService, rows: readonly Row[], header: Requ
       amountCents: row.amountCents,
       paidBy: row.paidBy ?? 'company',
       noQuoteReason: row.noQuoteReason ?? '',
-      noReceiptReason: row.noReceiptReason ?? ''
+      noReceiptReason: row.noReceiptReason ?? '',
+      ...(row.itemLink !== undefined ? { itemLink: row.itemLink } : needsLink ? { itemLink: `https://www.example.com/${encodeURIComponent(row.vendor)}` } : {})
     });
     for (const name of row.quotes ?? []) await svc.addFileToLine(line.id, pdf(name), 'quote');
     for (const name of row.receipts ?? []) await svc.addFileToLine(line.id, pdf(name), 'receipt');
@@ -414,7 +431,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
     it('makes one row per file that passes the checks, with the kind, the fingerprint and who paid (P-021, P-023)', async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);
-      const { id } = await jane.createRequest();
+      const { id } = await createOwn(jane);
       const tooBig = new File([new Uint8Array(15 * 1024 * 1024 + 1)], 'huge.pdf', { type: 'application/pdf' });
       const added = await jane.addLinesFromFiles(
         id,
@@ -452,7 +469,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
     it("adds an empty row with the next number and the row above's way of paying", async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);
-      const { id } = await jane.createRequest();
+      const { id } = await createOwn(jane);
       const one = await jane.addEmptyLine(id);
       expect(one).toMatchObject({ rowNumber: 1, paidBy: 'company', files: [], amountCents: null });
       await jane.updateLine(one.id, { paidBy: 'employee' });
@@ -462,7 +479,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
     it('saves every field of a row, and keeps the request totals current', async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);
-      const { id } = await jane.createRequest();
+      const { id } = await createOwn(jane);
       const a = await jane.addEmptyLine(id);
       const b = await jane.addEmptyLine(id);
       const saved = await jane.updateLine(a.id, {
@@ -546,7 +563,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
     it('renumbers the rows after a deletion, keeps same-receipt pointers right, and recomputes totals', async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);
-      const { id } = await jane.createRequest();
+      const { id } = await createOwn(jane);
       const [a, b] = await jane.addLinesFromFiles(id, [pdf('a.pdf'), pdf('b.pdf')], 'receipt');
       // Row 3 uses row 2's receipt, so it holds none of its own.
       const c = await jane.addEmptyLine(id);
@@ -572,7 +589,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
     it('attaches files by kind, under names that stay unique on a row, and removes them', async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);
-      const { id } = await jane.createRequest();
+      const { id } = await createOwn(jane);
       const [line] = await jane.addLinesFromFiles(id, [pdf('receipt.pdf')], 'receipt');
       const two = await jane.addFileToLine(line.id, pdf('receipt.pdf', 'the card slip'), 'receipt');
       expect(two.files.map((f) => [f.fileName, f.kind])).toEqual([
@@ -614,7 +631,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
     it('replaces "same receipt as row N" when a receipt is attached, but not when a quote is (P-021)', async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);
-      const { id } = await jane.createRequest();
+      const { id } = await createOwn(jane);
       const [one, two] = await jane.addLinesFromFiles(id, [pdf('a.pdf'), pdf('b.pdf')], 'receipt');
       await jane.removeFileFromLine(two.id, two.files[0].id);
       await jane.updateLine(two.id, { sameReceiptAsRow: 1 });
@@ -630,7 +647,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
     it('refuses to point a row that holds a receipt of its own at another row, until that receipt is removed (travel D-038)', async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);
-      const { id } = await jane.createRequest();
+      const { id } = await createOwn(jane);
       const [, two] = await jane.addLinesFromFiles(id, [pdf('a.pdf'), pdf('b.pdf')], 'receipt');
       const refused = await refusal(jane.updateLine(two.id, { description: 'Centrifuge tubes', sameReceiptAsRow: 1 }));
       expect(refused.message).toBe(notAllowed.sharedReceiptHasOwn);
@@ -1630,6 +1647,330 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       ]);
       // An administrator asking for one request's other rows gets the owner's, not their own.
       expect((await h.as(MAX, NOW).getOwnerOtherLines(a.id)).map((o) => o.requestNumber)).toEqual(['PR-0002', 'PR-0002']);
+    });
+  });
+
+  describe(`${label}: when the approver buys (P-037, P-039, P-040)`, () => {
+    /** Jane's request the approver buys, with the item link on every row, sent with her certification. */
+    async function askedAndSent(h: Harness, rows: readonly Row[] = [ACME, NORTHWIND]) {
+      const jane = h.as(JANE, NOW);
+      const made = await fill(jane, rows, { ...HEADER, buyer: 'approver' });
+      return { ...made, submission: await jane.sendForApproval(made.id, CERTIFICATION) };
+    }
+
+    /** Asked, sent, and approved by Max, so it is Max's to buy. */
+    async function approvedForMax(h: Harness, rows: readonly Row[] = [ACME, NORTHWIND]) {
+      const made = await askedAndSent(h, rows);
+      await h.as(MAX, APPROVED_AT).approveRequest(made.id, { note: 'I will order it.', categories: {} });
+      return made;
+    }
+
+    /** Max, as the buyer, attaches a receipt to every row that has none. */
+    async function attachAll(svc: PurchaseDataService, id: number): Promise<void> {
+      for (const line of (await svc.getRequest(id)).lines) {
+        if (line.files.every((f) => f.kind !== 'receipt')) await svc.addFileToLine(line.id, pdf(`invoice-row${line.rowNumber}.pdf`), 'receipt');
+      }
+    }
+
+    it('starts with the approver as the buyer, and rows the company pays for, dated today', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const created = await jane.createRequest();
+      expect(created.buyer).toBe('approver');
+      const row = await jane.addEmptyLine(created.id);
+      expect(row).toMatchObject({ paidBy: 'company', date: '2026-10-16' });
+      // Nobody is asked who paid, and what is sent is ignored: the company pays for what the approver buys.
+      const saved = await jane.updateLine(row.id, { paidBy: 'employee', amountCents: 2500 });
+      expect(saved.paidBy).toBe('company');
+      expect((await jane.getRequest(created.id)).request).toMatchObject({ totalReimburseCents: 0, totalCompanyCents: 2500, totalRequestCents: 2500 });
+    });
+
+    it('lets the employee choose to buy it themselves, and who paid, and take every row back to the company when the approver buys again', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id } = await jane.createRequest();
+      const row = await jane.addEmptyLine(id);
+      await jane.updateLine(row.id, { amountCents: 2500 });
+      expect((await jane.updateRequest(id, { buyer: 'self' })).buyer).toBe('self');
+      expect((await jane.addEmptyLine(id)).date).toBe('');
+      await jane.updateLine(row.id, { paidBy: 'employee' });
+      expect((await jane.getRequest(id)).request).toMatchObject({ totalReimburseCents: 2500, totalCompanyCents: 0 });
+      expect((await jane.updateRequest(id, { buyer: 'approver' })).buyer).toBe('approver');
+      expect((await jane.getRequest(id)).lines.map((l) => l.paidBy)).toEqual(['company', 'company']);
+      expect((await jane.getRequest(id)).request).toMatchObject({ totalReimburseCents: 0, totalCompanyCents: 2500 });
+      // A buyer that is not one of the two changes nothing.
+      expect((await jane.updateRequest(id, { buyer: 'someone' as never })).buyer).toBe('approver');
+    });
+
+    it('sends every request to the approver, however small, and asks for the web address of each item or a reason (P-039)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id } = await fill(jane, [{ ...NORTHWIND, itemLink: '' }], { ...HEADER, buyer: 'approver' });
+      const error = await jane.sendForApproval(id, CERTIFICATION).then(
+        () => undefined,
+        (e: unknown) => e
+      );
+      expect(error).toBeInstanceOf(SubmissionBlockedError);
+      expect((error as SubmissionBlockedError).issues.map((i) => [i.field, i.message])).toEqual([['link', messages.linkOrReason]]);
+      const [line] = (await jane.getRequest(id)).lines;
+      await jane.updateLine(line.id, { noLinkReason: 'Not sold online' });
+      const submission = await jane.sendForApproval(id, CERTIFICATION);
+      expect(submission).toMatchObject({ type: 'approval', certificationText: CERTIFICATION, totalReimburseCents: 0, totalCompanyCents: 8645 });
+      expect((await jane.getRequest(id)).request).toMatchObject({ status: 'Awaiting approval', approvalRounds: 1, boughtBeforeApproval: false });
+    });
+
+    it('refuses an address that is not a web address, and keeps a long one whole', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id, lines } = await fill(jane, [NORTHWIND], { ...HEADER, buyer: 'approver' });
+      await jane.updateLine(lines[0].id, { itemLink: 'javascript:alert(1)' });
+      await expect(jane.sendForApproval(id, CERTIFICATION)).rejects.toMatchObject({
+        issues: [expect.objectContaining({ field: 'link', message: messages.linkNotAddress })]
+      });
+      const long = `https://www.example.com/${'a'.repeat(1500)}`;
+      expect((await jane.updateLine(lines[0].id, { itemLink: long })).itemLink).toBe(long);
+      expect((await jane.getRequest(id)).lines[0].itemLink).toBe(long);
+      // One past the longest allowed is kept, so the check can refuse it, rather than cut to an address that opens another page.
+      const tooLong = `https://www.example.com/${'a'.repeat(2100)}`;
+      expect((await jane.updateLine(lines[0].id, { itemLink: tooLong })).itemLink).toHaveLength(2001);
+      await expect(jane.sendForApproval(id, CERTIFICATION)).rejects.toMatchObject({
+        issues: [expect.objectContaining({ field: 'link', message: messages.linkTooLong(2000) })]
+      });
+    });
+
+    it('refuses to send without the certification, or with another sentence, and sends nothing (P-037)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id } = await fill(jane, [NORTHWIND], { ...HEADER, buyer: 'approver' });
+      await expect(jane.sendForApproval(id)).rejects.toThrow(messages.certificationRequiredToSend);
+      await expect(jane.sendForApproval(id, 'I agree.')).rejects.toThrow(messages.certificationRequiredToSend);
+      expect((await jane.getRequest(id)).request.status).toBe('Draft');
+      expect(await jane.listSubmissionsForRequest(id)).toEqual([]);
+    });
+
+    it('records the certification on the approval request, and the rows and vendor totals as sent', async () => {
+      const h = await makeHarness();
+      const { id, submission } = await askedAndSent(h);
+      expect(submission).toMatchObject({ type: 'approval', certificationText: CERTIFICATION, submitterEmail: JANE.email });
+      expect(submission.emailSummary).toContain('The approver buys this request.');
+      const { request } = await h.as(MAX, NOW).getRequest(id);
+      expect(request.approval.sent.map((g) => [g.vendor, g.cents, g.bought])).toEqual([
+        ['Acme Lab Supply', 100000, false],
+        ['Northwind Office Supply', 8645, false]
+      ]);
+      expect(request.approval.rows?.map((r) => [r.rowNumber, r.vendor, r.amountCents, r.category])).toEqual([
+        [1, 'Acme Lab Supply', 100000, 'R&D Materials & Supplies'],
+        [2, 'Northwind Office Supply', 8645, 'Office Supplies']
+      ]);
+    });
+
+    it('does not flag a purchase as bought before approval, whatever the date or receipt', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id } = await fill(jane, [{ ...POSTAGE, date: '2026-09-01' }], { ...HEADER, buyer: 'approver' });
+      const submission = await jane.sendForApproval(id, CERTIFICATION);
+      expect(submission.boughtBeforeApproval).toBe(false);
+      expect((await jane.getRequest(id)).request).toMatchObject({ boughtBeforeApproval: false });
+    });
+
+    it('is not submitted by the employee, who has nothing to submit', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id } = await fill(jane, [POSTAGE], { ...HEADER, buyer: 'approver' });
+      expect((await refusal(jane.submitRequest(id, CERTIFICATION))).message).toBe(notAllowed.approverBuys);
+    });
+
+    it('goes to the approver as Awaiting approval, which only the approver can approve, with every vendor total approved', async () => {
+      const h = await makeHarness();
+      const { id } = await askedAndSent(h);
+      const max = h.as(MAX, APPROVED_AT);
+      const approved = await max.approveRequest(id, { note: 'I will order it.', categories: {} });
+      expect(approved).toMatchObject({ status: 'Approved', approvedBy: 'Max Wamsley', approvedByEmail: MAX.email, approvalNote: 'I will order it.' });
+      expect(approved.approval.approved.map((g) => [g.vendor, g.cents, g.bought])).toEqual([
+        ['Acme Lab Supply', 100000, false],
+        ['Northwind Office Supply', 8645, false]
+      ]);
+      expect(approved.approval.rows).toHaveLength(2);
+      // Approving confirms every row's category.
+      expect((await max.getRequest(id)).lines.map((l) => l.categoryConfirmedBy)).toEqual(['Max Wamsley', 'Max Wamsley']);
+    });
+
+    it("is locked to the employee once approved: it is the approver's to change", async () => {
+      const h = await makeHarness();
+      const { id, lines } = await approvedForMax(h);
+      const jane = h.as(JANE, NOW);
+      expect((await refusal(jane.updateLine(lines[0].id, { vendor: 'Changed' }))).message).toBe(notAllowed.locked);
+      expect((await refusal(jane.addEmptyLine(id))).message).toBe(notAllowed.locked);
+      expect((await refusal(jane.addFileToLine(lines[0].id, pdf('r.pdf'), 'receipt'))).message).toBe(notAllowed.locked);
+      expect((await refusal(jane.deleteLine(lines[0].id))).message).toBe(notAllowed.locked);
+      expect((await refusal(jane.updateRequest(id, { department: 'Changed' }))).message).toBe(notAllowed.locked);
+      expect((await refusal(jane.submitRequest(id, CERTIFICATION))).message).toBe(notAllowed.locked);
+      // She can still read it.
+      expect((await jane.getRequest(id)).request.status).toBe('Approved');
+    });
+
+    it('lets only the approver who approved it change it, attach files to it or mark it purchased', async () => {
+      const h = await makeHarness();
+      const { id, lines } = await approvedForMax(h);
+      const olive = h.as(OLIVE, APPROVED_AT);
+      expect((await refusal(olive.updateLine(lines[0].id, { vendor: 'Changed' }))).message).toBe(notAllowed.buyerOnly);
+      expect((await refusal(olive.addEmptyLine(id))).message).toBe(notAllowed.buyerOnly);
+      expect((await refusal(olive.deleteLine(lines[0].id))).message).toBe(notAllowed.buyerOnly);
+      expect((await refusal(olive.addFileToLine(lines[0].id, pdf('r.pdf'), 'receipt'))).message).toBe(notAllowed.buyerOnly);
+      expect((await refusal(olive.markPurchased(id))).message).toBe(notAllowed.buyerOnly);
+      expect((await refusal(olive.returnRequest(id, 'No'))).message).toBe(notAllowed.buyerOnly);
+      // Another employee cannot reach it at all.
+      expect((await refusal(h.as(SAM, NOW).updateLine(lines[0].id, { vendor: 'Changed' }))).message).toBe(messages.spNotFound);
+      expect((await h.as(MAX, APPROVED_AT).updateLine(lines[0].id, { vendor: 'Acme Lab Supply Inc.' })).vendor).toBe('Acme Lab Supply Inc.');
+    });
+
+    it('is refused to anyone but an administrator, and only while it is approved and the approver buys it', async () => {
+      const h = await makeHarness();
+      const { id } = await askedAndSent(h);
+      expect((await refusal(h.as(JANE, NOW).markPurchased(id))).message).toBe(notAllowed.administratorsOnly);
+      expect((await refusal(h.as(MAX, APPROVED_AT).markPurchased(id))).message).toBe(notAllowed.buyWhen);
+      const own = await fill(h.as(JANE, NOW), [POSTAGE]);
+      expect((await refusal(h.as(MAX, APPROVED_AT).markPurchased(own.id))).message).toBe(notAllowed.employeeBuys);
+    });
+
+    it('lets the approver correct the amounts, change and add rows, attach the receipt and mark it purchased', async () => {
+      const h = await makeHarness();
+      const { id, lines } = await approvedForMax(h);
+      const max = h.as(MAX, SUBMITTED_AT);
+      // Max paid far more than was approved, with no new approval (the employee's 10% rule does not apply to him).
+      await max.updateLine(lines[0].id, { amountCents: 150000, vendor: 'Acme Lab Supply Inc.', description: 'Pipette tips, shipped' });
+      // A category he chooses is confirmed by him, not left as Jane's suggestion.
+      const changed = await max.updateLine(lines[1].id, { category: 'shipping' });
+      expect(changed).toMatchObject({ category: 'shipping', categoryConfirmedBy: 'Max Wamsley' });
+      const extra = await max.addEmptyLine(id);
+      expect(extra).toMatchObject({ rowNumber: 3, paidBy: 'company', date: '2026-10-18' });
+      await max.updateLine(extra.id, { vendor: 'Courier Co', description: 'Courier', category: 'shipping', amountCents: 1500 });
+      await attachAll(max, id);
+      const submission = await max.markPurchased(id);
+      expect(submission).toMatchObject({
+        type: 'package',
+        submissionNumber: 1,
+        submitterName: 'Max Wamsley',
+        submitterEmail: MAX.email,
+        certificationText: CERTIFICATION,
+        approvedBy: 'Max Wamsley',
+        totalReimburseCents: 0,
+        totalCompanyCents: 150000 + 8645 + 1500,
+        boughtBeforeApproval: false
+      });
+      expect(submission.emailSubject).toBe('Purchase request bought: Jane Doe, Lab supplies for the Phase 1 assay (PR-0001)');
+      expect(submission.emailSummary).toContain('Bought by the approver: Max Wamsley (max.wamsley@example.com)');
+      expect(submission.emailSummary).toContain('Certified by Jane Doe (jane.doe@example.com) when the request was sent, ');
+      const request = (await max.getRequest(id)).request;
+      expect(request).toMatchObject({ status: 'Submitted', submissionCount: 1 });
+      // What Jane sent is kept as it was.
+      expect(request.approval.rows?.map((r) => [r.vendor, r.amountCents])).toEqual([
+        ['Acme Lab Supply', 100000],
+        ['Northwind Office Supply', 8645]
+      ]);
+      const csv = await max.getSubmissionCsv(submission.id);
+      expect(csv).toContain('Approver,Company,No');
+      expect(csv).toContain('Jane Doe (jane.doe@example.com)');
+      expect(csv).toContain('https://www.example.com/');
+    });
+
+    it('checks the receipts when the approver marks it purchased, and writes nothing if something is missing', async () => {
+      const h = await makeHarness();
+      const { id } = await approvedForMax(h);
+      const max = h.as(MAX, SUBMITTED_AT);
+      const error = await max.markPurchased(id).then(
+        () => undefined,
+        (e: unknown) => e
+      );
+      expect(error).toBeInstanceOf(SubmissionBlockedError);
+      expect((error as SubmissionBlockedError).issues.map((i) => i.field)).toEqual(['receipt', 'receipt']);
+      expect((await max.getRequest(id)).request.status).toBe('Approved');
+      expect((await max.listSubmissionsForRequest(id)).filter((s) => s.type === 'package')).toEqual([]);
+    });
+
+    it('lets the approver return an approved request to the employee, after deleting the rows the approver added', async () => {
+      const h = await makeHarness();
+      const { id } = await approvedForMax(h);
+      const max = h.as(MAX, SUBMITTED_AT);
+      const extra = await max.addEmptyLine(id);
+      expect((await refusal(max.returnRequest(id, 'The item is out of stock.'))).message).toBe(notAllowed.addedRowsFirst('row 3'));
+      await max.deleteLine(extra.id);
+      const returned = await max.returnRequest(id, 'The item is out of stock. Please choose another.');
+      expect(returned).toMatchObject({
+        status: 'Returned',
+        returnStage: 'approval',
+        returnNote: 'The item is out of stock. Please choose another.',
+        approvedBy: ''
+      });
+      expect(returned.approval.approved).toEqual([]);
+      // The employee can change it again and send it again, certifying again; the approver approves the second round.
+      const jane = h.as(JANE, SUBMITTED_AT);
+      const rows = (await jane.getRequest(id)).lines;
+      await jane.updateLine(rows[0].id, { vendor: 'Thorlabs' });
+      expect(await jane.sendForApproval(id, CERTIFICATION)).toMatchObject({ submissionNumber: 2, type: 'approval' });
+      expect((await max.approveRequest(id, { note: '', categories: {} })).status).toBe('Approved');
+    });
+
+    it('refuses to return an approved request that the employee buys, or one that is not approved, as the approver (P-037)', async () => {
+      const h = await makeHarness();
+      const own = await approvedAndReady(h);
+      // Returning an approved request is only for the approver who buys it.
+      expect((await refusal(h.as(MAX, APPROVED_AT).returnRequest(own.id, 'No'))).message).toBe(notAllowed.returnWhen);
+      const draft = await fill(h.as(JANE, NOW), [POSTAGE], { ...HEADER, buyer: 'approver' });
+      expect((await refusal(h.as(MAX, APPROVED_AT).returnRequest(draft.id, 'No'))).message).toBe(notAllowed.returnWhen);
+    });
+
+    it('sends a request the administrator returns at processing back to the approver, who buys it again as R2', async () => {
+      const h = await makeHarness();
+      const { id } = await approvedForMax(h);
+      const max = h.as(MAX, SUBMITTED_AT);
+      await attachAll(max, id);
+      const first = await max.markPurchased(id);
+      const olive = h.as(OLIVE, new Date(2026, 9, 19, 9, 0));
+      const returned = await olive.returnRequest(id, 'Row 2: please attach the itemized invoice.');
+      // It goes back to the approver, as Approved, not to the employee, who cannot fix an approver's purchase.
+      expect(returned).toMatchObject({
+        status: 'Approved',
+        returnStage: 'processing',
+        returnNote: 'Row 2: please attach the itemized invoice.',
+        approvedBy: 'Max Wamsley'
+      });
+      expect(returned.approval.approved).toHaveLength(2);
+      const jane = h.as(JANE, NOW);
+      expect((await refusal(jane.updateLine((await jane.getRequest(id)).lines[0].id, { vendor: 'x' }))).message).toBe(notAllowed.locked);
+      const again = await h.as(MAX, new Date(2026, 9, 19, 10, 0)).markPurchased(id);
+      expect(again).toMatchObject({ submissionNumber: 2, previousFolderName: first.folderName });
+      expect(again.folderName.endsWith('_R2')).toBe(true);
+      expect((await max.getRequest(id)).request).toMatchObject({ status: 'Submitted', submissionCount: 2, returnNote: '', returnStage: '' });
+    });
+
+    it('will not mark a row processed while its account depends on a decision nobody has made (P-038)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const made = await fill(jane, [
+        { ...POSTAGE, category: 'equipment' },
+        { ...POSTAGE, vendor: 'Other Vendor', category: 'other' }
+      ]);
+      const other = (await jane.getRequest(made.id)).lines[1];
+      await jane.updateLine(other.id, { categoryOther: 'Lab safety audit' });
+      await jane.submitRequest(made.id, CERTIFICATION);
+      const max = h.as(MAX, APPROVED_AT);
+      expect((await refusal(max.markProcessed(made.id))).message).toBe(notAllowed.reviewFirst('rows 1 and 2'));
+      // Confirming one is not enough, and confirming both is.
+      await max.confirmCategories(made.id, {});
+      const lines = (await max.getRequest(made.id)).lines;
+      expect(lines.map((l) => l.categoryConfirmedBy)).toEqual(['Max Wamsley', 'Max Wamsley']);
+      expect((await max.markProcessed(made.id)).status).toBe('Processed');
+    });
+
+    it('does not hold up a row that is not for review, or a request the approver approved and confirmed', async () => {
+      const h = await makeHarness();
+      const { id } = await approvedForMax(h, [{ ...POSTAGE, category: 'equipment' }]);
+      const max = h.as(MAX, SUBMITTED_AT);
+      await attachAll(max, id);
+      await max.markPurchased(id);
+      // Approving confirmed the category (P-024), so the approver's own decision is on record.
+      expect((await max.markProcessed(id)).status).toBe('Processed');
     });
   });
 }

@@ -5,41 +5,47 @@
 // Owners approve and process, and packaging and the approval email are
 // simulated.
 
-import { toLocalDateTime } from '../../domain/dates';
+import { toIsoDate, toLocalDateTime } from '../../domain/dates';
 import { defaultPaidBy, latestDepartment } from '../../domain/defaults';
 import { LineRef } from '../../domain/duplicates';
 import { messages } from '../../domain/messages';
 import { cleanFileName, requestNumber } from '../../domain/naming';
-import { EMPTY_APPROVAL, groupsForApproved, matchesWhatWasSent } from '../../domain/purchaseRules';
+import { DEFAULT_BUYER, EMPTY_APPROVAL, findBuyer, groupsForApproved, matchesWhatWasSent } from '../../domain/purchaseRules';
 import { checkReceiptFile } from '../../domain/receipts';
-import { isEditable } from '../../domain/statuses';
+import { isEditable, mayBuy } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
 import { AttachedFile, CurrentUser, FileKind, PurchaseLine, PurchaseRequest, Submission } from '../../domain/types';
 import { FlowConfig, FlowMode, LIVE_DESTINATION, TEST_FOLDERS } from '../../export/flowPackage';
-import { prepareApprovalRequest, prepareSubmission } from '../../export/submission';
+import { PreparedSubmission, prepareApprovalRequest, prepareSubmission } from '../../export/submission';
 import { fingerprintFile, uniqueName } from '../files';
 import { ApproveOptions, CategoryChoice, LineChanges, PurchaseDataService, RequestChanges, RequestWithLines } from '../PurchaseDataService';
 import { ListCheck, SetupStatus } from '../setup';
 import { contentTypeFor } from '../sharepoint/mapping';
 import { LISTS } from '../sharepoint/schema';
 import {
+  LineEditor,
   NotAllowedError,
   applyLineChanges,
   applyRequestChanges,
   approvalWhenApproved,
   approvalWhenReturned,
   approvalWhenSent,
+  buyRefusal,
   canConfirmCategories,
   categoryUpdates,
   changesAfterDelete,
+  employeeCertification,
   holdsApproval,
   nextRowNumber,
   notAllowed,
   previousFolderName,
   retryRefusal,
   returnStageFor,
+  rowsPhrase,
+  rowsToReview,
   sortSubmissionsForRequest,
-  staleUploading
+  staleUploading,
+  statusAfterReturn
 } from '../sharepoint/serviceRules';
 import { SAMPLE_USERS, SampleStore, finishPendingWork, packagedFolderLink } from './sampleData';
 
@@ -154,6 +160,7 @@ export class MockDataService implements PurchaseDataService {
       businessPurpose: '',
       department: latestDepartment(this.myRequests()),
       projectCode: '',
+      buyer: DEFAULT_BUYER,
       status: 'Draft',
       returnNote: '',
       returnStage: '',
@@ -184,7 +191,13 @@ export class MockDataService implements PurchaseDataService {
   async updateRequest(requestId: number, changes: RequestChanges): Promise<PurchaseRequest> {
     await this.pause();
     const request = this.requestForEdit(requestId);
+    const buyerChanged = changes.buyer !== undefined && !!findBuyer(changes.buyer) && changes.buyer !== request.buyer;
     Object.assign(request, applyRequestChanges(request, changes), { lastChanged: this.stamp() });
+    if (buyerChanged) {
+      // The company pays for everything the approver buys (P-037), so every row says so, and the totals follow.
+      if (request.buyer === 'approver') for (const line of this.linesOf(requestId)) line.paidBy = 'company';
+      this.touch(requestId);
+    }
     this.changed();
     return clone(request);
   }
@@ -201,12 +214,13 @@ export class MockDataService implements PurchaseDataService {
   }
 
   async addLinesFromFiles(requestId: number, files: File[], kind: FileKind): Promise<PurchaseLine[]> {
-    this.requestForEdit(requestId);
+    const { editor } = this.requestForChange(requestId);
     const added: PurchaseLine[] = [];
     for (const f of files) {
       if (!checkReceiptFile(f.name, f.size).ok) continue; // the screen reports refused files
       const line = this.newLine(requestId, { files: [await this.toAttachment(f, kind, [])] });
       this.store.lines.push(line);
+      this.markAddedBy(line, editor);
       added.push(line);
     }
     this.touch(requestId);
@@ -216,9 +230,10 @@ export class MockDataService implements PurchaseDataService {
 
   async addEmptyLine(requestId: number): Promise<PurchaseLine> {
     await this.pause();
-    this.requestForEdit(requestId);
+    const { editor } = this.requestForChange(requestId);
     const line = this.newLine(requestId, {});
     this.store.lines.push(line);
+    this.markAddedBy(line, editor);
     this.touch(requestId);
     this.changed();
     return clone(line);
@@ -226,8 +241,8 @@ export class MockDataService implements PurchaseDataService {
 
   async updateLine(lineId: string, changes: LineChanges): Promise<PurchaseLine> {
     await this.pause();
-    const line = this.lineForEdit(lineId);
-    Object.assign(line, applyLineChanges(line, changes).line);
+    const { line, editor } = this.lineForChange(lineId);
+    Object.assign(line, applyLineChanges(line, changes, editor).line);
     this.touch(line.requestId);
     this.changed();
     return clone(line);
@@ -235,8 +250,9 @@ export class MockDataService implements PurchaseDataService {
 
   async deleteLine(lineId: string): Promise<void> {
     await this.pause();
-    const line = this.lineForEdit(lineId);
+    const { line } = this.lineForChange(lineId);
     this.store.lines = this.store.lines.filter((l) => l.id !== lineId);
+    if (this.store.approverLineIds) this.store.approverLineIds = this.store.approverLineIds.filter((id) => id !== lineId);
     // Renumber the rows after it, and keep "same receipt as row" pointers correct.
     const remaining = this.linesOf(line.requestId);
     for (const [id, change] of changesAfterDelete(remaining, line.rowNumber)) Object.assign(remaining.find((l) => l.id === id)!, change);
@@ -245,7 +261,7 @@ export class MockDataService implements PurchaseDataService {
   }
 
   async addFileToLine(lineId: string, f: File, kind: FileKind): Promise<PurchaseLine> {
-    const line = this.lineForEdit(lineId);
+    const { line } = this.lineForChange(lineId);
     if (!checkReceiptFile(f.name, f.size).ok) return clone(line);
     line.files.push(await this.toAttachment(f, kind, line.files));
     // A receipt of its own replaces "same receipt as row N"; a quote never does (P-021).
@@ -257,7 +273,7 @@ export class MockDataService implements PurchaseDataService {
 
   async removeFileFromLine(lineId: string, fileId: string): Promise<PurchaseLine> {
     await this.pause();
-    const line = this.lineForEdit(lineId);
+    const { line } = this.lineForChange(lineId);
     line.files = line.files.filter((f) => f.id !== fileId);
     this.touch(line.requestId);
     this.changed();
@@ -275,20 +291,23 @@ export class MockDataService implements PurchaseDataService {
     );
   }
 
-  async sendForApproval(requestId: number): Promise<Submission> {
+  async sendForApproval(requestId: number, certificationText?: string): Promise<Submission> {
     await this.pause();
     const request = this.requestForEdit(requestId);
     const lines = this.linesOf(requestId);
     const round = request.approvalRounds + 1;
     // An earlier attempt that stopped part-way never reached the flow; remove it.
     for (const stale of staleUploading(this.submissionsOf(requestId), 'approval', round)) this.removeSubmission(stale.id);
+    // The employee certifies now when the approver buys, because they will not submit anything (P-037).
+    const certification = request.buyer === 'approver' ? { text: certificationText ?? '', email: this.email } : undefined;
     const prepared = prepareApprovalRequest(
       request,
       lines,
       await this.getOwnerOtherLines(requestId),
       this.now(),
       { name: this.user.displayName, email: this.email },
-      round
+      round,
+      certification
     );
 
     // 1. The approval request, marked Uploading so the flow ignores it for now.
@@ -311,7 +330,7 @@ export class MockDataService implements PurchaseDataService {
       approvalRounds: round,
       sentForApprovalOn: prepared.sentOn,
       boughtBeforeApproval: prepared.boughtBefore,
-      approval: approvalWhenSent(request.approval, prepared.sentGroups),
+      approval: approvalWhenSent(request.approval, prepared.sentGroups, prepared.sentRows),
       returnNote: '',
       lastChanged: prepared.sentOn
     });
@@ -328,6 +347,8 @@ export class MockDataService implements PurchaseDataService {
   async submitRequest(requestId: number, certificationText: string): Promise<Submission> {
     await this.pause();
     const request = this.requestForEdit(requestId);
+    // The approver buys it and marks it purchased; there is nothing for the employee to submit (P-037).
+    if (request.buyer === 'approver') throw new NotAllowedError(notAllowed.approverBuys);
     const lines = this.linesOf(requestId);
     const number = request.submissionCount + 1;
     // An earlier attempt that stopped part-way never reached the flow; remove it.
@@ -340,7 +361,34 @@ export class MockDataService implements PurchaseDataService {
       previousFolderName(this.submissionsOf(requestId), number),
       { text: certificationText, email: this.email }
     );
+    return this.createPackage(request, prepared);
+  }
 
+  async markPurchased(requestId: number): Promise<Submission> {
+    this.requireAdmin();
+    await this.pause();
+    const request = this.mustFindRequest(requestId);
+    const refusal = buyRefusal(request, this.user);
+    if (refusal) throw new NotAllowedError(refusal);
+    const lines = this.linesOf(requestId);
+    // What the employee certified when they sent it (P-037): kept on the newest approval request.
+    const certification = employeeCertification(this.submissionsOf(requestId), request);
+    const number = request.submissionCount + 1;
+    for (const stale of staleUploading(this.submissionsOf(requestId), 'package', number)) this.removeSubmission(stale.id);
+    const prepared = prepareSubmission(
+      request,
+      lines,
+      await this.getOwnerOtherLines(requestId),
+      this.now(),
+      previousFolderName(this.submissionsOf(requestId), number),
+      certification,
+      { name: this.user.displayName, email: this.email }
+    );
+    return this.createPackage(request, prepared);
+  }
+
+  /** Creates a processing package from what was prepared, locks the request and hands the package to the flow. */
+  private createPackage(request: PurchaseRequest, prepared: PreparedSubmission): Submission {
     // 1. The submission, marked Uploading so the flow ignores it for now, with its files.
     const submission: Submission = {
       ...prepared.submission,
@@ -357,7 +405,7 @@ export class MockDataService implements PurchaseDataService {
     const clearReturnStage = request.returnStage !== '';
     this.update(request, {
       status: 'Submitted',
-      submissionCount: number,
+      submissionCount: submission.submissionNumber,
       submittedOn: submission.submittedOn,
       returnNote: '',
       lastChanged: submission.submittedOn
@@ -413,7 +461,7 @@ export class MockDataService implements PurchaseDataService {
     if (request.status !== 'Awaiting approval') throw new NotAllowedError(notAllowed.approveWhen);
     // The approver approves what was sent. A request changed since (an employee can edit their
     // own items directly in SharePoint, travel D-002) is refused before anything is written (P-019).
-    if (!matchesWhatWasSent(this.linesOf(requestId), request.approval.sent)) throw new NotAllowedError(notAllowed.changedSinceSent);
+    if (!matchesWhatWasSent(this.linesOf(requestId), request.approval.sent, request.buyer)) throw new NotAllowedError(notAllowed.changedSinceSent);
     // Approving confirms every row's category as shown, with the changes given.
     const lines = this.confirmCategoriesOn(requestId, options.categories);
     const at = toLocalDateTime(this.now());
@@ -421,7 +469,7 @@ export class MockDataService implements PurchaseDataService {
     const clearReturnStage = request.returnStage !== '';
     this.update(request, {
       status: 'Approved',
-      approval: approvalWhenApproved(request.approval, groupsForApproved(lines, request.approval.sent)),
+      approval: approvalWhenApproved(request.approval, groupsForApproved(lines, request.approval.sent, request.buyer)),
       approvedOn: at,
       approvedBy: this.user.displayName,
       approvedByEmail: this.email,
@@ -438,11 +486,19 @@ export class MockDataService implements PurchaseDataService {
     this.requireAdmin();
     await this.pause();
     const request = this.mustFindRequest(requestId);
-    const stage = returnStageFor(request.status);
+    const stage = returnStageFor(request.status, request.buyer);
     if (!stage) throw new NotAllowedError(notAllowed.returnWhen);
+    if (request.status === 'Approved') {
+      // The approver who was to buy it may send it back to the employee instead (P-037). Rows the approver
+      // added would stop counting once the approval is taken back, so they must be deleted first.
+      const refusal = buyRefusal(request, this.user);
+      if (refusal) throw new NotAllowedError(refusal);
+      const added = this.linesOf(requestId).filter((l) => (this.store.approverLineIds ?? []).includes(l.id));
+      if (added.length > 0) throw new NotAllowedError(notAllowed.addedRowsFirst(rowsPhrase(added)));
+    }
     // As on SharePoint, the approver, time and note are cleared only if the request holds an approval.
     const clearApproval = holdsApproval(request);
-    this.update(request, { status: 'Returned', returnNote: note, returnStage: stage, lastChanged: this.stamp() });
+    this.update(request, { status: statusAfterReturn(stage, request.buyer), returnNote: note, returnStage: stage, lastChanged: this.stamp() });
     // A return at the approval step takes the approval back, keeping the earlier ones; one at processing keeps it (P-027).
     if (stage === 'approval') {
       this.update(request, { approval: approvalWhenReturned(request.approval) });
@@ -467,6 +523,9 @@ export class MockDataService implements PurchaseDataService {
     await this.pause();
     const request = this.mustFindRequest(requestId);
     if (request.status !== 'Submitted') throw new NotAllowedError(notAllowed.processWhen);
+    // A row whose account depends on a decision (Equipment, Other) must be confirmed first (P-038).
+    const review = rowsToReview(this.linesOf(requestId));
+    if (review.length > 0) throw new NotAllowedError(notAllowed.reviewFirst(rowsPhrase(review)));
     request.status = 'Processed';
     request.processedOn = this.stamp();
     request.processedBy = this.user.displayName;
@@ -563,20 +622,24 @@ export class MockDataService implements PurchaseDataService {
   private newLine(requestId: number, fields: Partial<PurchaseLine>): PurchaseLine {
     idCounter += 1;
     const existing = this.linesOf(requestId);
+    // When the approver buys, the company pays, and the date starts as today, which the approver sets right when buying (P-037).
+    const approverBuys = this.mustFindRequest(requestId).buyer === 'approver';
     return {
       id: `line-${Date.now()}-${idCounter}`,
       requestId,
       rowNumber: nextRowNumber(existing),
-      date: '',
+      date: approverBuys ? toIsoDate(this.now()) : '',
       vendor: '',
       description: '',
       category: '',
       categoryOther: '',
       categoryConfirmedBy: '',
       amountCents: null,
-      paidBy: defaultPaidBy(existing),
+      paidBy: approverBuys ? 'company' : defaultPaidBy(existing),
       noQuoteReason: '',
       noReceiptReason: '',
+      itemLink: '',
+      noLinkReason: '',
       sameReceiptAsRow: null,
       files: [],
       suggested: [],
@@ -605,7 +668,7 @@ export class MockDataService implements PurchaseDataService {
   private touch(requestId: number): void {
     const request = this.store.requests.find((r) => r.id === requestId);
     if (!request) return;
-    const totals = computeTotals(this.linesOf(requestId));
+    const totals = computeTotals(this.linesOf(requestId), request.buyer);
     request.totalReimburseCents = totals.reimburseCents;
     request.totalCompanyCents = totals.companyCents;
     request.totalRequestCents = totals.requestCents;
@@ -638,19 +701,40 @@ export class MockDataService implements PurchaseDataService {
     return request;
   }
 
-  /** A request the signed-in employee may change: their own, and not locked (P-027). */
+  /** A request the signed-in employee may change: their own, and not locked (P-027). Not the approver's buying (`requestForChange`). */
   private requestForEdit(requestId: number): PurchaseRequest {
     const request = this.findRequestForRead(requestId);
     if (request.ownerEmail.toLowerCase() !== this.email) throw new NotAllowedError(notAllowed.notYours);
-    if (!isEditable(request.status)) throw new NotAllowedError(notAllowed.locked);
+    if (!isEditable(request.status, request.buyer)) throw new NotAllowedError(notAllowed.locked);
     return request;
   }
 
-  private lineForEdit(lineId: string): PurchaseLine {
+  /**
+   * A request whose rows and files the signed-in person may change: the approver
+   * who approved a request the approver buys, while it is Approved (P-037,
+   * P-040), or the owner as in `requestForEdit`. A category the approver chooses
+   * is confirmed by them.
+   */
+  private requestForChange(requestId: number): { request: PurchaseRequest; editor: LineEditor } {
+    const request = this.findRequestForRead(requestId);
+    if (mayBuy(request, this.user)) return { request, editor: { buyer: 'approver', approverName: this.user.displayName } };
+    if (request.ownerEmail.toLowerCase() !== this.email) {
+      throw new NotAllowedError(this.user.isAdministrator && request.buyer === 'approver' ? notAllowed.buyerOnly : notAllowed.notYours);
+    }
+    if (!isEditable(request.status, request.buyer)) throw new NotAllowedError(notAllowed.locked);
+    return { request, editor: { buyer: request.buyer } };
+  }
+
+  private lineForChange(lineId: string): { line: PurchaseLine; request: PurchaseRequest; editor: LineEditor } {
     const line = this.store.lines.find((l) => l.id === lineId);
     if (!line) throw new NotAllowedError(messages.spNotFound);
-    this.requestForEdit(line.requestId);
-    return line;
+    return { line, ...this.requestForChange(line.requestId) };
+  }
+
+  /** Remembers that the approver added this row, because it is not the employee's (P-037). */
+  private markAddedBy(line: PurchaseLine, editor: LineEditor): void {
+    if (!editor.approverName) return;
+    this.store.approverLineIds = [...(this.store.approverLineIds ?? []), line.id];
   }
 
   private requireAdmin(): void {

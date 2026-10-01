@@ -1,15 +1,17 @@
 // Everything the app prepares when a request is sent for approval or submitted
 // (strategy section 5): the folder name, the CSV, the file copies to attach,
-// the email text and the frozen copy of the request details and totals.
+// the email text and the frozen copy of the request details and totals. When
+// the approver buys (P-037), the employee certifies when sending the request,
+// and the approver's "Mark purchased" prepares the same package as a submit.
 
 import { dateRange, dateRangeText, toIsoDate, toLocalDateTime } from '../domain/dates';
 import { LineRef } from '../domain/duplicates';
 import { messages } from '../domain/messages';
 import { csvFileName, folderName, packageFiles, PackageFile } from '../domain/naming';
 import { hasReceipt, quoteFiles } from '../domain/receipts';
-import { CERTIFICATION, anyBoughtBefore, mustSendForApproval } from '../domain/purchaseRules';
+import { CERTIFICATION, anyBoughtBefore, mustSendForApproval, sentRowsOf } from '../domain/purchaseRules';
 import { computeTotals } from '../domain/totals';
-import { ApprovalGroup, PurchaseLine, PurchaseRequest, Submission } from '../domain/types';
+import { ApprovalGroup, PurchaseLine, PurchaseRequest, SentRow, Submission } from '../domain/types';
 import { Issue, approvalGroupsToSend, approvalStateOf, blockingIssues, validateRequest } from '../domain/validation';
 import { buildPurchasesCsv } from './csv';
 import { approvalEmailSubject, buildApprovalEmailSummary, buildSubmissionEmailSummary, submissionEmailSubject } from './email';
@@ -25,11 +27,24 @@ export interface PreparedSubmission {
   warnings: Issue[];
 }
 
-/** What the employee confirmed at Submit (travel D-064). */
+/**
+ * What the employee confirmed (travel D-064): at Submit when the employee buys,
+ * when sending the request to the approver when the approver buys (P-037).
+ */
 export interface Certification {
   /** The sentence shown with the tick box; must be the current wording. */
   text: string;
   /** The signed-in account that ticked it. */
+  email: string;
+  /** Who ticked it; the request's owner when absent. */
+  name?: string;
+  /** When it was ticked, "YYYY-MM-DD HH:MM"; the time of the submission when absent. */
+  on?: string;
+}
+
+/** Who submits the package: the request's owner when the employee buys, the approver who bought it otherwise (P-037). */
+export interface Submitter {
+  name: string;
   email: string;
 }
 
@@ -57,7 +72,7 @@ function emptySubmission(
   | 'totalCompanyCents'
   | 'totalRequestCents'
 > {
-  const totals = computeTotals(lines);
+  const totals = computeTotals(lines, request.buyer);
   return {
     requestId: request.id,
     requestNumber: request.requestNumber,
@@ -73,7 +88,10 @@ function emptySubmission(
 
 /**
  * The processing package for a request that needs no approval, or is
- * approved. Refuses while approval is still to come (P-006).
+ * approved. Refuses while approval is still to come (P-006). When the approver
+ * buys, `submitter` is the approver marking it purchased and `certification` is
+ * what the employee ticked when sending it (P-037); without a submitter the
+ * employee submits, as when the employee buys.
  */
 export function prepareSubmission(
   request: PurchaseRequest,
@@ -81,9 +99,11 @@ export function prepareSubmission(
   otherLines: readonly LineRef[],
   now: Date,
   previousFolderName: string,
-  certification: Certification
+  certification: Certification,
+  submitter?: Submitter
 ): PreparedSubmission {
   if (certification.text !== CERTIFICATION || !certification.email) throw new Error(messages.certificationRequired);
+  if (request.buyer === 'approver' && !submitter) throw new Error(messages.approverBuysNotSubmitted);
   const state = approvalStateOf(request, lines);
   if (mustSendForApproval(state) || state === 'pending') throw new ApprovalRequiredError(messages.approvalRequiredToSubmit);
   const issues = validateRequest(request, lines, otherLines, toIsoDate(now));
@@ -93,7 +113,11 @@ export function prepareSubmission(
 
   const submissionNumber = request.submissionCount + 1;
   const submittedOn = toLocalDateTime(now);
-  const totals = computeTotals(lines);
+  const totals = computeTotals(lines, request.buyer);
+  const submitterName = submitter ? submitter.name : request.ownerName;
+  const submitterEmail = submitter ? submitter.email : certification.email;
+  const certifiedName = certification.name ?? request.ownerName;
+  const certifiedOn = certification.on ?? submittedOn;
   const files = packageFiles(lines);
   const receiptCount = files.filter((f) => f.kind === 'receipt').length;
   const quoteCount = files.filter((f) => f.kind === 'quote').length;
@@ -109,9 +133,9 @@ export function prepareSubmission(
     request,
     lines,
     submissionNumber,
-    submitterName: request.ownerName,
-    submitterEmail: certification.email,
+    submitterName,
     submittedOn,
+    certifiedBy: { name: certifiedName, email: certification.email },
     warnings
   });
 
@@ -126,23 +150,26 @@ export function prepareSubmission(
       submissionNumber,
       folderName: name,
       previousFolderName,
-      submitterName: request.ownerName,
-      submitterEmail: certification.email,
+      submitterName,
+      submitterEmail,
       submittedOn,
       certificationText: certification.text,
       receiptCount,
       quoteCount,
       rowsWithoutReceipt: lines.filter((l) => !hasReceipt(l, lines)).length,
-      boughtBeforeApproval: request.boughtBeforeApproval || anyBoughtBefore(request.approval.approved),
+      // Nothing is bought before approval when the approver buys (P-037).
+      boughtBeforeApproval: request.buyer === 'self' && (request.boughtBeforeApproval || anyBoughtBefore(request.approval.approved)),
       approvedBy: request.approvedBy,
       approvedOn: request.approvedOn,
-      emailSubject: submissionEmailSubject(request.ownerName, request.businessPurpose, request.requestNumber, submissionNumber),
+      emailSubject: submissionEmailSubject(request.ownerName, request.businessPurpose, request.requestNumber, submissionNumber, request.buyer),
       emailSummary: buildSubmissionEmailSummary({
         request,
         lines,
         totals,
-        submitterName: request.ownerName,
-        certification: { email: certification.email, text: certification.text, submittedOn },
+        submitterName,
+        submitterEmail,
+        buyer: request.buyer,
+        certification: { email: certification.email, text: certification.text, submittedOn: certifiedOn, name: certifiedName },
         receiptCount,
         quoteCount,
         warnings,
@@ -159,15 +186,19 @@ export interface PreparedApproval {
   warnings: Issue[];
   /** The vendor totals sent, each flagged if bought before approval (P-017); stored on the request. */
   sentGroups: ApprovalGroup[];
+  /** The rows as sent, for a request the approver buys (P-040); empty otherwise. Stored on the request. */
+  sentRows: SentRow[];
   boughtBefore: boolean;
   sentOn: string;
 }
 
 /**
  * The approval request for a request with a vendor total at or over the
- * threshold (P-005, P-018). No certification is needed at this step (P-028).
- * Each vendor total is flagged bought before approval against the approval
- * record the request holds now (`request.approval`), so a flag from an
+ * threshold (P-005, P-018), or for any request the approver buys (P-037). When
+ * the employee buys, no certification is needed at this step (P-028); when the
+ * approver buys, the employee certifies now, because there is no later submit
+ * for them. Each vendor total is flagged bought before approval against the
+ * approval record the request holds now (`request.approval`), so a flag from an
  * earlier round stays, and a total an earlier approval still covers is not
  * newly flagged (`groupsForApproval`).
  */
@@ -177,8 +208,11 @@ export function prepareApprovalRequest(
   otherLines: readonly LineRef[],
   now: Date,
   submitter: { name: string; email: string },
-  round: number
+  round: number,
+  certification?: Certification
 ): PreparedApproval {
+  const approverBuys = request.buyer === 'approver';
+  if (approverBuys && (!certification || certification.text !== CERTIFICATION || !certification.email)) throw new Error(messages.certificationRequiredToSend);
   const state = approvalStateOf(request, lines);
   // Why it cannot be sent now: nothing needs approval, it is with the approver, or what was approved still covers it.
   if (!mustSendForApproval(state))
@@ -191,10 +225,11 @@ export function prepareApprovalRequest(
 
   const sentOn = toLocalDateTime(now);
   const sentGroups = approvalGroupsToSend(request, lines, today);
-  const totals = computeTotals(lines);
+  const totals = computeTotals(lines, request.buyer);
   return {
     warnings,
     sentGroups,
+    sentRows: approverBuys ? sentRowsOf(lines) : [],
     boughtBefore: anyBoughtBefore(sentGroups),
     sentOn,
     submission: {
@@ -206,7 +241,8 @@ export function prepareApprovalRequest(
       submitterName: request.ownerName,
       submitterEmail: submitter.email,
       submittedOn: sentOn,
-      certificationText: '',
+      // Kept on the approval request, the only record of what the employee certified when the approver buys (P-037).
+      certificationText: approverBuys && certification ? certification.text : '',
       receiptCount: 0,
       quoteCount: lines.reduce((n, l) => n + quoteFiles(l).length, 0),
       rowsWithoutReceipt: 0,
@@ -220,9 +256,11 @@ export function prepareApprovalRequest(
         totals,
         submitterName: request.ownerName,
         submitterEmail: submitter.email,
+        buyer: request.buyer,
         round,
         sentOn,
-        groups: sentGroups
+        groups: sentGroups,
+        certification: approverBuys && certification ? { name: request.ownerName, email: certification.email, text: certification.text } : undefined
       }),
       packageFileNames: []
     }

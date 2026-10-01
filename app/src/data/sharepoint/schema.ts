@@ -4,7 +4,7 @@
 // administrator opens the set-up page. Every address starts with "Purchase" so
 // the lists can share a site with other Clarus forms (P-007, travel D-077).
 
-import { CATEGORIES, PAID_BY_OPTIONS } from '../../domain/purchaseRules';
+import { BUYER_OPTIONS, CATEGORIES, DEFAULT_BUYER, PAID_BY_OPTIONS, findBuyer } from '../../domain/purchaseRules';
 import { REQUEST_STATUSES } from '../../domain/statuses';
 import { PackageStatus, ReturnStage, SubmissionType, TEXT_MAX_LENGTH } from '../../domain/types';
 import { SetupListKey } from '../setup';
@@ -74,6 +74,13 @@ export const LISTS: Record<ListKey, ListDef> = {
       text('RequestNumber', 'Request number'),
       text('Department', 'Department'),
       text('ProjectCode', 'Project or grant code'),
+      {
+        name: 'Buyer',
+        displayName: 'Who buys',
+        type: 'Choice',
+        choices: BUYER_OPTIONS.map((b) => b.label),
+        defaultValue: findBuyer(DEFAULT_BUYER)?.label
+      },
       { name: 'RequestStatus', displayName: 'Status', type: 'Choice', choices: REQUEST_STATUSES, defaultValue: 'Draft', indexed: true },
       note('ReturnNote', 'Return note'),
       { name: 'ReturnStage', displayName: 'Returned at', type: 'Choice', choices: Object.values(RETURN_STAGE_LABELS) },
@@ -113,6 +120,9 @@ export const LISTS: Record<ListKey, ListDef> = {
       { name: 'PaidBy', displayName: 'Who paid', type: 'Choice', choices: PAID_BY_OPTIONS.map((p) => p.label) },
       text('NoQuoteReason', 'No-quote reason'),
       text('NoReceiptReason', 'No-receipt reason'),
+      // The web address of the item (P-039): plain text, kept whole, so a long address is not cut.
+      note('ItemLink', 'Item link'),
+      text('NoLinkReason', 'No-link reason'),
       num('SameReceiptAsRow', 'Same receipt as row'),
       note('FileFingerprints', 'File fingerprints'),
       // Values the app filled in that the employee has not confirmed (travel D-078).

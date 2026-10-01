@@ -4,19 +4,21 @@
 
 import { toLocalDateTime } from '../../domain/dates';
 import { requestNumber } from '../../domain/naming';
-import { CATEGORIES, PAID_BY_OPTIONS, vendorKey } from '../../domain/purchaseRules';
+import { BUYER_OPTIONS, CATEGORIES, DEFAULT_BUYER, ITEM_LINK_MAX_LENGTH, PAID_BY_OPTIONS, vendorKey } from '../../domain/purchaseRules';
 import { REQUEST_STATUSES } from '../../domain/statuses';
 import { SUGGESTED_FIELDS } from '../../domain/suggestions';
 import {
   ApprovalGroup,
   ApprovalRecord,
   AttachedFile,
+  BuyerId,
   FileKind,
   PackageStatus,
   PurchaseLine,
   PurchaseRequest,
   RequestStatus,
   ReturnStage,
+  SentRow,
   SuggestedField,
   Submission,
   TEXT_MAX_LENGTH
@@ -41,6 +43,7 @@ export interface RequestItem {
   RequestNumber: string | null;
   Department: string | null;
   ProjectCode: string | null;
+  Buyer?: string | null;
   RequestStatus: string | null;
   ReturnNote: string | null;
   ReturnStage: string | null;
@@ -55,6 +58,8 @@ export interface RequestItem {
   ApprovalNote: string | null;
   ApprovedOn: string | null;
   ApprovedBy?: SpPerson | null;
+  /** The user ID of the person in ApprovedBy, which is the only person besides the owner whose rows count on a request the approver buys (SharePointDataService). */
+  ApprovedById?: number | null;
   SubmittedOn: string | null;
   ProcessedOn: string | null;
   ProcessedBy?: SpPerson | null;
@@ -79,6 +84,8 @@ export interface LineItem {
   PaidBy: string | null;
   NoQuoteReason: string | null;
   NoReceiptReason: string | null;
+  ItemLink?: string | null;
+  NoLinkReason?: string | null;
   SameReceiptAsRow: number | null;
   FileFingerprints: string | null;
   SuggestedFields?: string | null;
@@ -255,6 +262,35 @@ function storedKey(key: string, vendor: string): string {
   return vendorKey(vendor) || key;
 }
 
+/**
+ * The rows kept as sent (P-040), read defensively: a row that is not well
+ * formed is dropped, and at most MAX_SENT_ROWS are kept. They are only shown,
+ * never trusted for anything the app decides.
+ */
+const MAX_SENT_ROWS = 500;
+
+function parseSentRows(value: unknown): SentRow[] {
+  const rows: SentRow[] = [];
+  if (!Array.isArray(value)) return rows;
+  for (const r of value) {
+    if (rows.length >= MAX_SENT_ROWS) break;
+    if (!isRecord(r) || typeof r.rowNumber !== 'number' || !Number.isFinite(r.rowNumber)) continue;
+    // Text is read only as text: anything else in the record reads as empty.
+    const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+    rows.push({
+      rowNumber: Math.max(0, Math.round(r.rowNumber)),
+      date: text(r.date),
+      vendor: text(r.vendor),
+      description: text(r.description),
+      category: text(r.category),
+      amountCents: typeof r.amountCents === 'number' && Number.isFinite(r.amountCents) ? Math.round(r.amountCents) : null,
+      itemLink: text(r.itemLink),
+      noLinkReason: text(r.noLinkReason)
+    });
+  }
+  return rows;
+}
+
 /** The vendor totals in a record. A group that is not well formed is dropped, which can only ask for more approval, never less. */
 function parseGroups(value: unknown): ApprovalGroup[] {
   const groups: ApprovalGroup[] = [];
@@ -281,17 +317,31 @@ export function parseApprovalRecord(value: string | null | undefined): ApprovalR
     if (!isRecord(parsed)) return emptyRecord();
     const shape = (v: unknown) => v === undefined || Array.isArray(v);
     if (!shape(parsed.sent) || !shape(parsed.approved) || !shape(parsed.earlier)) return emptyRecord();
-    return { sent: parseGroups(parsed.sent), approved: parseGroups(parsed.approved), earlier: parseGroups(parsed.earlier) };
+    const record: ApprovalRecord = { sent: parseGroups(parsed.sent), approved: parseGroups(parsed.approved), earlier: parseGroups(parsed.earlier) };
+    // The rows as sent are kept only when there are some, so a record from a request the employee buys reads as it always did.
+    const rows = parseSentRows(parsed.rows);
+    if (rows.length > 0) record.rows = rows;
+    return record;
   } catch {
     return emptyRecord();
   }
 }
 
 export function approvalRecordJson(record: ApprovalRecord): string {
-  return JSON.stringify({ sent: record.sent, approved: record.approved, earlier: record.earlier });
+  const rows = record.rows && record.rows.length > 0 ? { rows: record.rows } : {};
+  return JSON.stringify({ sent: record.sent, approved: record.approved, earlier: record.earlier, ...rows });
 }
 
 // ---- Purchase Requests -----------------------------------------------------
+
+/**
+ * Who buys. A value that is missing or not one of the choices reads as the
+ * approver, the way in which every request goes to the approver and none is
+ * judged by amount (P-037): the more controlled reading of an edited value.
+ */
+export function buyerFrom(label: unknown): BuyerId {
+  return BUYER_OPTIONS.find((b) => b.label === label)?.id ?? DEFAULT_BUYER;
+}
 
 function returnStageFrom(label: unknown): ReturnStage {
   if (label === RETURN_STAGE_LABELS.approval) return 'approval';
@@ -312,6 +362,7 @@ export function requestFromItem(item: RequestItem): PurchaseRequest {
     businessPurpose: str(item.Title),
     department: str(item.Department),
     projectCode: str(item.ProjectCode),
+    buyer: buyerFrom(item.Buyer),
     status: oneOf<RequestStatus>(item.RequestStatus, REQUEST_STATUSES, 'Draft'),
     returnNote: str(item.ReturnNote),
     returnStage: returnStageFrom(item.ReturnStage),
@@ -347,6 +398,7 @@ export type RequestWrite = Partial<
     | 'businessPurpose'
     | 'department'
     | 'projectCode'
+    | 'buyer'
     | 'status'
     | 'returnNote'
     | 'returnStage'
@@ -374,6 +426,7 @@ export function requestFields(changes: RequestWrite): Record<string, unknown> {
   if (changes.businessPurpose !== undefined) out.Title = line255(changes.businessPurpose);
   if (changes.department !== undefined) out.Department = line255(changes.department);
   if (changes.projectCode !== undefined) out.ProjectCode = line255(changes.projectCode);
+  if (changes.buyer !== undefined) out.Buyer = BUYER_OPTIONS.find((b) => b.id === changes.buyer)?.label ?? null;
   if (changes.status !== undefined) out.RequestStatus = changes.status;
   if (changes.returnNote !== undefined) out.ReturnNote = changes.returnNote;
   if (changes.returnStage !== undefined) out.ReturnStage = changes.returnStage === '' ? null : RETURN_STAGE_LABELS[changes.returnStage];
@@ -412,6 +465,8 @@ export function lineFromItem(item: LineItem): PurchaseLine {
     paidBy: idForLabel(PAID_BY_OPTIONS, item.PaidBy),
     noQuoteReason: str(item.NoQuoteReason),
     noReceiptReason: str(item.NoReceiptReason),
+    itemLink: str(item.ItemLink).slice(0, ITEM_LINK_MAX_LENGTH * 2),
+    noLinkReason: str(item.NoLinkReason),
     sameReceiptAsRow: typeof item.SameReceiptAsRow === 'number' && item.SameReceiptAsRow > 0 ? Math.round(item.SameReceiptAsRow) : null,
     // Without the attachment list (a lighter query), the stored fingerprints
     // still describe the files, which is all the duplicate checks need.
@@ -443,6 +498,8 @@ export function lineFields(changes: Partial<PurchaseLine>): Record<string, unkno
   if (changes.paidBy !== undefined) out.PaidBy = labelForId(PAID_BY_OPTIONS, changes.paidBy);
   if (changes.noQuoteReason !== undefined) out.NoQuoteReason = line255(changes.noQuoteReason);
   if (changes.noReceiptReason !== undefined) out.NoReceiptReason = line255(changes.noReceiptReason);
+  if (changes.itemLink !== undefined) out.ItemLink = changes.itemLink.slice(0, ITEM_LINK_MAX_LENGTH + 1);
+  if (changes.noLinkReason !== undefined) out.NoLinkReason = line255(changes.noLinkReason);
   if (changes.sameReceiptAsRow !== undefined) out.SameReceiptAsRow = changes.sameReceiptAsRow;
   if (changes.suggested !== undefined) out.SuggestedFields = parseSuggested(changes.suggested.join(',')).join(',');
   return out;

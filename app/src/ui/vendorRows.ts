@@ -6,7 +6,7 @@ import { messages } from '../domain/messages';
 import { formatCents } from '../domain/money';
 import { LineApprovalStatus, VendorGroup, lineApprovals, vendorGroups } from '../domain/purchaseRules';
 import { quoteFiles } from '../domain/receipts';
-import { PurchaseLine, PurchaseRequest } from '../domain/types';
+import { BuyerId, PurchaseLine, PurchaseRequest } from '../domain/types';
 import { listText } from './text';
 
 export type QuoteStatus =
@@ -92,11 +92,13 @@ export function boughtBeforeNote(looksBought: readonly string[], flaggedEarlier:
   return parts.join(' ');
 }
 
-export function vendorRows(lines: readonly PurchaseLine[], request: Pick<PurchaseRequest, 'status' | 'approval'>): VendorRow[] {
-  const approvals = lineApprovals(lines, request.status, request.approval);
+/** `buyer` is who buys the request; the employee when it is not given (P-037). */
+export function vendorRows(lines: readonly PurchaseLine[], request: Pick<PurchaseRequest, 'status' | 'approval'> & { buyer?: BuyerId }): VendorRow[] {
+  const buyer = request.buyer ?? 'self';
+  const approvals = lineApprovals(lines, request.status, request.approval, buyer);
   const approvedBy = new Map(request.approval.approved.map((a) => [a.key, a.cents]));
   const byId = new Map(lines.map((l) => [l.id, l]));
-  return vendorGroups(lines).map((group) => {
+  return vendorGroups(lines, buyer).map((group) => {
     const groupLines = group.lineIds.map((id) => byId.get(id)).filter((l): l is PurchaseLine => !!l);
     const first = approvals.get(group.lineIds[0]);
     const reason = groupLines.map((l) => l.noQuoteReason.trim()).find((r) => r !== '');

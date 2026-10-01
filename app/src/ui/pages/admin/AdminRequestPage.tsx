@@ -7,6 +7,7 @@ import {
   CATEGORIES,
   anyBoughtBefore,
   categoryNeedsDescription,
+  categoryNeedsReview,
   categoryText,
   findCategory,
   findPaidBy,
@@ -14,23 +15,25 @@ import {
 } from '../../../domain/purchaseRules';
 import { hasReceipt, quoteFiles, receiptFiles } from '../../../domain/receipts';
 import {
-  APPROVAL_STATE_DISPLAY,
   LINE_APPROVAL_DISPLAY,
   PACKAGE_ATTENTION_MINUTES,
-  REQUEST_STATUS_DISPLAY,
+  approvalStateDisplay,
   canConfirmCategories,
+  mayBuy,
+  requestStatusDisplay,
   submissionStatusDisplay
 } from '../../../domain/statuses';
 import { CategoryId, PurchaseLine, PurchaseRequest, Submission } from '../../../domain/types';
 import { approvalStateOf } from '../../../domain/validation';
 import { CategoryChoice } from '../../../data/PurchaseDataService';
-import { retryRefusal } from '../../../data/sharepoint/serviceRules';
+import { retryRefusal, rowsPhrase, rowsToReview } from '../../../data/sharepoint/serviceRules';
 import { CSV_COLUMNS, approverText } from '../../../export/csv';
 import { useApp } from '../../AppContext';
 import { useMountedRef } from '../../hooks';
-import { Badge, Card, Dialog, FileChip, FullTextSelect, HeaderCard } from '../../components/common';
+import { Badge, Card, Dialog, FileChip, FullTextSelect, HeaderCard, ItemLinkText } from '../../components/common';
 import { Icon } from '../../components/Icon';
 import { ReceiptPreview } from '../../components/ReceiptPreview';
+import { SentRowsCard } from '../../components/SentRowsCard';
 import { VendorTotals } from '../../components/VendorTotals';
 import { changedMessages, vendorRows } from '../../vendorRows';
 import { latestSubmission } from './adminData';
@@ -152,11 +155,16 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
     );
   }
 
-  const status = REQUEST_STATUS_DISPLAY[request.status];
+  const status = requestStatusDisplay(request.status, request.buyer);
+  const approverBuys = request.buyer === 'approver';
+  // The approver who approved a request the approver buys is the one who buys it (P-037).
+  const buys = mayBuy(request, app.user);
   const packageBadge = latestPackage ? submissionStatusDisplay('package', latestPackage.packageStatus) : null;
   const approvalBadge = latestApproval ? submissionStatusDisplay('approval', latestApproval.packageStatus) : null;
   const state = approvalStateOf(request, lines);
-  const approvals = lineApprovals(lines, request.status, request.approval);
+  const approvals = lineApprovals(lines, request.status, request.approval, request.buyer);
+  // Equipment and Other rows need a decision before the request can be marked processed (P-038).
+  const toReview = rowsToReview(lines);
   const csvRows = csv ? parseCsv(csv) : [];
   // Retry is offered exactly when the services allow it (P-030): for the newest approval email or
   // package, while the request is still at that step, once it has failed or has not finished
@@ -223,13 +231,16 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
       if (mounted.current) setEdits({});
     }, `Categories confirmed for ${request.requestNumber}.`);
 
-  const returnStage = request.status === 'Awaiting approval' ? 'approval' : 'processing';
+  // Returned at the approval step to the employee; at processing, to the employee, or, when the approver bought it, back to the approver (P-037).
+  const returnStage = request.status === 'Awaiting approval' || request.status === 'Approved' ? 'approval' : 'processing';
+  const returnsToApprover = returnStage === 'processing' && approverBuys;
+  const returnTo = returnsToApprover ? request.approvedBy || 'the approver' : request.ownerName;
 
   return (
     <>
       <HeaderCard
         title={`${request.requestNumber} ${request.businessPurpose}`}
-        subtitle={`Requested by ${request.ownerName}, ${request.department}`}
+        subtitle={`Requested by ${request.ownerName}, ${request.department}${approverBuys ? '. The approver buys it.' : ''}`}
         badges={
           <>
             <Badge tone={status.tone}>{status.label}</Badge>
@@ -261,6 +272,22 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                 </button>
               </>
             ) : null}
+            {buys ? (
+              <>
+                <button className="ctx-btn ctx-btn-secondary" disabled={busy} onClick={() => setDialog('return')}>
+                  <Icon name="undo" size={16} />
+                  Return to the employee
+                </button>
+                <button
+                  className="ctx-btn ctx-btn-primary"
+                  disabled={busy}
+                  onClick={() => app.navigate({ name: 'request', requestId: request.id, step: 'purchases' })}
+                >
+                  <Icon name="send" size={16} />
+                  Open to buy
+                </button>
+              </>
+            ) : null}
             {request.status === 'Submitted' ? (
               <>
                 {retryPackage ? (
@@ -279,7 +306,8 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                 </button>
                 <button
                   className="ctx-btn ctx-btn-primary"
-                  disabled={busy}
+                  disabled={busy || toReview.length > 0}
+                  title={toReview.length > 0 ? `Confirm the category of ${rowsPhrase(toReview)} first` : undefined}
                   onClick={() => act(() => app.service.markProcessed(request.id), `${request.requestNumber} marked processed.`)}
                 >
                   <Icon name="check" size={16} />
@@ -323,6 +351,34 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
           )}
         </div>
       ) : null}
+      {approverBuys && request.status === 'Approved' ? (
+        <div className="ctx-banner green">
+          <Icon name="check" />
+          <div>
+            {buys ? (
+              <>
+                <strong>You approved this request, and you buy it.</strong> Open it to change each row to what you bought, attach the receipt or invoice, and
+                mark it purchased. If you cannot buy it, return it to {request.ownerName}.
+              </>
+            ) : (
+              <>
+                <strong>{request.approvedBy || 'The approver'} approved this request and buys it.</strong> Only they can change its rows, attach the receipt or
+                mark it purchased.
+              </>
+            )}
+            {request.returnStage === 'processing' && request.returnNote.trim() ? ` Returned at processing: ${request.returnNote.trim()}` : ''}
+          </div>
+        </div>
+      ) : null}
+      {toReview.length > 0 && request.status === 'Submitted' ? (
+        <div className="ctx-banner amber">
+          <Icon name="alert" />
+          <div>
+            <strong>Confirm the category of {rowsPhrase(toReview)} before you mark this processed.</strong> The account depends on a decision: Equipment is
+            expensed or capitalized, and Other has no fixed account. Choose the category in the table, then Confirm categories.
+          </div>
+        </div>
+      ) : null}
       {request.boughtBeforeApproval ? (
         <div className="ctx-banner amber">
           <Icon name="flag" />
@@ -338,7 +394,9 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
           <div>
             <strong>This request has no valid approval on record.</strong>{' '}
             {state === 'needed'
-              ? `A vendor total of ${APPROVAL_THRESHOLD_TEXT} or more was never approved.`
+              ? approverBuys
+                ? 'It was never approved.'
+                : `A vendor total of ${APPROVAL_THRESHOLD_TEXT} or more was never approved.`
               : changedMessages(vendorRows(lines, request)).join(' ')}
           </div>
         </div>
@@ -358,7 +416,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
         <div className="ctx-metric">
           <div className="ctx-metric-label">To reimburse</div>
           <div className="ctx-metric-value">{formatCents(request.totalReimburseCents)}</div>
-          <div className="ctx-metric-note">To {request.ownerName}</div>
+          <div className="ctx-metric-note">{approverBuys ? 'The approver buys it' : `To ${request.ownerName}`}</div>
         </div>
         <div className="ctx-metric">
           <div className="ctx-metric-label">Paid by Clarus</div>
@@ -373,7 +431,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
         <div className="ctx-metric">
           <div className="ctx-metric-label">Approval</div>
           <div className="ctx-metric-value" style={{ fontSize: '1rem' }}>
-            {APPROVAL_STATE_DISPLAY[state].label}
+            {approvalStateDisplay(state, request.buyer).label}
           </div>
           <div className="ctx-metric-note">
             {request.approvedBy && (state === 'approved' || state === 'changed') ? `approved by ${approverText(request)}` : ''}
@@ -398,6 +456,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                     <th>Date</th>
                     <th>Vendor</th>
                     <th>What was bought and why</th>
+                    <th>Item link</th>
                     <th>Category</th>
                     <th>Approval</th>
                     <th>Files</th>
@@ -421,6 +480,13 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                         <td className="nowrap">{l.date}</td>
                         <td className="vendor-cell">{l.vendor}</td>
                         <td>{l.description}</td>
+                        <td className="link-cell">
+                          {l.itemLink.trim() ? (
+                            <ItemLinkText value={l.itemLink} maxChars={26} />
+                          ) : l.noLinkReason.trim() ? (
+                            <span className="ctx-muted">{l.noLinkReason}</span>
+                          ) : null}
+                        </td>
                         <td className="category-cell">
                           {canEditCategories ? (
                             <div className="ctx-category-edit">
@@ -461,6 +527,12 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                                 ? `Confirmed by ${l.categoryConfirmedBy}`
                                 : 'Suggested by the employee'}
                           </div>
+                          {findCategory(choice.category) ? <div className="ctx-hint">{findCategory(choice.category)!.accountText}</div> : null}
+                          {categoryNeedsReview(choice.category) && !l.categoryConfirmedBy ? (
+                            <div className="ctx-hint" style={{ color: 'var(--c-warning)' }}>
+                              The account depends on your decision. Confirm it before processing.
+                            </div>
+                          ) : null}
                         </td>
                         <td className="approval-cell">
                           {display ? <Badge tone={display.tone}>{display.label}</Badge> : null}
@@ -502,7 +574,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                         </td>
                         <td className="num">
                           {l.amountCents === null ? '' : formatCents(l.amountCents)}
-                          <div className="ctx-hint">{findPaidBy(l.paidBy)?.shortLabel ?? ''}</div>
+                          <div className="ctx-hint">{approverBuys ? '' : (findPaidBy(l.paidBy)?.shortLabel ?? '')}</div>
                         </td>
                       </tr>
                     );
@@ -510,6 +582,11 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                 </tbody>
               </table>
             </div>
+            {approverBuys ? (
+              <div style={{ marginTop: 14 }}>
+                <SentRowsCard request={request} lines={lines} forApprover />
+              </div>
+            ) : null}
             {canEditCategories ? (
               <div className="ctx-grid-footer">
                 {request.status === 'Approved' || request.status === 'Submitted' ? (
@@ -641,7 +718,9 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
           }
         >
           <p style={{ margin: 0 }}>
-            Approving confirms the categories shown and records each vendor total as approved at its current amount.{' '}
+            {approverBuys
+              ? 'Approving means you buy it. It confirms the categories shown and records each vendor total as approved at its current amount; you may change the amounts when you buy it. '
+              : 'Approving confirms the categories shown and records each vendor total as approved at its current amount. '}
             {changedCount === 0 ? 'You have not changed any categories.' : `You changed ${changedCount} ${changedCount === 1 ? 'category' : 'categories'}.`}
           </p>
           {editProblems.length > 0 ? (
@@ -665,7 +744,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
       ) : null}
       {dialog === 'return' ? (
         <Dialog
-          title={`Return ${request.requestNumber} to ${request.ownerName}`}
+          title={`Return ${request.requestNumber} to ${returnTo}`}
           onClose={() => setDialog(null)}
           actions={
             <>
@@ -677,7 +756,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                 disabled={!returnNote.trim()}
                 onClick={() => {
                   setDialog(null);
-                  void act(() => app.service.returnRequest(request.id, returnNote.trim()), `${request.requestNumber} returned to ${request.ownerName}.`);
+                  void act(() => app.service.returnRequest(request.id, returnNote.trim()), `${request.requestNumber} returned to ${returnTo}.`);
                 }}
               >
                 Return request
@@ -686,7 +765,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
           }
         >
           <label className="ctx-label" htmlFor="return-note">
-            What needs correcting? The employee sees this note.
+            What needs correcting? {returnsToApprover ? `${returnTo} sees` : 'The employee sees'} this note.
           </label>
           <textarea
             id="return-note"
@@ -700,9 +779,13 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
             }
           />
           <div className="ctx-hint">
-            {returnStage === 'approval'
-              ? 'The employee sees your note, corrects the request and sends it for approval again.'
-              : "After returning, delete this request's folder from Purchases_To_Process. The corrected request arrives as a new folder ending in _R2."}
+            {request.status === 'Approved'
+              ? 'The employee sees your note, corrects the request and sends it to the approver again. If you added rows to this request, delete them first.'
+              : returnStage === 'approval'
+                ? 'The employee sees your note, corrects the request and sends it for approval again.'
+                : returnsToApprover
+                  ? `The request goes back to ${returnTo}, who fixes it and marks it purchased again. Delete this request's folder from Purchases_To_Process. The corrected request arrives as a new folder ending in _R2.`
+                  : "After returning, delete this request's folder from Purchases_To_Process. The corrected request arrives as a new folder ending in _R2."}
           </div>
         </Dialog>
       ) : null}

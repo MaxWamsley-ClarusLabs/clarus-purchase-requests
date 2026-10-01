@@ -13,12 +13,14 @@ import { formatCents } from './money';
 import { hasReceipt, receiptSourceRow } from './receipts';
 import {
   ApprovalState,
+  ITEM_LINK_MAX_LENGTH,
   approvalState,
   categoryNeedsDescription,
   groupsForApproval,
   isAlreadyBought,
   mustSendForApproval,
   quoteGaps,
+  safeLink,
   vendorGroups,
   vendorKey
 } from './purchaseRules';
@@ -32,7 +34,7 @@ export type ValidationStage = 'approval' | 'submit';
 
 export type RequestField = 'businessPurpose' | 'department' | 'rows';
 /** 'suggested' is a row's unconfirmed suggestions (travel D-078), not one cell. */
-export type LineField = 'date' | 'vendor' | 'description' | 'category' | 'categoryOther' | 'amount' | 'paidBy' | 'quote' | 'receipt' | 'suggested';
+export type LineField = 'date' | 'vendor' | 'description' | 'category' | 'categoryOther' | 'amount' | 'paidBy' | 'link' | 'quote' | 'receipt' | 'suggested';
 
 export interface Issue {
   severity: Severity;
@@ -48,15 +50,19 @@ export function issuePrefix(issue: Issue): string {
   return issue.rowNumber ? `Row ${issue.rowNumber}: ` : '';
 }
 
-type RequestFields = Pick<PurchaseRequest, 'businessPurpose' | 'department' | 'requestNumber' | 'status' | 'approval'>;
+type RequestFields = Pick<PurchaseRequest, 'businessPurpose' | 'department' | 'requestNumber' | 'status' | 'approval' | 'buyer'>;
 
 /** Where the request stands on approval, from its lines and its approval record. */
-export function approvalStateOf(request: Pick<PurchaseRequest, 'status' | 'approval'>, lines: readonly PurchaseLine[]): ApprovalState {
-  return approvalState(request.status, vendorGroups(lines), request.approval);
+export function approvalStateOf(request: Pick<PurchaseRequest, 'status' | 'approval' | 'buyer'>, lines: readonly PurchaseLine[]): ApprovalState {
+  return approvalState(request.status, vendorGroups(lines, request.buyer), request.approval, request.buyer);
 }
 
-/** Which action to check a request for: send it for approval, or submit it. */
-export function validationStage(request: Pick<PurchaseRequest, 'status' | 'approval'>, lines: readonly PurchaseLine[]): ValidationStage {
+/**
+ * Which action to check a request for: send it for approval, or submit it.
+ * "Submit" is also the check when the approver marks a request purchased
+ * (P-037): the receipts are checked then.
+ */
+export function validationStage(request: Pick<PurchaseRequest, 'status' | 'approval' | 'buyer'>, lines: readonly PurchaseLine[]): ValidationStage {
   const state = approvalStateOf(request, lines);
   return mustSendForApproval(state) || state === 'pending' ? 'approval' : 'submit';
 }
@@ -67,11 +73,12 @@ export function validationStage(request: Pick<PurchaseRequest, 'status' | 'appro
  * judged against the approval record the request holds now. What the send
  * dialog lists and what the data services record are both this.
  */
-export function approvalGroupsToSend(request: Pick<PurchaseRequest, 'approval'>, lines: readonly PurchaseLine[], sentOn: IsoDate): ApprovalGroup[] {
+export function approvalGroupsToSend(request: Pick<PurchaseRequest, 'approval' | 'buyer'>, lines: readonly PurchaseLine[], sentOn: IsoDate): ApprovalGroup[] {
   return groupsForApproval(
     lines.map((l) => ({ id: l.id, vendor: l.vendor, amountCents: l.amountCents, date: l.date, hasReceipt: hasReceipt(l, lines) })),
     sentOn,
-    request.approval
+    request.approval,
+    request.buyer
   );
 }
 
@@ -114,7 +121,16 @@ export function validateRequest(request: RequestFields, lines: readonly Purchase
     else if (categoryNeedsDescription(line.category) && !line.categoryOther.trim()) row('blocking', 'categoryOther', messages.categoryOtherRequired);
     if (line.amountCents === null) row('blocking', 'amount', messages.amountRequired);
     else if (line.amountCents <= 0) row('blocking', 'amount', messages.amountNotPositive);
-    if (!line.paidBy) row('blocking', 'paidBy', messages.paidByRequired);
+    // The approver buys with the company's money, so nobody is asked who paid (P-037).
+    if (request.buyer === 'self' && !line.paidBy) row('blocking', 'paidBy', messages.paidByRequired);
+    // The item link (P-039): an address that is not a web address is refused; the approver needs one, or a reason, to buy.
+    const link = line.itemLink.trim();
+    if (link) {
+      if (link.length > ITEM_LINK_MAX_LENGTH) row('blocking', 'link', messages.linkTooLong(ITEM_LINK_MAX_LENGTH));
+      else if (!safeLink(link)) row('blocking', 'link', messages.linkNotAddress);
+    } else if (request.buyer === 'approver' && stage === 'approval' && !line.noLinkReason.trim()) {
+      row('blocking', 'link', messages.linkOrReason);
+    }
     if (line.suggested.length > 0) row('blocking', 'suggested', messages.suggestionsNotConfirmed(suggestedFieldsText(line.suggested)));
 
     if (line.sameReceiptAsRow !== null && !receiptSourceRow(line, ordered)) {

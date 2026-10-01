@@ -70,7 +70,7 @@ describe('the approval email summary', () => {
     expect(text).toContain('Paid by Clarus: $615.00');
     expect(text).toContain('Request total: $1,165.00');
     expect(text).toContain('All purchases (3):');
-    expect(text).toContain('2. 2026-10-12, Borealis Office, Paper, $550.00, Employee, R&D Materials & Supplies / Equipment');
+    expect(text).toContain('2. 2026-10-12, Borealis Office, Paper, $550.00, Employee, R&D Materials & Supplies');
   });
 
   it('says when it is sent again, whether after a return or a rise past what was approved, and never includes the flag when nothing was bought', () => {
@@ -196,5 +196,132 @@ describe('the submission email summary', () => {
     expect(buildSubmissionEmailSummary({ ...base, request: request(), previousFolderName: '2026-10-12_Jane-Doe_Lab_PR-0042' })).toContain(
       'This replaces the earlier folder: 2026-10-12_Jane-Doe_Lab_PR-0042'
     );
+  });
+});
+
+describe('the emails when the approver buys (P-037, P-039)', () => {
+  const lines = [
+    line({
+      id: 'a',
+      rowNumber: 1,
+      vendor: 'Acme Lab Supply',
+      description: 'Pipette tips',
+      amountCents: 6000,
+      files: [],
+      paidBy: '',
+      itemLink: 'https://www.example.com/item/42',
+      noLinkReason: ''
+    }),
+    line({ id: 'b', rowNumber: 2, vendor: 'Borealis Office', description: 'Paper', amountCents: 80000, files: [quote()], paidBy: '', category: 'office' })
+  ];
+  const groups: ApprovalGroup[] = [
+    { key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 6000, bought: false },
+    { key: vendorKey('Borealis Office'), vendor: 'Borealis Office', cents: 80000, bought: false }
+  ];
+  const approverRequest = request({ buyer: 'approver' });
+  const text = buildApprovalEmailSummary({
+    request: approverRequest,
+    lines,
+    totals: computeTotals(lines, 'approver'),
+    submitterName: 'Jane Doe',
+    submitterEmail: 'jane.doe@example.com',
+    buyer: 'approver',
+    round: 1,
+    sentOn: '2026-10-12 09:12',
+    groups,
+    certification: { name: 'Jane Doe', email: 'jane.doe@example.com', text: 'I certify it.' }
+  });
+
+  it('says the approver buys it and that every vendor total needs approval', () => {
+    expect(text).toContain('The approver buys this request. Approving it means you buy it, attach the receipt and mark it purchased.');
+    expect(text).toContain('Every vendor total needs your approval, whatever the amount:');
+    expect(text).not.toContain('vendor totals of $500 or more');
+  });
+
+  it('asks about a quote only for a vendor total at the quote threshold, and never says it was bought before approval', () => {
+    expect(text).toContain('- Acme Lab Supply: $60.00\n');
+    expect(text).toContain('- Borealis Office: $800.00 (quote attached)');
+    expect(text).not.toContain('FLAG');
+  });
+
+  it('counts all of it as paid by Clarus, and does not say who paid or show the link', () => {
+    expect(text).toContain('To reimburse: $0.00');
+    expect(text).toContain('Paid by Clarus: $860.00');
+    expect(text).toContain('1. 2026-10-12, Acme Lab Supply, Pipette tips, $60.00, R&D Materials & Supplies');
+    expect(text).not.toContain('who paid not chosen');
+    expect(text).not.toContain('https://www.example.com');
+  });
+
+  it('records who certified, and when', () => {
+    expect(text).toContain('Certified by Jane Doe (jane.doe@example.com) when sent, 2026-10-12 09:12:');
+    expect(text).toContain('"I certify it."');
+  });
+
+  it('leaves the quote note off a small vendor total of a request the employee buys too', () => {
+    const own = buildApprovalEmailSummary({
+      request: request(),
+      lines: [lines[0]],
+      totals: computeTotals([lines[0]]),
+      submitterName: 'Jane Doe',
+      submitterEmail: 'jane.doe@example.com',
+      round: 1,
+      sentOn: '2026-10-12 09:12',
+      groups: [groups[0]]
+    });
+    expect(own).not.toContain('Certified by');
+  });
+
+  it('names the approver as the buyer in the submission email, and who certified it', () => {
+    const submission = buildSubmissionEmailSummary({
+      request: {
+        ...approverRequest,
+        approvedBy: 'Max Wamsley',
+        approvedByEmail: 'max.wamsley@example.com',
+        approvedOn: '2026-10-13 10:00',
+        ownerEmail: 'jane.doe@example.com'
+      },
+      lines,
+      totals: computeTotals(lines, 'approver'),
+      submitterName: 'Max Wamsley',
+      submitterEmail: 'max.wamsley@example.com',
+      buyer: 'approver',
+      certification: { email: 'jane.doe@example.com', text: 'I certify it.', submittedOn: '2026-10-12 09:12', name: 'Jane Doe' },
+      receiptCount: 2,
+      quoteCount: 1,
+      warnings: [],
+      previousFolderName: ''
+    });
+    expect(submission).toContain('Bought by the approver: Max Wamsley (max.wamsley@example.com)');
+    expect(submission).toContain('Requested by: Jane Doe (jane.doe@example.com)');
+    expect(submission).toContain('Certified by Jane Doe (jane.doe@example.com) when the request was sent, 2026-10-12 09:12:');
+    expect(submission).not.toContain('Submitted by:');
+    expect(submission).not.toContain('bought before approval');
+  });
+
+  it('subjects say the approver bought it', () => {
+    expect(submissionEmailSubject('Jane Doe', 'Lab supplies', 'PR-0042', 1, 'approver')).toBe('Purchase request bought: Jane Doe, Lab supplies (PR-0042)');
+    expect(submissionEmailSubject('Jane Doe', 'Lab supplies', 'PR-0042', 2, 'approver')).toBe(
+      'Purchase request bought again: Jane Doe, Lab supplies (PR-0042, R2)'
+    );
+  });
+
+  it('tells the administrator which rows need a category confirmed before the request is processed (P-038)', () => {
+    const review = buildSubmissionEmailSummary({
+      request: request(),
+      lines: [
+        line({ id: 'a', rowNumber: 1, category: 'equipment', categoryConfirmedBy: '' }),
+        line({ id: 'b', rowNumber: 2, category: 'other', categoryOther: 'x', categoryConfirmedBy: 'Max Wamsley' })
+      ],
+      totals: computeTotals([line()]),
+      submitterName: 'Jane Doe',
+      certification: { email: 'jane.doe@example.com', text: 'I certify it.', submittedOn: '2026-10-16 09:00' },
+      receiptCount: 1,
+      quoteCount: 0,
+      warnings: [],
+      previousFolderName: ''
+    });
+    expect(review).toContain('The administrator must confirm the category before this is marked processed');
+    expect(review).toContain('row 1.');
+    expect(review).not.toContain('row 2.');
   });
 });

@@ -9,13 +9,15 @@ export interface RequestNav {
   requestId: number;
   requestNumber: string;
   steps: Record<RequestStep, { state: StepState; status: string }>;
+  /** Names that differ from the usual ones, such as the last step when the approver buys (P-037). */
+  names?: Partial<Record<RequestStep, string>>;
 }
 
 /** The administrator list a request page was opened from, so the sidebar can keep it highlighted. */
 export type AdminList = 'adminApprovals' | 'adminProcess' | 'adminAttention' | 'adminAll';
 
 export interface AdminCounts {
-  /** Requests awaiting approval. */
+  /** Requests awaiting approval, and approved requests the signed-in approver is to buy (P-037). */
   approvals: number;
   /** Submitted requests waiting to be processed. */
   process: number;
@@ -88,16 +90,17 @@ export function Sidebar(props: Props): React.ReactElement {
             const info = requestNav.steps[s.step];
             const active = route.step === s.step;
             const extra = info.state === 'done' ? 'done' : info.state === 'attention' ? 'attention' : '';
+            const name = requestNav.names?.[s.step] ?? s.name;
             return (
               <button
                 key={s.step}
                 className={item(active, extra)}
                 onClick={() => navigate({ name: 'request', requestId: requestNav.requestId, step: s.step })}
-                title={`${s.number}. ${s.name}`}
+                title={`${s.number}. ${name}`}
               >
                 <span className="ctx-nav-icon">{info.state === 'done' ? <Icon name="check" size={14} /> : s.number}</span>
                 <span className="ctx-nav-text ctx-hide-collapsed">
-                  <span className="ctx-nav-name">{s.name}</span>
+                  <span className="ctx-nav-name">{name}</span>
                   <span className="ctx-nav-status">{info.status}</span>
                 </span>
               </button>

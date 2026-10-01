@@ -1,9 +1,13 @@
 import {
   APPROVAL_THRESHOLD_CENTS,
   APPROVAL_THRESHOLD_TEXT,
+  BUYER_OPTIONS,
   CATEGORIES,
   CERTIFICATION,
+  DEFAULT_BUYER,
   EMPTY_APPROVAL,
+  ITEM_LINK_MAX_LENGTH,
+  NO_LINK_REASONS,
   NO_QUOTE_REASONS,
   NO_RECEIPT_REASONS,
   OVERRUN_TOLERANCE_PERCENT,
@@ -16,9 +20,12 @@ import {
   anyBoughtBefore,
   approvalCoverage,
   approvalState,
+  approvalThresholdCents,
   approvalsSoFar,
   categoryNeedsDescription,
+  categoryNeedsReview,
   categoryText,
+  findBuyer,
   findCategory,
   findPaidBy,
   groupsForApproval,
@@ -31,9 +38,13 @@ import {
   mustSendForApproval,
   quoteGaps,
   requiresApproval,
+  safeLink,
+  sameAsSent,
+  sentRowsOf,
   vendorGroups,
   vendorKey
 } from './purchaseRules';
+import { line as buildLine } from '../testing/builders';
 import { ApprovalRecord } from './types';
 
 // Plain lines for the threshold rules: only vendor and amount matter.
@@ -66,28 +77,46 @@ describe('the policy numbers and wording (P-004, P-005, P-010, P-012)', () => {
     );
   });
 
-  it('has the eight categories from the form, in order', () => {
-    expect(CATEGORIES.map((c) => c.label)).toEqual([
-      'R&D Materials & Supplies / Equipment',
-      'Advertising/Marketing/Website',
-      'Computer, H/W & S/W Supplies',
-      'Office Supplies',
-      'Training and Education',
-      'Shipping/Postage',
-      'Business Insurance',
-      'Other'
+  it('has one category for each QuickBooks account Max listed, plus Other (P-038)', () => {
+    expect(CATEGORIES.map((c) => [c.label, c.accountNumber])).toEqual([
+      ['R&D Materials & Supplies', '6182'],
+      ['Equipment', '6175'],
+      ['Advertising/Marketing/Website', '6500'],
+      ['Computer, H/W & S/W Supplies', '6178'],
+      ['Office Supplies', '6180'],
+      ['Training and Education', '6155'],
+      ['Shipping/Postage', '6184'],
+      ['Business Insurance', '6215'],
+      ['Dues and Subscriptions', '6150'],
+      ['Telephone/Internet', '6185'],
+      ['Repairs & maintenance', '6170'],
+      ['Professional Services', '6050'],
+      ['Other', '']
     ]);
-    expect(new Set(CATEGORIES.map((c) => c.id)).size).toBe(8);
+    expect(new Set(CATEGORIES.map((c) => c.id)).size).toBe(13);
+    expect(new Set(CATEGORIES.map((c) => c.label)).size).toBe(13);
   });
 
-  it('suggests an account name for every category except Other, and marks the mapping unverified (P-025)', () => {
-    expect(QUICKBOOKS_MAPPING_STATUS).toBe('Unverified, to confirm with Max');
+  it('writes the account as its number and exact name; the administrator decides Equipment and Other (P-038)', () => {
+    expect(QUICKBOOKS_MAPPING_STATUS).toBe('from the May 1, 2026 account list');
     for (const c of CATEGORIES) {
-      if (c.needsDescription) expect(c.suggestedAccount).toBe('');
-      else expect(c.suggestedAccount.length).toBeGreaterThan(0);
-      // No invented account numbers.
-      expect(c.suggestedAccount).not.toMatch(/\d/);
+      if (c.id === 'equipment' || c.id === 'other') continue;
+      expect(c.accountText).toBe(`${c.accountNumber} ${c.label}`);
     }
+    expect(findCategory('equipment')?.accountText).toContain('6175 Equipment');
+    expect(findCategory('equipment')?.accountText).toContain('1415 Fixed Assets:Equipment');
+    expect(findCategory('other')?.accountText).toBe('Administrator decides');
+    // 6215 is Business Insurance; the unnumbered "Insurance" accounts are not offered.
+    expect(findCategory('insurance')?.accountText).toBe('6215 Business Insurance');
+    // 6180 is Office Supplies; the unnumbered "Office expenses" twin is not offered.
+    expect(findCategory('office')?.accountText).toBe('6180 Office Supplies');
+  });
+
+  it('marks the categories whose account the administrator must confirm: Equipment and Other (P-038)', () => {
+    expect(CATEGORIES.filter((c) => c.needsReview).map((c) => c.id)).toEqual(['equipment', 'other']);
+    expect(categoryNeedsReview('equipment')).toBe(true);
+    expect(categoryNeedsReview('office')).toBe(false);
+    expect(categoryNeedsReview('nope')).toBe(false);
   });
 
   it('offers the NSF SBIR Phase 1 award as a quick pick only', () => {
@@ -586,5 +615,124 @@ describe('self-approval (P-020)', () => {
     expect(isSelfApproved('max@example.com', 'Max@Example.com')).toBe(true);
     expect(isSelfApproved('jane@example.com', 'max@example.com')).toBe(false);
     expect(isSelfApproved('', '')).toBe(false);
+  });
+});
+
+describe('who buys (P-037)', () => {
+  it('has two buyers, and the approver is the default', () => {
+    expect(BUYER_OPTIONS.map((b) => b.id)).toEqual(['approver', 'self']);
+    expect(DEFAULT_BUYER).toBe('approver');
+    expect(findBuyer('approver')?.label).toBe('The approver buys it');
+    expect(findBuyer('self')?.label).toBe('I will buy it myself');
+    expect(findBuyer('x')).toBeUndefined();
+  });
+
+  it('sends every request to the approver, whatever it costs, when the approver buys', () => {
+    expect(approvalThresholdCents('approver')).toBe(0);
+    expect(approvalThresholdCents('self')).toBe(APPROVAL_THRESHOLD_CENTS);
+    const lines = [l('a', 'Acme', 1200), l('b', 'Thorlabs', 30)];
+    expect(requiresApproval(lines)).toBe(false);
+    expect(requiresApproval(lines, 'approver')).toBe(true);
+    expect(groupsNeedingApproval(lines, 'approver').map((g) => g.vendor)).toEqual(['Acme', 'Thorlabs']);
+    // The quote rule is unchanged: it is by vendor total, for both buyers.
+    const big = [l('a', 'Acme', 60000), l('b', 'Thorlabs', 30)];
+    expect(vendorGroups(big, 'approver').map((g) => g.needsQuote)).toEqual([true, false]);
+    expect(vendorGroups(big, 'self').map((g) => g.needsQuote)).toEqual([true, false]);
+  });
+
+  it('never flags a purchase as bought before approval when the approver buys', () => {
+    const lines = [{ id: 'a', vendor: 'Acme', amountCents: 90000, date: '2026-10-01', hasReceipt: true }];
+    expect(groupsForApproval(lines, '2026-10-14', EMPTY_APPROVAL, 'self').map((g) => g.bought)).toEqual([true]);
+    expect(groupsForApproval(lines, '2026-10-14', EMPTY_APPROVAL, 'approver').map((g) => g.bought)).toEqual([false]);
+    // A flag from an earlier round does not carry into a request the approver now buys.
+    const flagged: ApprovalRecord = { sent: [{ key: 'acme', vendor: 'Acme', cents: 90000, bought: true }], approved: [], earlier: [] };
+    expect(groupsForApproval(lines, '2026-10-14', flagged, 'approver').map((g) => g.bought)).toEqual([false]);
+  });
+
+  it('needs approval until it is approved, and then stays approved however the amounts change (P-040)', () => {
+    const lines = [l('a', 'Acme', 1200)];
+    const groups = vendorGroups(lines, 'approver');
+    const approved: ApprovalRecord = { sent: [], approved: [{ key: 'acme', vendor: 'Acme', cents: 1200, bought: false }], earlier: [] };
+    expect(approvalState('Draft', groups, EMPTY_APPROVAL, 'approver')).toBe('needed');
+    expect(approvalState('Awaiting approval', groups, EMPTY_APPROVAL, 'approver')).toBe('pending');
+    expect(approvalState('Approved', groups, approved, 'approver')).toBe('approved');
+    // The approver pays more than was approved, and adds a vendor: still approved. For the employee it would be changed.
+    const bought = vendorGroups([l('a', 'Acme', 99000), l('b', 'Shipper', 5000)], 'approver');
+    expect(approvalState('Approved', bought, approved, 'approver')).toBe('approved');
+    expect(approvalState('Approved', vendorGroups([l('a', 'Acme', 99000)]), approved, 'self')).toBe('changed');
+    // An approver purchase is never "not required", even when it is tiny.
+    expect(approvalState('Draft', vendorGroups([l('a', 'Acme', 5)], 'approver'), EMPTY_APPROVAL, 'approver')).toBe('needed');
+    expect(mustSendForApproval(approvalState('Draft', groups, EMPTY_APPROVAL, 'approver'))).toBe(true);
+  });
+
+  it('gives every row the request status, with no flags, when the approver buys', () => {
+    const lines = [l('a', 'Acme', 1200), l('b', 'Thorlabs', 30)];
+    const approved: ApprovalRecord = { sent: [], approved: [{ key: 'acme', vendor: 'Acme', cents: 1200, bought: false }], earlier: [] };
+    expect([...lineApprovals(lines, 'Draft', EMPTY_APPROVAL, 'approver').values()].map((a) => a.status)).toEqual(['needed', 'needed']);
+    expect([...lineApprovals(lines, 'Awaiting approval', EMPTY_APPROVAL, 'approver').values()].map((a) => a.status)).toEqual(['pending', 'pending']);
+    expect([...lineApprovals(lines, 'Approved', approved, 'approver').values()].map((a) => [a.status, a.boughtBefore])).toEqual([
+      ['approved', false],
+      ['approved', false]
+    ]);
+  });
+
+  it('matches what was sent by every vendor total when the approver buys', () => {
+    const lines = [l('a', 'Acme', 1200), l('b', 'Thorlabs', 30)];
+    const sent = groupsNeedingApproval(lines, 'approver').map((g) => ({ key: g.key, vendor: g.vendor, cents: g.totalCents, bought: false }));
+    expect(matchesWhatWasSent(lines, sent, 'approver')).toBe(true);
+    expect(matchesWhatWasSent([l('a', 'Acme', 1200), l('b', 'Thorlabs', 31)], sent, 'approver')).toBe(false);
+    expect(groupsForApproved(lines, sent, 'approver').map((g) => g.cents)).toEqual([1200, 30]);
+  });
+});
+
+describe('the item link (P-039)', () => {
+  it('turns only http and https addresses with a dotted host into links', () => {
+    expect(safeLink('https://www.example.com/item?id=4')).toBe('https://www.example.com/item?id=4');
+    expect(safeLink(' http://example.com ')).toBe('http://example.com/');
+    for (const bad of [
+      '',
+      '   ',
+      'example.com',
+      'www.example.com',
+      'javascript:alert(1)',
+      'JAVASCRIPT:alert(1)',
+      'data:text/html;base64,AAAA',
+      'file:///etc/passwd',
+      'ftp://example.com/x',
+      'https://localhost/x',
+      'https://user:pass@example.com/',
+      'https://example.com/a b',
+      'https://'
+    ]) {
+      expect(safeLink(bad)).toBe('');
+    }
+    expect(safeLink(`https://example.com/${'a'.repeat(ITEM_LINK_MAX_LENGTH)}`)).toBe('');
+  });
+
+  it('offers a few reasons for there being no web page', () => {
+    expect(NO_LINK_REASONS).toEqual(['Not sold online', 'Ordered from a quote']);
+  });
+});
+
+describe('the rows as sent (P-040)', () => {
+  const rows = [
+    buildLine({ id: 'b', rowNumber: 2, vendor: 'Thorlabs', amountCents: 3000, category: 'other', categoryOther: 'Lab safety audit' }),
+    buildLine({ id: 'a', rowNumber: 1, itemLink: 'https://example.com/x', amountCents: 1200 })
+  ];
+
+  it('keeps each row in row order, with its category as written', () => {
+    const sent = sentRowsOf(rows);
+    expect(sent.map((r) => [r.rowNumber, r.vendor, r.category, r.amountCents, r.itemLink])).toEqual([
+      [1, 'Acme Lab Supply', 'R&D Materials & Supplies', 1200, 'https://example.com/x'],
+      [2, 'Thorlabs', 'Other: Lab safety audit', 3000, '']
+    ]);
+  });
+
+  it('tells whether the rows are still as sent', () => {
+    const sent = sentRowsOf(rows);
+    expect(sameAsSent(rows, sent)).toBe(true);
+    expect(sameAsSent([{ ...rows[0], amountCents: 3100 }, rows[1]], sent)).toBe(false);
+    expect(sameAsSent([rows[0]], sent)).toBe(false);
+    expect(sameAsSent([{ ...rows[0], itemLink: 'https://example.com/y' }, rows[1]], sent)).toBe(false);
   });
 });

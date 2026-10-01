@@ -251,3 +251,100 @@ describe('prepareApprovalRequest (P-018)', () => {
     expect(rows[2]).toContain('Approved,No,Max Wamsley');
   });
 });
+
+describe('a request the approver buys (P-037, P-039, P-040)', () => {
+  const max = { name: 'Max Wamsley', email: 'max.wamsley@example.com' };
+  const asked = (overrides: Partial<PurchaseLine> = {}) =>
+    line({ id: 'a', files: [], paidBy: '', itemLink: 'https://www.example.com/item/42', amountCents: 4500, ...overrides });
+  const approverRequest = (overrides: Parameters<typeof request>[0] = {}) => request({ buyer: 'approver', ...overrides });
+
+  it('is sent to the approver whatever it costs, with the employee certifying then, and keeps the rows as sent', () => {
+    const lines = [asked(), asked({ id: 'b', rowNumber: 2, vendor: 'Borealis', amountCents: 800 })];
+    const prepared = prepareApprovalRequest(approverRequest(), lines, [], now, jane, 1, certified);
+    expect(prepared.sentGroups.map((g) => [g.vendor, g.cents, g.bought])).toEqual([
+      ['Acme Lab Supply', 4500, false],
+      ['Borealis', 800, false]
+    ]);
+    expect(prepared.sentRows.map((r) => [r.rowNumber, r.vendor, r.amountCents, r.itemLink])).toEqual([
+      [1, 'Acme Lab Supply', 4500, 'https://www.example.com/item/42'],
+      [2, 'Borealis', 800, 'https://www.example.com/item/42']
+    ]);
+    expect(prepared.boughtBefore).toBe(false);
+    expect(prepared.submission.type).toBe('approval');
+    expect(prepared.submission.certificationText).toBe(CERTIFICATION);
+    expect(prepared.submission.totalReimburseCents).toBe(0);
+    expect(prepared.submission.totalCompanyCents).toBe(5300);
+    expect(prepared.submission.emailSummary).toContain('The approver buys this request.');
+    expect(prepared.submission.emailSummary).toContain(`Certified by Jane Doe (jane.doe@example.com) when sent, 2026-10-16 09:30:`);
+    expect(prepared.submission.emailSummary).not.toContain('https://www.example.com');
+  });
+
+  it('refuses to send without the certification, with the wording for sending', () => {
+    expect(() => prepareApprovalRequest(approverRequest(), [asked()], [], now, jane, 1)).toThrow(messages.certificationRequiredToSend);
+    expect(() => prepareApprovalRequest(approverRequest(), [asked()], [], now, jane, 1, { text: 'I agree.', email: 'jane.doe@example.com' })).toThrow(
+      messages.certificationRequiredToSend
+    );
+    expect(() => prepareApprovalRequest(approverRequest(), [asked()], [], now, jane, 1, { text: CERTIFICATION, email: '' })).toThrow(
+      messages.certificationRequiredToSend
+    );
+  });
+
+  it('refuses to send a request with no web address and no reason, or while it is with the approver', () => {
+    expect(() => prepareApprovalRequest(approverRequest(), [asked({ itemLink: '' })], [], now, jane, 1, certified)).toThrow(SubmissionBlockedError);
+    expect(() => prepareApprovalRequest(approverRequest({ status: 'Awaiting approval' }), [asked()], [], now, jane, 1, certified)).toThrow(
+      messages.alreadyWithApprover
+    );
+  });
+
+  it('does not ask the employee for the certification of a request the employee buys, at this step (P-028)', () => {
+    const lines = [big({ files: [quote()] })];
+    const prepared = prepareApprovalRequest(request(), lines, [], now, jane, 1);
+    expect(prepared.sentRows).toEqual([]);
+    expect(prepared.submission.certificationText).toBe('');
+  });
+
+  it('is marked purchased by the approver: the package names the approver as buyer and keeps the employee certification', () => {
+    const lines = [asked({ files: [file({ fileName: 'invoice.pdf' })] })];
+    const sent = prepareApprovalRequest(approverRequest(), lines, [], now, jane, 1, certified);
+    const approved = approverRequest({
+      status: 'Approved',
+      approvalRounds: 1,
+      approval: { sent: sent.sentGroups, approved: groupsForApproved(lines, sent.sentGroups, 'approver'), earlier: [], rows: sent.sentRows },
+      approvedBy: 'Max Wamsley',
+      approvedByEmail: max.email,
+      approvedOn: '2026-10-15 10:00'
+    });
+    const prepared = prepareSubmission(approved, lines, [], new Date(2026, 9, 17, 14, 0), '', { ...certified, name: 'Jane Doe', on: '2026-10-16 09:30' }, max);
+    expect(prepared.submission.type).toBe('package');
+    expect(prepared.submission.submitterName).toBe('Max Wamsley');
+    expect(prepared.submission.submitterEmail).toBe(max.email);
+    expect(prepared.submission.certificationText).toBe(CERTIFICATION);
+    expect(prepared.submission.boughtBeforeApproval).toBe(false);
+    expect(prepared.submission.emailSubject).toBe('Purchase request bought: Jane Doe, Lab supplies for the Phase 1 assay (PR-0042)');
+    expect(prepared.submission.emailSummary).toContain('Bought by the approver: Max Wamsley (max.wamsley@example.com)');
+    expect(prepared.submission.emailSummary).toContain('Certified by Jane Doe (jane.doe@example.com) when the request was sent, 2026-10-16 09:30:');
+    const row = prepared.csvContent.replace(/^﻿/, '').split('\r\n')[1];
+    expect(row).toContain('https://www.example.com/item/42');
+    expect(row).toContain('Approver,Company,No');
+    expect(row).toContain('Jane Doe (jane.doe@example.com)');
+  });
+
+  it('is not submitted by the employee, and is not marked purchased before it is approved', () => {
+    const lines = [asked({ files: [file()] })];
+    expect(() => prepareSubmission(approverRequest({ status: 'Approved', approval: approval(4500) }), lines, [], now, '', certified)).toThrow(
+      messages.approverBuysNotSubmitted
+    );
+    expect(() => prepareSubmission(approverRequest(), lines, [], now, '', certified, max)).toThrow(ApprovalRequiredError);
+  });
+
+  it('lets the approver change the amount past what was approved, with no new approval', () => {
+    const lines = [asked({ amountCents: 90000, files: [file()] })];
+    const approved = approverRequest({
+      status: 'Approved',
+      approval: { sent: [], approved: [{ key: ACME, vendor: 'Acme Lab Supply', cents: 4500, bought: false }], earlier: [] },
+      approvedBy: 'Max Wamsley',
+      approvedByEmail: max.email
+    });
+    expect(() => prepareSubmission(approved, lines, [], now, '', certified, max)).not.toThrow();
+  });
+});

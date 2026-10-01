@@ -6,14 +6,15 @@
 
 import { toLocalDateTime } from '../../domain/dates';
 import { findCrossEmployeeDuplicates, findDuplicates } from '../../domain/duplicates';
-import { CERTIFICATION, approvalCoverage, groupsForApproval, vendorGroups } from '../../domain/purchaseRules';
+import { messages } from '../../domain/messages';
+import { CERTIFICATION, EMPTY_APPROVAL, approvalCoverage, groupsForApproval, vendorGroups } from '../../domain/purchaseRules';
 import { submissionStatusDisplay } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
 import { ApprovalRecord, CurrentUser, PackageStatus, Submission } from '../../domain/types';
 import { approvalStateOf } from '../../domain/validation';
 import { checkFlowConfig } from '../../export/flowPackage';
 import { LISTS } from '../sharepoint/schema';
-import { NotAllowedError } from '../sharepoint/serviceRules';
+import { NotAllowedError, notAllowed } from '../sharepoint/serviceRules';
 import { Harness, JANE, Person, describeDataServiceRules } from './dataServiceContract';
 import { MockDataService, NotAllowedError as MockNotAllowedError, finishPendingWork, notSetUp, readySetup } from './MockDataService';
 import { SAMPLE_USERS, SampleStore, createEmptyStore, createSampleStore, packagedFolderLink } from './sampleData';
@@ -131,22 +132,25 @@ describe('the sample data (P-031)', () => {
   const request = (n: number) => store.requests.find((r) => r.id === n)!;
   const linesOf = (n: number) => store.lines.filter((l) => l.requestId === n).sort((a, b) => a.rowNumber - b.rowNumber);
 
-  it("has nine requests, five of Jane's in R&D with the grant code and four of Sam's in Operations without one", () => {
-    expect(store.requests.map((r) => [r.requestNumber, r.ownerName, r.department, r.projectCode, r.status])).toEqual([
-      ['PR-0041', 'Jane Doe', 'R&D', 'NSF SBIR Phase 1 (Award # 2528301)', 'Draft'],
-      ['PR-0040', 'Jane Doe', 'R&D', 'NSF SBIR Phase 1 (Award # 2528301)', 'Awaiting approval'],
-      ['PR-0038', 'Jane Doe', 'R&D', 'NSF SBIR Phase 1 (Award # 2528301)', 'Approved'],
-      ['PR-0037', 'Jane Doe', 'R&D', 'NSF SBIR Phase 1 (Award # 2528301)', 'Submitted'],
-      ['PR-0036', 'Jane Doe', 'R&D', 'NSF SBIR Phase 1 (Award # 2528301)', 'Processed'],
-      ['PR-0035', 'Sam Lee', 'Operations', '', 'Submitted'],
-      ['PR-0034', 'Sam Lee', 'Operations', '', 'Returned'],
-      ['PR-0033', 'Sam Lee', 'Operations', '', 'Returned'],
-      ['PR-0032', 'Sam Lee', 'Operations', '', 'Awaiting approval']
+  it("has ten requests, six of Jane's in R&D with the grant code and four of Sam's in Operations without one", () => {
+    const grant = 'NSF SBIR Phase 1 (Award # 2528301)';
+    expect(store.requests.map((r) => [r.requestNumber, r.ownerName, r.department, r.projectCode, r.status, r.buyer])).toEqual([
+      ['PR-0041', 'Jane Doe', 'R&D', grant, 'Draft', 'approver'],
+      ['PR-0040', 'Jane Doe', 'R&D', grant, 'Awaiting approval', 'approver'],
+      ['PR-0039', 'Jane Doe', 'R&D', grant, 'Submitted', 'approver'],
+      ['PR-0038', 'Jane Doe', 'R&D', grant, 'Approved', 'approver'],
+      ['PR-0037', 'Jane Doe', 'R&D', grant, 'Submitted', 'self'],
+      ['PR-0036', 'Jane Doe', 'R&D', grant, 'Processed', 'self'],
+      ['PR-0035', 'Sam Lee', 'Operations', '', 'Submitted', 'self'],
+      ['PR-0034', 'Sam Lee', 'Operations', '', 'Returned', 'self'],
+      ['PR-0033', 'Sam Lee', 'Operations', '', 'Returned', 'approver'],
+      ['PR-0032', 'Sam Lee', 'Operations', '', 'Awaiting approval', 'self']
     ]);
     expect(store.requests.every((r) => r.ownerEmail === (r.ownerName === 'Jane Doe' ? 'jane.doe@example.com' : 'sam.lee@example.com'))).toBe(true);
     expect(store.requests.map((r) => r.businessPurpose)).toEqual([
       'Lab supplies for the Phase 1 assay',
       'Software license for the analysis pipeline',
+      'Cell culture supplies for the Phase 1 assay',
       'Sensor kit for the Phase 1 prototype',
       'Website hosting and marketing',
       'Office supplies and postage',
@@ -170,10 +174,12 @@ describe('the sample data (P-031)', () => {
     ]);
     expect(rows).toEqual([
       ['PR-0041', 1, 'Acme Lab Supply', 64000, 'rdMaterials', 'company', ['quote:acme-lab-supply-quote.pdf']],
-      ['PR-0041', 2, 'Northwind Office Supply', 8645, 'office', 'employee', []],
+      ['PR-0041', 2, 'Northwind Office Supply', 8645, 'office', 'company', []],
       ['PR-0040', 1, 'Harbor Software', 87000, 'computer', 'company', ['quote:harbor-software-quote.pdf']],
       ['PR-0040', 2, 'Blue Fern Web Co.', 12900, 'advertising', 'company', []],
       ['PR-0038', 1, 'Kestrel Instruments', 115000, 'rdMaterials', 'company', ['quote:kestrel-instruments-quote.pdf']],
+      ['PR-0039', 1, 'Cobalt Biosupply', 21550, 'rdMaterials', 'company', ['receipt:cobalt-biosupply-invoice.pdf']],
+      ['PR-0039', 2, 'Cobalt Biosupply', 1850, 'shipping', 'company', []],
       ['PR-0037', 1, 'Blue Fern Web Co.', 62000, 'advertising', 'company', ['receipt:blue-fern-web-invoice.pdf']],
       ['PR-0037', 2, 'Blue Fern Web Co.', 52000, 'advertising', 'company', []],
       ['PR-0036', 1, 'Northwind Office Supply', 8645, 'office', 'employee', ['receipt:northwind-office-receipt.png']],
@@ -198,6 +204,8 @@ describe('the sample data (P-031)', () => {
     const confirmed = store.lines.filter((l) => l.categoryConfirmedBy !== '').map((l) => [`PR-00${l.requestId}`, l.rowNumber, l.categoryConfirmedBy]);
     expect(confirmed).toEqual([
       ['PR-0038', 1, 'Max Wamsley'],
+      ['PR-0039', 1, 'Max Wamsley'],
+      ['PR-0039', 2, 'Max Wamsley'],
       ['PR-0037', 1, 'Max Wamsley'],
       ['PR-0037', 2, 'Max Wamsley']
     ]);
@@ -205,12 +213,14 @@ describe('the sample data (P-031)', () => {
 
   it('has the dates, times and totals of each request, kept current', () => {
     for (const r of store.requests) {
-      const t = computeTotals(linesOf(r.id));
+      const t = computeTotals(linesOf(r.id), r.buyer);
       expect([r.totalReimburseCents, r.totalCompanyCents, r.totalRequestCents]).toEqual([t.reimburseCents, t.companyCents, t.requestCents]);
     }
+    // The company pays for everything the approver buys, so nothing in those requests is to reimburse (P-037).
     expect(store.requests.map((r) => [r.requestNumber, r.totalReimburseCents, r.totalCompanyCents, r.totalRequestCents])).toEqual([
-      ['PR-0041', 8645, 64000, 72645],
+      ['PR-0041', 0, 72645, 72645],
       ['PR-0040', 0, 99900, 99900],
+      ['PR-0039', 0, 23400, 23400],
       ['PR-0038', 0, 115000, 115000],
       ['PR-0037', 0, 114000, 114000],
       ['PR-0036', 8645, 2460, 11105],
@@ -237,6 +247,14 @@ describe('the sample data (P-031)', () => {
       approvalNote: 'OK, use the company card.',
       submissionCount: 0
     });
+    expect(request(39)).toMatchObject({
+      approvalRounds: 1,
+      approvedOn: '2026-10-08 13:10',
+      approvedBy: 'Max Wamsley',
+      submittedOn: '2026-10-10 14:20',
+      submissionCount: 1,
+      boughtBeforeApproval: false
+    });
     expect(request(37)).toMatchObject({ boughtBeforeApproval: true, approvedOn: '2026-09-22 14:30', approvedBy: 'Max Wamsley', submissionCount: 1 });
     expect(request(36)).toMatchObject({ processedBy: 'Max Wamsley', submissionCount: 1, approvalRounds: 0 });
     expect(request(35)).toMatchObject({ submissionCount: 1, approvalRounds: 0 });
@@ -253,7 +271,7 @@ describe('the sample data (P-031)', () => {
       submissionCount: 0
     });
     expect(request(32)).toMatchObject({ approvalRounds: 1, submissionCount: 0 });
-    expect(linesOf(33).map((l) => vendorGroups([l])[0].totalCents)).toContain(90000);
+    expect(linesOf(33).map((l) => vendorGroups([l], 'approver')[0].totalCents)).toContain(90000);
     expect(request(41)).toMatchObject({ approvalRounds: 0, sentForApprovalOn: '', returnStage: '', returnNote: '' });
   });
 
@@ -261,6 +279,7 @@ describe('the sample data (P-031)', () => {
     const expected: Record<number, ReturnType<typeof approvalStateOf>> = {
       41: 'needed',
       40: 'pending',
+      39: 'approved',
       38: 'approved',
       37: 'approved',
       36: 'notRequired',
@@ -271,18 +290,20 @@ describe('the sample data (P-031)', () => {
     };
     for (const r of store.requests) expect([r.requestNumber, approvalStateOf(r, linesOf(r.id))]).toEqual([r.requestNumber, expected[r.id]]);
     // Approved means every approved vendor total still covers the request; nothing is approved before it is approved.
+    // The approver who buys may change the amounts after approving (P-040), so only a request the employee buys is held to what was approved.
     for (const r of store.requests) {
-      const groups = vendorGroups(linesOf(r.id));
+      const groups = vendorGroups(linesOf(r.id), r.buyer);
       if (r.approval.approved.length > 0) {
         expect(['Approved', 'Submitted']).toContain(r.status);
-        expect(approvalCoverage(groups, r.approval.approved).every((c) => c.covered)).toBe(true);
+        if (r.buyer === 'self') expect(approvalCoverage(groups, r.approval.approved).every((c) => c.covered)).toBe(true);
       }
       if (['Draft', 'Awaiting approval', 'Returned', 'Processed'].includes(r.status)) expect(r.approval.approved).toEqual([]);
     }
   });
 
   it('records what was sent for approval by the real rule, with the bought-before-approval flag', () => {
-    for (const r of store.requests.filter((x) => x.sentForApprovalOn)) {
+    // PR-0039 is left out: its rows were changed when it was bought, and what was sent is checked below.
+    for (const r of store.requests.filter((x) => x.sentForApprovalOn && x.id !== 39)) {
       const lines = linesOf(r.id);
       const sentOn = r.sentForApprovalOn.slice(0, 10);
       const wanted = groupsForApproval(
@@ -293,23 +314,40 @@ describe('the sample data (P-031)', () => {
           date: l.date,
           hasReceipt: l.files.some((f) => f.kind === 'receipt') || l.sameReceiptAsRow !== null
         })),
-        sentOn
+        sentOn,
+        EMPTY_APPROVAL,
+        r.buyer
       );
       expect([r.requestNumber, r.approval.sent]).toEqual([r.requestNumber, wanted]);
     }
-    expect(request(40).approval.sent).toEqual([{ key: 'harborsoftware', vendor: 'Harbor Software', cents: 87000, bought: false }]);
-    expect(request(38).approval).toEqual({
+    // The approver buys PR-0040: every vendor total goes to the approver, and the rows as sent are kept (P-037, P-040).
+    expect(request(40).approval.sent).toEqual([
+      { key: 'harborsoftware', vendor: 'Harbor Software', cents: 87000, bought: false },
+      { key: 'bluefernwebco', vendor: 'Blue Fern Web Co.', cents: 12900, bought: false }
+    ]);
+    expect(request(40).approval.rows?.map((r) => [r.rowNumber, r.vendor, r.amountCents, r.itemLink !== ''])).toEqual([
+      [1, 'Harbor Software', 87000, true],
+      [2, 'Blue Fern Web Co.', 12900, true]
+    ]);
+    expect(request(38).approval).toMatchObject({
       sent: [{ key: 'kestrelinstruments', vendor: 'Kestrel Instruments', cents: 115000, bought: false }],
       approved: [{ key: 'kestrelinstruments', vendor: 'Kestrel Instruments', cents: 115000, bought: false }],
       earlier: []
     });
+    // Jane asked for $200.00 of Cobalt Biosupply; Max paid $215.50 and added $18.50 of shipping.
+    expect(request(39).approval.sent).toEqual([{ key: 'cobaltbiosupply', vendor: 'Cobalt Biosupply', cents: 20000, bought: false }]);
+    expect(request(39).approval.approved).toEqual([{ key: 'cobaltbiosupply', vendor: 'Cobalt Biosupply', cents: 20000, bought: false }]);
+    expect(request(39).approval.rows?.map((r) => [r.rowNumber, r.amountCents])).toEqual([[1, 20000]]);
     expect(request(37).approval).toEqual({
       sent: [{ key: 'bluefernwebco', vendor: 'Blue Fern Web Co.', cents: 114000, bought: true }],
       approved: [{ key: 'bluefernwebco', vendor: 'Blue Fern Web Co.', cents: 114000, bought: true }],
       earlier: []
     });
-    expect(request(33).approval).toEqual({
-      sent: [{ key: 'redwoodfabrication', vendor: 'Redwood Fabrication', cents: 90000, bought: false }],
+    expect(request(33).approval).toMatchObject({
+      sent: [
+        { key: 'northwindofficesupply', vendor: 'Northwind Office Supply', cents: 6430, bought: false },
+        { key: 'redwoodfabrication', vendor: 'Redwood Fabrication', cents: 90000, bought: false }
+      ],
       approved: [],
       earlier: []
     });
@@ -329,9 +367,11 @@ describe('the sample data (P-031)', () => {
       [6, 'PR-0032', 'approval', 1, 'Failed', 'The SharePoint connection in the flow needs to be signed in again.'],
       [7, 'PR-0034', 'package', 1, 'Packaged', ''],
       [8, 'PR-0036', 'package', 1, 'Packaged', ''],
+      [10, 'PR-0039', 'approval', 1, 'Packaged', ''],
+      [11, 'PR-0039', 'package', 1, 'Packaged', ''],
       [9, 'PR-0035', 'package', 1, 'Failed', 'The SharePoint connection in the flow needs to be signed in again.']
     ]);
-    expect(store.nextSubmissionId).toBe(10);
+    expect(store.nextSubmissionId).toBe(12);
     // Every request that has been sent or submitted has the submissions its counts say.
     for (const r of store.requests) {
       const mine = store.submissions.filter((s) => s.requestId === r.id);
@@ -347,27 +387,55 @@ describe('the sample data (P-031)', () => {
 
   it('fills in the email text and CSV of each submission with the real builders', () => {
     for (const s of store.submissions) {
+      const owner = request(s.requestId);
+      const approverBuys = owner.buyer === 'approver';
       expect(s.emailSubject).not.toBe('');
       expect(s.emailSummary).toContain(`Department: ${s.department}`);
-      expect(s.submitterEmail).toBe(request(s.requestId).ownerEmail);
-      expect(s.businessPurpose).toBe(request(s.requestId).businessPurpose);
+      // The employee sends the request; when the approver buys, the approver also submits the package (P-037).
+      expect(s.submitterEmail).toBe(s.type === 'package' && approverBuys ? owner.approvedByEmail : owner.ownerEmail);
+      expect(s.businessPurpose).toBe(owner.businessPurpose);
       if (s.type === 'approval') {
-        expect([s.folderName, s.certificationText, s.packageFileNames, store.csvBySubmission[s.id]]).toEqual(['', '', [], '']);
+        expect([s.folderName, s.packageFileNames, store.csvBySubmission[s.id]]).toEqual(['', [], '']);
+        // When the approver buys, the employee certifies when sending the request (P-037).
+        expect(s.certificationText).toBe(approverBuys ? CERTIFICATION : '');
         expect(s.emailSubject).toContain('Purchase approval needed');
-        expect(s.emailSummary).toContain('Needs your approval (vendor totals of $500 or more):');
+        expect(s.emailSummary).toContain(
+          approverBuys ? 'Every vendor total needs your approval, whatever the amount:' : 'Needs your approval (vendor totals of $500 or more):'
+        );
       } else {
         expect(s.certificationText).toBe(CERTIFICATION);
         expect(s.folderName).toMatch(/_PR-00\d\d$/);
         expect(s.packageFileNames).toContain(`${s.requestNumber}_Purchases.csv`);
         expect(store.csvBySubmission[s.id]).toContain('Request,Row,Date,Vendor');
         expect(s.emailSummary).toContain(CERTIFICATION);
-        expect(s.emailSubject).toContain('Purchase request submitted');
+        expect(s.emailSubject).toContain(approverBuys ? 'Purchase request bought' : 'Purchase request submitted');
       }
     }
     const byId = (id: number) => store.submissions.find((s) => s.id === id)!;
     expect(byId(4).emailSummary).toContain('- Harbor Software: $870.00 (quote attached)');
+    // A vendor total under the quote threshold says nothing about a quote.
+    expect(byId(4).emailSummary).toContain('- Blue Fern Web Co.: $129.00\n');
+    expect(byId(4).emailSummary).not.toContain('The item link');
     expect(byId(6).emailSummary).toContain('(no quote: The show organizer requires its approved vendor)');
     expect(byId(5).emailSummary).toContain('- Redwood Fabrication: $900.00 (no quote)');
+    expect(byId(5).emailSummary).toContain('- Northwind Office Supply: $64.30\n');
+    // PR-0039: Max bought it for Jane. The CSV names him as the buyer and Jane as the one who certified, and nothing is reimbursed (P-037).
+    expect(byId(11)).toMatchObject({
+      submitterName: 'Max Wamsley',
+      submitterEmail: 'max.wamsley@example.com',
+      folderName: '2026-10-09_Jane-Doe_Cell-culture-supplies-for-the-Phase-1-as_PR-0039',
+      totalReimburseCents: 0,
+      totalCompanyCents: 23400,
+      receiptCount: 1,
+      rowsWithoutReceipt: 0,
+      boughtBeforeApproval: false
+    });
+    expect(byId(11).emailSummary).toContain('Bought by the approver: Max Wamsley (max.wamsley@example.com)');
+    expect(byId(11).emailSummary).toContain('Certified by Jane Doe (jane.doe@example.com) when the request was sent, 2026-10-08 09:30:');
+    expect(store.csvBySubmission[11]).toContain('Approver,Company,No');
+    expect(store.csvBySubmission[11]).toContain('Jane Doe (jane.doe@example.com)');
+    expect(store.csvBySubmission[11]).toContain('6182 R&D Materials & Supplies');
+    expect(store.csvBySubmission[11]).toContain('https://www.cobalt-biosupply.example/media-and-flasks');
     expect(byId(3).packageFileNames.sort()).toEqual(['PR-0037_Purchases.csv', 'R01_blue-fern-web-invoice.pdf']);
     expect(byId(3)).toMatchObject({
       folderName: '2026-09-18_Jane-Doe_Website-hosting-and-marketing_PR-0037',
@@ -404,7 +472,8 @@ describe('the sample data (P-031)', () => {
       'quickship-postage-receipt.png',
       'summit-training-receipt.pdf',
       'kestrel-instruments-quote.pdf',
-      'kestrel-instruments-invoice.pdf'
+      'kestrel-instruments-invoice.pdf',
+      'cobalt-biosupply-invoice.pdf'
     ];
     const files = store.lines.flatMap((l) => l.files);
     for (const f of files) {
@@ -452,11 +521,11 @@ describe('the sample data (P-031)', () => {
 describe('MockDataService on the sample data, as the preview uses it', () => {
   it('shows each person only their own requests, newest change first', async () => {
     const store = createSampleStore();
-    expect((await asJane(store).listMyRequests()).map((r) => r.requestNumber)).toEqual(['PR-0041', 'PR-0036', 'PR-0040', 'PR-0038', 'PR-0037']);
+    expect((await asJane(store).listMyRequests()).map((r) => r.requestNumber)).toEqual(['PR-0041', 'PR-0036', 'PR-0039', 'PR-0040', 'PR-0038', 'PR-0037']);
     expect((await asSam(store).listMyRequests()).map((r) => r.requestNumber)).toEqual(['PR-0034', 'PR-0035', 'PR-0032', 'PR-0033']);
     await expect(asJane(store).getRequest(35)).rejects.toBeInstanceOf(NotAllowedError);
     await expect(asSam(store).getRequest(41)).rejects.toBeInstanceOf(MockNotAllowedError);
-    expect((await asMax(store).listAllRequests()).map((r) => r.requestNumber)).toHaveLength(9);
+    expect((await asMax(store).listAllRequests()).map((r) => r.requestNumber)).toHaveLength(10);
   });
 
   it('shows the administrator what needs doing: requests to approve, and failed emails and packages', async () => {
@@ -473,7 +542,7 @@ describe('MockDataService on the sample data, as the preview uses it', () => {
         .filter((r) => r.status === 'Submitted')
         .map((r) => r.requestNumber)
         .sort()
-    ).toEqual(['PR-0035', 'PR-0037']);
+    ).toEqual(['PR-0035', 'PR-0037', 'PR-0039']);
     const failed = (await max.listSubmissions()).filter((s) => s.packageStatus === 'Failed');
     expect(failed.map((s) => [s.requestNumber, s.type])).toEqual([
       ['PR-0032', 'approval'],
@@ -481,24 +550,43 @@ describe('MockDataService on the sample data, as the preview uses it', () => {
     ]);
   });
 
-  it('works end to end across switches between people: send, approve, buy, submit and process', async () => {
+  it('works end to end across switches between people: send, approve, buy, mark purchased and process (P-037, P-040)', async () => {
     let store = createSampleStore();
-    const sent = await asJane(store, EARLY).sendForApproval(41);
-    expect(sent).toMatchObject({ id: 10, type: 'approval', submissionNumber: 1, packageStatus: 'Ready', requestNumber: 'PR-0041' });
+    // Jane sends the draft and certifies it now: the approver buys it, so she will not submit anything.
+    const sent = await asJane(store, EARLY).sendForApproval(41, CERTIFICATION);
+    expect(sent).toMatchObject({
+      id: 12,
+      type: 'approval',
+      submissionNumber: 1,
+      packageStatus: 'Ready',
+      requestNumber: 'PR-0041',
+      certificationText: CERTIFICATION
+    });
     expect(store.requests.find((r) => r.id === 41)).toMatchObject({ status: 'Awaiting approval', approvalRounds: 1, boughtBeforeApproval: false });
+    expect(store.requests.find((r) => r.id === 41)!.approval.rows?.map((r) => [r.rowNumber, r.vendor, r.amountCents])).toEqual([
+      [1, 'Acme Lab Supply', 64000],
+      [2, 'Northwind Office Supply', 8645]
+    ]);
 
     // The preview reloads for Max with the saved store; the email the flow would have sent is marked as sent.
     store = reload(store);
-    expect(store.submissions.find((s) => s.id === 10)!.packageStatus).toBe('Packaged');
+    expect(store.submissions.find((s) => s.id === 12)!.packageStatus).toBe('Packaged');
     const max = asMax(store);
     const waiting = (await max.listAllRequests()).filter((r) => r.status === 'Awaiting approval').map((r) => r.requestNumber);
     expect(waiting).toContain('PR-0041');
     const lines = (await max.getRequest(41)).lines;
-    const approved = await max.approveRequest(41, { note: 'OK, order it.', categories: { [lines[1].id]: { category: 'rdMaterials', categoryOther: '' } } });
+    const approved = await max.approveRequest(41, {
+      note: 'OK, I will order it.',
+      categories: { [lines[1].id]: { category: 'rdMaterials', categoryOther: '' } }
+    });
     expect(approved).toMatchObject({ status: 'Approved', approvedBy: 'Max Wamsley', approvedOn: '2026-10-17 10:05' });
-    expect(approved.approval.approved).toEqual([{ key: 'acmelabsupply', vendor: 'Acme Lab Supply', cents: 64000, bought: false }]);
+    // Every vendor total is approved, however small, because the approver buys it.
+    expect(approved.approval.approved).toEqual([
+      { key: 'acmelabsupply', vendor: 'Acme Lab Supply', cents: 64000, bought: false },
+      { key: 'northwindofficesupply', vendor: 'Northwind Office Supply', cents: 8645, bought: false }
+    ]);
 
-    // Back to Jane, who buys, attaches the receipts and submits.
+    // Back to Jane, who sees it is approved but can no longer change it: it is the approver's now.
     store = reload(store);
     const jane = asJane(store, new Date(2026, 9, 18, 8, 0));
     const seen = await jane.getRequest(41);
@@ -507,20 +595,50 @@ describe('MockDataService on the sample data, as the preview uses it', () => {
       ['rdMaterials', 'Max Wamsley'],
       ['rdMaterials', 'Max Wamsley']
     ]);
-    await jane.addFileToLine(seen.lines[0].id, pdf('acme-lab-supply-invoice.pdf'), 'receipt');
-    await jane.addFileToLine(seen.lines[1].id, png('northwind-office-receipt.png', 'a different receipt'), 'receipt');
-    const submission = await jane.submitRequest(41, CERTIFICATION);
-    expect(submission).toMatchObject({ id: 11, type: 'package', submissionNumber: 1, approvedBy: 'Max Wamsley', receiptCount: 2, quoteCount: 1 });
+    await expect(jane.updateLine(seen.lines[0].id, { vendor: 'Changed' })).rejects.toMatchObject({ message: notAllowed.locked });
+    await expect(jane.addFileToLine(seen.lines[0].id, pdf('a.pdf'), 'receipt')).rejects.toMatchObject({ message: notAllowed.locked });
+
+    // Max buys it. He paid a little more than Jane asked, attaches the receipts, adds a row for the shipping, and marks it purchased.
+    const buyer = asMax(store, new Date(2026, 9, 18, 9, 0));
+    const rows = (await buyer.getRequest(41)).lines;
+    await buyer.updateLine(rows[0].id, { amountCents: 66050 });
+    await buyer.addFileToLine(rows[0].id, pdf('acme-lab-supply-invoice.pdf'), 'receipt');
+    await buyer.addFileToLine(rows[1].id, png('northwind-office-receipt.png', 'a different receipt'), 'receipt');
+    const shipping = await buyer.addEmptyLine(41);
+    expect(shipping).toMatchObject({ rowNumber: 3, paidBy: 'company', date: '2026-10-18' });
+    await buyer.updateLine(shipping.id, { vendor: 'Acme Lab Supply', description: 'Shipping', category: 'shipping', amountCents: 1200, sameReceiptAsRow: 1 });
+    // A category the approver chooses is confirmed by the approver, not left as the employee's suggestion.
+    expect((await buyer.getRequest(41)).lines[2]).toMatchObject({ category: 'shipping', categoryConfirmedBy: 'Max Wamsley' });
+    const submission = await buyer.markPurchased(41);
+    expect(submission).toMatchObject({
+      id: 13,
+      type: 'package',
+      submissionNumber: 1,
+      approvedBy: 'Max Wamsley',
+      submitterName: 'Max Wamsley',
+      certificationText: CERTIFICATION,
+      receiptCount: 2,
+      quoteCount: 1
+    });
     expect([...submission.packageFileNames].sort()).toEqual([
       'PR-0041_Purchases.csv',
       'Q01_acme-lab-supply-quote.pdf',
       'R01_acme-lab-supply-invoice.pdf',
       'R02_northwind-office-receipt.png'
     ]);
+    // What Jane sent is kept as it was; what was bought is on the rows.
+    expect(store.requests.find((r) => r.id === 41)).toMatchObject({
+      status: 'Submitted',
+      submissionCount: 1,
+      totalReimburseCents: 0,
+      totalCompanyCents: 66050 + 8645 + 1200
+    });
+    expect(store.requests.find((r) => r.id === 41)!.approval.rows?.map((r) => r.amountCents)).toEqual([64000, 8645]);
+    expect(store.approverLineIds).toContain(shipping.id);
 
     // And Max processes it.
     store = reload(store);
-    expect(store.submissions.find((s) => s.id === 11)).toMatchObject({
+    expect(store.submissions.find((s) => s.id === 13)).toMatchObject({
       packageStatus: 'Packaged',
       folderLink: packagedFolderLink('2026-10-14_Jane-Doe_Lab-supplies-for-the-Phase-1-assay_PR-0041')
     });
@@ -528,26 +646,31 @@ describe('MockDataService on the sample data, as the preview uses it', () => {
     expect((await asJane(store).getRequest(41)).request).toMatchObject({ status: 'Processed', processedBy: 'Max Wamsley' });
   });
 
-  it('lets Jane submit the approved sensor kit once she attaches the invoice', async () => {
+  it('lets Max buy the approved sensor kit once he attaches the invoice, and nobody else', async () => {
     const store = createSampleStore();
-    const jane = asJane(store, new Date(2026, 9, 18, 8, 0));
-    const { lines } = await jane.getRequest(38);
-    await expect(jane.submitRequest(38, CERTIFICATION)).rejects.toMatchObject({ issues: [expect.objectContaining({ field: 'receipt' })] });
-    await jane.addFileToLine(lines[0].id, pdf('kestrel-instruments-invoice.pdf'), 'receipt');
-    const submission = await jane.submitRequest(38, CERTIFICATION);
+    const max = asMax(store, new Date(2026, 9, 18, 8, 0));
+    const { lines } = await max.getRequest(38);
+    await expect(asJane(store).markPurchased(38)).rejects.toBeInstanceOf(NotAllowedError);
+    await expect(max.markPurchased(38)).rejects.toMatchObject({ issues: [expect.objectContaining({ field: 'receipt' })] });
+    await max.addFileToLine(lines[0].id, pdf('kestrel-instruments-invoice.pdf'), 'receipt');
+    const submission = await max.markPurchased(38);
     expect([...submission.packageFileNames].sort()).toEqual([
       'PR-0038_Purchases.csv',
       'Q01_kestrel-instruments-quote.pdf',
       'R01_kestrel-instruments-invoice.pdf'
     ]);
-    expect(submission).toMatchObject({ approvedBy: 'Max Wamsley', approvedOn: '2026-09-25 10:05', boughtBeforeApproval: false });
+    expect(submission).toMatchObject({ approvedBy: 'Max Wamsley', approvedOn: '2026-09-25 10:05', boughtBeforeApproval: false, submitterName: 'Max Wamsley' });
+    expect(store.csvBySubmission[submission.id]).toContain('Jane Doe (jane.doe@example.com)');
   });
 
   it('lets Jane send the draft for approval as it stands, and shows what the approver will be asked', async () => {
     const store = createSampleStore();
-    const submission = await asJane(store).sendForApproval(41);
+    await expect(asJane(store).sendForApproval(41)).rejects.toThrow(messages.certificationRequiredToSend);
+    const submission = await asJane(store).sendForApproval(41, CERTIFICATION);
     expect(submission.emailSummary).toContain('- Acme Lab Supply: $640.00 (quote attached)');
+    expect(submission.emailSummary).toContain('- Northwind Office Supply: $86.45\n');
     expect(submission.emailSummary).toContain('Requested by: Jane Doe (jane.doe@example.com)');
+    expect(submission.emailSummary).toContain('The approver buys this request.');
     expect(submission.emailSummary).toContain('Project or grant code: NSF SBIR Phase 1 (Award # 2528301)');
   });
 
@@ -556,7 +679,10 @@ describe('MockDataService on the sample data, as the preview uses it', () => {
     const max = asMax(store);
     const lines = (await max.getRequest(40)).lines;
     const approved = await max.approveRequest(40, { note: 'Fine.', categories: { [lines[1].id]: { category: 'other', categoryOther: 'Domain names' } } });
-    expect(approved.approval.approved).toEqual([{ key: 'harborsoftware', vendor: 'Harbor Software', cents: 87000, bought: false }]);
+    expect(approved.approval.approved).toEqual([
+      { key: 'harborsoftware', vendor: 'Harbor Software', cents: 87000, bought: false },
+      { key: 'bluefernwebco', vendor: 'Blue Fern Web Co.', cents: 12900, bought: false }
+    ]);
     expect((await max.getRequest(40)).lines.map((l) => [l.category, l.categoryOther, l.categoryConfirmedBy])).toEqual([
       ['computer', '', 'Max Wamsley'],
       ['other', 'Domain names', 'Max Wamsley']
@@ -590,10 +716,10 @@ describe('MockDataService on the sample data, as the preview uses it', () => {
   it("holds Sam's workbench request at the quote rule until he gives a reason, then sends it again", async () => {
     const store = createSampleStore();
     const sam = asSam(store);
-    await expect(sam.sendForApproval(33)).rejects.toMatchObject({ issues: [expect.objectContaining({ field: 'quote' })] });
+    await expect(sam.sendForApproval(33, CERTIFICATION)).rejects.toMatchObject({ issues: [expect.objectContaining({ field: 'quote' })] });
     const { lines } = await sam.getRequest(33);
     await sam.updateLine(lines[1].id, { noQuoteReason: 'Only one supplier makes it' });
-    const again = await sam.sendForApproval(33);
+    const again = await sam.sendForApproval(33, CERTIFICATION);
     expect(again).toMatchObject({ type: 'approval', submissionNumber: 2 });
     expect(store.requests.find((r) => r.id === 33)).toMatchObject({ status: 'Awaiting approval', approvalRounds: 2, returnNote: '', returnStage: '' });
   });
@@ -647,8 +773,10 @@ describe('saving after every change (onChange)', () => {
     await changed('addLinesFromFiles', () => jane.addLinesFromFiles(scratch, [pdf('a.pdf')], 'receipt'));
     await changed('deleteLine', () => jane.deleteLine(rowId));
     await changed('deleteRequest', () => jane.deleteRequest(scratch));
-    await changed('sendForApproval', () => jane.sendForApproval(41));
+    await changed('sendForApproval', () => jane.sendForApproval(41, CERTIFICATION));
     await changed('approveRequest', () => max.approveRequest(41, { note: '', categories: {} }));
+    for (const l of (await max.getRequest(41)).lines) await max.addFileToLine(l.id, pdf(`receipt-row${l.rowNumber}.pdf`), 'receipt');
+    await changed('markPurchased', () => max.markPurchased(41));
     await changed('confirmCategories', () => max.confirmCategories(41, {}));
     await changed('returnRequest', () => max.returnRequest(40, 'No'));
     await changed('markProcessed', () => max.markProcessed(37));
@@ -674,21 +802,36 @@ describe('saving after every change (onChange)', () => {
   it('calls onChange in the order the real site works: submission Uploading, request locked, then Ready (P-018)', async () => {
     const store = createSampleStore();
     const seen: string[] = [];
-    const jane = new MockDataService(
+    const max = new MockDataService(
       store,
-      SAMPLE_USERS.jane,
+      SAMPLE_USERS.admin,
       0,
-      () => seen.push(`${store.submissions.find((x) => x.id === 10)?.packageStatus ?? 'none'}/${store.requests.find((r) => r.id === 38)!.status}`),
+      () => seen.push(`${store.submissions.find((x) => x.id === 12)?.packageStatus ?? 'none'}/${store.requests.find((r) => r.id === 38)!.status}`),
       () => NOW
     );
-    const { lines } = await jane.getRequest(38);
-    await jane.addFileToLine(lines[0].id, pdf('kestrel-instruments-invoice.pdf'), 'receipt');
+    const { lines } = await max.getRequest(38);
+    await max.addFileToLine(lines[0].id, pdf('kestrel-instruments-invoice.pdf'), 'receipt');
     seen.length = 0;
-    const submission = await jane.submitRequest(38, CERTIFICATION);
-    expect(submission.id).toBe(10);
+    const submission = await max.markPurchased(38);
+    expect(submission.id).toBe(12);
     expect(seen.slice(0, 3)).toEqual(['Uploading/Approved', 'Uploading/Submitted', 'Ready/Submitted']);
     // The CSV is kept with the submission from the first step, as the files are attached before the request is locked.
-    expect(store.csvBySubmission[10]).toContain('PR-0038');
+    expect(store.csvBySubmission[12]).toContain('PR-0038');
+  });
+
+  it('keeps the same order when the employee submits a request they buy', async () => {
+    const store = createSampleStore();
+    const seen: string[] = [];
+    const sam = new MockDataService(
+      store,
+      SAMPLE_USERS.sam,
+      0,
+      () => seen.push(`${store.submissions.find((x) => x.id === 12)?.packageStatus ?? 'none'}/${store.requests.find((r) => r.id === 34)!.status}`),
+      () => NOW
+    );
+    const submission = await sam.submitRequest(34, CERTIFICATION);
+    expect(submission.id).toBe(12);
+    expect(seen.slice(0, 3)).toEqual(['Uploading/Returned', 'Uploading/Submitted', 'Ready/Submitted']);
   });
 
   it('does the same for an approval request, with no files', async () => {
@@ -698,13 +841,13 @@ describe('saving after every change (onChange)', () => {
       store,
       SAMPLE_USERS.jane,
       0,
-      () => seen.push(`${store.submissions.find((x) => x.id === 10)?.packageStatus ?? 'none'}/${store.requests.find((r) => r.id === 41)!.status}`),
+      () => seen.push(`${store.submissions.find((x) => x.id === 12)?.packageStatus ?? 'none'}/${store.requests.find((r) => r.id === 41)!.status}`),
       () => NOW
     );
-    await jane.sendForApproval(41);
+    await jane.sendForApproval(41, CERTIFICATION);
     expect(seen.slice(0, 3)).toEqual(['Uploading/Draft', 'Uploading/Awaiting approval', 'Ready/Awaiting approval']);
-    expect(store.csvBySubmission[10]).toBeUndefined();
-    expect(store.submissions.find((s) => s.id === 10)!.packageFileNames).toEqual([]);
+    expect(store.csvBySubmission[12]).toBeUndefined();
+    expect(store.submissions.find((s) => s.id === 12)!.packageFileNames).toEqual([]);
   });
 });
 
@@ -740,24 +883,24 @@ describe('the simulated flow', () => {
 
   it('emails the approver and marks an approval request Packaged, without a folder', async () => {
     const store = createSampleStore();
-    const { seen, onChange, untilPackaged } = watch(store, 10);
+    const { seen, onChange, untilPackaged } = watch(store, 12);
     const jane = new MockDataService(store, SAMPLE_USERS.jane, 10, onChange, () => NOW);
-    await jane.sendForApproval(41);
+    await jane.sendForApproval(41, CERTIFICATION);
     await untilPackaged();
     expect(seen).toEqual(['Uploading', 'Ready', 'Packaged']);
-    expect(store.submissions.find((s) => s.id === 10)).toMatchObject({ packageStatus: 'Packaged', folderLink: '', packagedAt: '2026-10-16 09:30' });
+    expect(store.submissions.find((s) => s.id === 12)).toMatchObject({ packageStatus: 'Packaged', folderLink: '', packagedAt: '2026-10-16 09:30' });
   });
 
   it('packages a submission: Ready, Processing, then Packaged with the folder it went to', async () => {
     const store = createSampleStore();
-    const { seen, onChange, untilPackaged } = watch(store, 10);
-    const jane = new MockDataService(store, SAMPLE_USERS.jane, 10, onChange, () => NOW);
-    const { lines } = await jane.getRequest(38);
-    await jane.addFileToLine(lines[0].id, pdf('kestrel-instruments-invoice.pdf'), 'receipt');
-    await jane.submitRequest(38, CERTIFICATION);
+    const { seen, onChange, untilPackaged } = watch(store, 12);
+    const max = new MockDataService(store, SAMPLE_USERS.admin, 10, onChange, () => NOW);
+    const { lines } = await max.getRequest(38);
+    await max.addFileToLine(lines[0].id, pdf('kestrel-instruments-invoice.pdf'), 'receipt');
+    await max.markPurchased(38);
     await untilPackaged();
     expect(seen).toEqual(['Uploading', 'Ready', 'Processing', 'Packaged']);
-    expect(store.submissions.find((s) => s.id === 10)).toMatchObject({
+    expect(store.submissions.find((s) => s.id === 12)).toMatchObject({
       packagedAt: '2026-10-16 09:30',
       folderLink: 'Accounting > Purchases > Purchases_To_Process > 2026-09-28_Jane-Doe_Sensor-kit-for-the-Phase-1-prototype_PR-0038'
     });
@@ -810,7 +953,22 @@ describe('the simulated flow', () => {
     // Sam's request returned at the approval step can be sent again from it.
     const sam = asSam(old);
     await sam.updateLine((await sam.getRequest(33)).lines[1].id, { noQuoteReason: 'Only one supplier makes it' });
-    expect((await sam.sendForApproval(33)).submissionNumber).toBe(2);
+    expect((await sam.sendForApproval(33, CERTIFICATION)).submissionNumber).toBe(2);
+  });
+
+  it('reads a store kept by the preview before the approver could buy as requests the employee buys, with no links', async () => {
+    const old = JSON.parse(JSON.stringify(createSampleStore())) as SampleStore;
+    for (const r of old.requests) delete (r as Partial<typeof r>).buyer;
+    for (const l of old.lines) {
+      delete (l as Partial<typeof l>).itemLink;
+      delete (l as Partial<typeof l>).noLinkReason;
+    }
+    finishPendingWork(old);
+    expect(old.requests.every((r) => r.buyer === 'self')).toBe(true);
+    expect(old.lines.every((l) => l.itemLink === '' && l.noLinkReason === '')).toBe(true);
+    // The rows as sent, kept for a request the approver buys, survive the restore.
+    const kept = reload(createSampleStore());
+    expect(kept.requests.find((r) => r.id === 40)!.approval.rows).toHaveLength(2);
   });
 
   it('finishes unfinished work at the time given', () => {

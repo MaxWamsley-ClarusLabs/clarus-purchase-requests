@@ -20,3 +20,11 @@ describe('computeTotals (P-011)', () => {
     expect(computeTotals([])).toEqual({ reimburseCents: 0, companyCents: 0, requestCents: 0 });
   });
 });
+
+describe('computeTotals when the approver buys (P-037)', () => {
+  it('counts every row as paid by Clarus, whatever "who paid" says, and reimburses nothing', () => {
+    const lines = [line({ id: 'a', amountCents: 10010, paidBy: 'employee' }), line({ id: 'b', amountCents: 500, paidBy: '' })];
+    expect(computeTotals(lines, 'approver')).toEqual({ reimburseCents: 0, companyCents: 10510, requestCents: 10510 });
+    expect(computeTotals(lines, 'self')).toEqual({ reimburseCents: 10010, companyCents: 0, requestCents: 10510 });
+  });
+});

@@ -7,6 +7,14 @@
  * sideways inside its card, and its last column, the row menu, stays in view.
  */
 export const GRID_MIN_WIDTH_PX = 1090;
+/** The item link column (P-039). When the approver buys, it takes the place of the "Who paid" column, which is 102 pixels wide. */
+export const GRID_LINK_COLUMN_PX = 150;
+const GRID_PAID_BY_COLUMN_PX = 102;
+
+/** The grid's narrowest width: with "Who paid" when the employee buys, without it when the approver buys (P-037). */
+export function gridMinWidth(approverBuys: boolean): number {
+  return GRID_MIN_WIDTH_PX + GRID_LINK_COLUMN_PX - (approverBuys ? GRID_PAID_BY_COLUMN_PX : 0);
+}
 /** What the grid's card adds around the grid: its padding and border, less the grid's own negative margins. */
 export const GRID_CARD_EXTRA_PX = 26;
 /** The files panel beside the grid on a wide screen, and the gap between them. */
@@ -25,8 +33,8 @@ const SIDE_FILES_ALLOWANCE_PX = 24;
  * page. `layoutWidth` is the measured width of the area that holds both;
  * `besideNow` says whether they are beside the grid now.
  */
-export function filesBesideGrid(layoutWidth: number, besideNow: boolean): boolean {
-  const needed = GRID_MIN_WIDTH_PX + GRID_CARD_EXTRA_PX + LAYOUT_GAP_PX + SIDE_FILES_WIDTH_PX;
+export function filesBesideGrid(layoutWidth: number, besideNow: boolean, gridWidth: number = GRID_MIN_WIDTH_PX): boolean {
+  const needed = gridWidth + GRID_CARD_EXTRA_PX + LAYOUT_GAP_PX + SIDE_FILES_WIDTH_PX;
   return layoutWidth >= needed || (besideNow && layoutWidth >= needed - SIDE_FILES_ALLOWANCE_PX);
 }
 
@@ -257,6 +265,14 @@ select.ctx-cell { cursor: pointer; appearance: auto; }
 .ctx-files-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: 100%; }
 .ctx-files-cell .ctx-reading { margin-left: 0; }
 .ctx-approval-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.ctx-link-cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ctx-link-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.ctx-link-row .ctx-cell { flex: 1; min-width: 0; }
+.ctx-link-open { flex: none; display: inline-flex; padding: 4px; border-radius: 6px; color: var(--c-purple); }
+.ctx-link-open:hover, .ctx-link-open:focus-visible { background: var(--c-lavender); }
+.ctx-option-row.selected { border-color: var(--c-purple); background: #faf5fd; }
+.ctx-option-row .ctx-hint { display: block; }
+.ctx-radio-group { display: grid; gap: 8px; }
 .ctx-approval-cell .ctx-badge, .ctx-approval-cell .ctx-tag { white-space: normal; }
 .ctx-flag { display: inline-flex; vertical-align: middle; color: var(--c-warning); margin-left: 6px; }
 .ctx-cell.category-other { margin-top: 4px; font-size: 0.8rem; border-color: var(--c-border); background: #fff; }

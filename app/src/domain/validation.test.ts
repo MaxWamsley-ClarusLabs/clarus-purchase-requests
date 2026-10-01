@@ -274,3 +274,54 @@ describe('validateRequest: after approval', () => {
     expect(validationStage(r, [big()])).toBe('approval');
   });
 });
+
+describe('validateRequest: a request the approver buys (P-037, P-039)', () => {
+  const approverRequest = (overrides: Parameters<typeof request>[0] = {}) => request({ buyer: 'approver', ...overrides });
+  const withLink = (overrides: Partial<PurchaseLine> = {}) =>
+    line({ id: 'a', paidBy: '', files: [], itemLink: 'https://www.example.com/item/42', ...overrides });
+
+  it('is checked for sending to the approver whatever it costs, and does not ask who paid or for a receipt', () => {
+    const r = approverRequest();
+    expect(approvalStateOf(r, [withLink()])).toBe('needed');
+    expect(validationStage(r, [withLink()])).toBe('approval');
+    expect(check(r, [withLink()])).toEqual([]);
+  });
+
+  it('asks for the item link, or a reason there is no web page, before the request is sent', () => {
+    const r = approverRequest();
+    expect(blockingIssues(check(r, [withLink({ itemLink: '' })])).map((i) => [i.field, i.message])).toEqual([['link', messages.linkOrReason]]);
+    expect(check(r, [withLink({ itemLink: '', noLinkReason: 'Not sold online' })])).toEqual([]);
+    expect(check(r, [withLink({ itemLink: '   ', noLinkReason: '  ' })]).map((i) => i.field)).toEqual(['link']);
+  });
+
+  it('does not ask for the link of a request the employee buys, but refuses an address that is not one', () => {
+    const own = request();
+    expect(check(own, [line({ itemLink: '' })])).toEqual([]);
+    expect(blockingIssues(check(own, [line({ itemLink: 'javascript:alert(1)' })])).map((i) => [i.field, i.message])).toEqual([
+      ['link', messages.linkNotAddress]
+    ]);
+  });
+
+  it('refuses a link that is not a web address, or is too long, even when a reason is given', () => {
+    const r = approverRequest();
+    expect(blockingIssues(check(r, [withLink({ itemLink: 'amazon', noLinkReason: 'x' })])).map((i) => i.message)).toEqual([messages.linkNotAddress]);
+    expect(blockingIssues(check(r, [withLink({ itemLink: `https://example.com/${'a'.repeat(2100)}` })])).map((i) => i.message)).toEqual([
+      messages.linkTooLong(2000)
+    ]);
+  });
+
+  it('checks the receipt when the approver marks it purchased, and no longer asks for the link', () => {
+    const approvedRecord: ApprovalRecord = { sent: [], approved: [{ key: ACME, vendor: 'Acme Lab Supply', cents: 12500, bought: false }], earlier: [] };
+    const r = approverRequest({ status: 'Approved', approval: approvedRecord });
+    expect(validationStage(r, [withLink()])).toBe('submit');
+    // No receipt yet, and the link is no longer needed.
+    expect(blockingIssues(check(r, [withLink({ itemLink: '' })])).map((i) => [i.field, i.message])).toEqual([['receipt', messages.receiptOrReason]]);
+    expect(check(r, [withLink({ files: [file()] })])).toEqual([]);
+  });
+
+  it('never warns that a purchase looks bought before approval', () => {
+    const r = approverRequest();
+    expect(check(r, [withLink({ date: '2026-09-01', files: [file()] })])).toEqual([]);
+    expect(approvalGroupsToSend(r, [withLink({ date: '2026-09-01', files: [file()] })], TODAY).map((g) => g.bought)).toEqual([false]);
+  });
+});

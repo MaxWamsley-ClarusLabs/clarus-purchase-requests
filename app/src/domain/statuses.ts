@@ -1,7 +1,7 @@
 // Request, package and approval statuses and how each is shown (travel D-033).
 
 import { ApprovalState, LineApprovalStatus } from './purchaseRules';
-import { PackageStatus, RequestStatus, Submission, SubmissionType } from './types';
+import { BuyerId, CurrentUser, PackageStatus, PurchaseRequest, RequestStatus, Submission, SubmissionType } from './types';
 
 export type BadgeTone = 'lavender' | 'purple' | 'amber' | 'green' | 'red';
 
@@ -15,6 +15,17 @@ export const REQUEST_STATUS_DISPLAY: Record<RequestStatus, { label: string; tone
 };
 
 export const REQUEST_STATUSES = Object.keys(REQUEST_STATUS_DISPLAY) as RequestStatus[];
+
+/** What differs when the approver buys (P-037): the employee does not buy or submit, and Submitted reads as Purchased. */
+const APPROVER_BUYS_DISPLAY: Partial<Record<RequestStatus, { label: string; tone: BadgeTone; help: string }>> = {
+  Approved: { label: 'Approved', tone: 'green', help: 'Approved. The approver buys it, attaches the receipt and finishes the request.' },
+  Submitted: { label: 'Purchased', tone: 'purple', help: 'Bought by the approver and sent for processing. Read-only until processed or returned.' }
+};
+
+/** How a request's status is shown, for the person who buys it (P-037). */
+export function requestStatusDisplay(status: RequestStatus, buyer: BuyerId = 'self'): { label: string; tone: BadgeTone; help: string } {
+  return (buyer === 'approver' ? APPROVER_BUYS_DISPLAY[status] : undefined) ?? REQUEST_STATUS_DISPLAY[status];
+}
 
 const PACKAGE_TONE: Record<PackageStatus, BadgeTone> = { Uploading: 'lavender', Ready: 'lavender', Processing: 'purple', Packaged: 'green', Failed: 'red' };
 
@@ -40,7 +51,7 @@ export function submissionStatusDisplay(type: SubmissionType, status: PackageSta
   return { label: (type === 'approval' ? APPROVAL_LABEL : PACKAGE_LABEL)[status], tone: PACKAGE_TONE[status] };
 }
 
-export const APPROVAL_STATE_DISPLAY: Record<ApprovalState, { label: string; tone: BadgeTone; help: string }> = {
+const APPROVAL_STATE_DISPLAY_SELF: Record<ApprovalState, { label: string; tone: BadgeTone; help: string }> = {
   notRequired: { label: 'No approval needed', tone: 'lavender', help: 'Every vendor total is under the approval threshold.' },
   needed: { label: 'Approval needed', tone: 'amber', help: 'Send the request for approval before you buy.' },
   pending: { label: 'Awaiting approval', tone: 'amber', help: 'Waiting for the approver.' },
@@ -56,9 +67,42 @@ export const LINE_APPROVAL_DISPLAY: Record<LineApprovalStatus, { label: string; 
   changed: { label: 'Changed since approval', tone: 'amber' }
 };
 
-/** Requests an employee may edit (P-027). */
-export function isEditable(status: RequestStatus): boolean {
-  return status === 'Draft' || status === 'Returned' || status === 'Approved';
+/** The same, as shown when the approver buys: the request goes to the approver whatever it costs, and is not bought by the employee (P-037). */
+const APPROVAL_STATE_DISPLAY_APPROVER: Record<ApprovalState, { label: string; tone: BadgeTone; help: string }> = {
+  ...APPROVAL_STATE_DISPLAY_SELF,
+  needed: { label: 'Approval needed', tone: 'amber', help: 'Send the request to the approver. They approve it and buy it.' },
+  approved: { label: 'Approved', tone: 'green', help: 'Approved. The approver buys it and finishes the request.' }
+};
+
+export const APPROVAL_STATE_DISPLAY = APPROVAL_STATE_DISPLAY_SELF;
+
+/** How an approval state is shown, for the person who buys it (P-037). */
+export function approvalStateDisplay(state: ApprovalState, buyer: BuyerId = 'self'): { label: string; tone: BadgeTone; help: string } {
+  return (buyer === 'approver' ? APPROVAL_STATE_DISPLAY_APPROVER : APPROVAL_STATE_DISPLAY_SELF)[state];
+}
+
+/**
+ * Requests an employee may edit (P-027): a Draft, a Returned request, and, when
+ * the employee buys, an Approved one. When the approver buys, an Approved
+ * request is the approver's to change (`mayBuy`), not the employee's (P-037).
+ */
+export function isEditable(status: RequestStatus, buyer: BuyerId = 'self'): boolean {
+  return status === 'Draft' || status === 'Returned' || (status === 'Approved' && buyer === 'self');
+}
+
+/**
+ * Whether this person is the one who buys the request now (P-037): the
+ * approver who approved a request the approver buys, while it is Approved. They
+ * may change its rows, attach the receipt and mark it purchased (P-040).
+ */
+export function mayBuy(request: Pick<PurchaseRequest, 'buyer' | 'status' | 'approvedByEmail'>, user: Pick<CurrentUser, 'email' | 'isAdministrator'>): boolean {
+  return (
+    request.buyer === 'approver' &&
+    request.status === 'Approved' &&
+    user.isAdministrator &&
+    request.approvedByEmail.trim() !== '' &&
+    request.approvedByEmail.trim().toLowerCase() === user.email.trim().toLowerCase()
+  );
 }
 
 /** The statuses in which an approver or administrator can confirm or change categories (P-012, P-024). */

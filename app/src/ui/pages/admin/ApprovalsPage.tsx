@@ -4,19 +4,27 @@ import { formatCents } from '../../../domain/money';
 import { useApp } from '../../AppContext';
 import { Card, DateTime, HeaderCard, Tag, openRowProps } from '../../components/common';
 import { Icon } from '../../components/Icon';
-import { latestApprovalByRequest, requestsAwaitingApproval } from './adminData';
+import { latestApprovalByRequest, requestsAwaitingApproval, requestsToBuy } from './adminData';
 import { useAdminLists } from './useAdminLists';
 
-/** Requests waiting for the approver (P-006). Each also arrives as an email (P-018). */
+/**
+ * Requests waiting for the approver (P-006), each of which also arrives as an
+ * email (P-018), and the approved requests the approver is to buy (P-037).
+ */
 export function ApprovalsPage(): React.ReactElement {
   const app = useApp();
   const { data, loadError } = useAdminLists();
   const waiting = data ? requestsAwaitingApproval(data.requests) : null;
+  const toBuy = data ? requestsToBuy(data.requests) : null;
   const approvalEmails = data ? latestApprovalByRequest(data.submissions) : new Map();
+  const mine = (r: { approvedByEmail: string }) => r.approvedByEmail.trim().toLowerCase() === app.user.email.trim().toLowerCase();
 
   return (
     <>
-      <HeaderCard title="Approvals" subtitle="Requests waiting for your approval. You also get an email for each one." />
+      <HeaderCard
+        title="Approvals"
+        subtitle="Requests waiting for your approval, and the requests you approved that you are to buy. You also get an email for each request sent for approval."
+      />
       {loadError ? (
         <div className="ctx-banner red" role="alert">
           {messages.loadFailed}
@@ -61,10 +69,53 @@ export function ApprovalsPage(): React.ReactElement {
                         {formatCents(cents)}
                         <div className="ctx-hint">{count === 1 ? '1 vendor total' : `${count} vendor totals`}</div>
                       </td>
-                      <td>{r.boughtBeforeApproval ? <Tag>Bought before approval</Tag> : null}</td>
+                      <td>
+                        {r.boughtBeforeApproval ? <Tag>Bought before approval</Tag> : null}
+                        {r.buyer === 'approver' ? <Tag>The approver buys it</Tag> : null}
+                      </td>
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+      <Card title="To buy">
+        {toBuy === null ? (
+          <div className="ctx-empty">Loading</div>
+        ) : toBuy.length === 0 ? (
+          <div className="ctx-empty">
+            <Icon name="check" size={28} />
+            <h3>Nothing to buy</h3>
+            Requests you approve appear here until you mark them purchased.
+          </div>
+        ) : (
+          <div className="ctx-table-wrap">
+            <table className="ctx-table">
+              <thead>
+                <tr>
+                  <th>Request</th>
+                  <th>Requested by</th>
+                  <th>Business purpose</th>
+                  <th>Approved</th>
+                  <th className="num">Total</th>
+                  <th>Who buys</th>
+                </tr>
+              </thead>
+              <tbody>
+                {toBuy.map((r) => (
+                  <tr key={r.id} {...openRowProps(`Open ${r.requestNumber}`, () => app.navigate({ name: 'adminRequest', requestId: r.id }))}>
+                    <td className="ctx-strong nowrap">{r.requestNumber}</td>
+                    <td>{r.ownerName}</td>
+                    <td>{r.businessPurpose}</td>
+                    <td className="ctx-muted">
+                      <DateTime value={r.approvedOn} />
+                    </td>
+                    <td className="num">{formatCents(r.totalRequestCents)}</td>
+                    <td>{mine(r) ? <Tag>You</Tag> : r.approvedBy}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

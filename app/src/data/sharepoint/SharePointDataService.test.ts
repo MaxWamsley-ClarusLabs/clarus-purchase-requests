@@ -5,18 +5,22 @@
 
 import { messages } from '../../domain/messages';
 import { CERTIFICATION } from '../../domain/purchaseRules';
+import { PurchaseRequest } from '../../domain/types';
 import { MAX_APPROVERS, checkFlowConfig } from '../../export/flowPackage';
+import { PurchaseDataService } from '../PurchaseDataService';
 import { FakeOwner, FakeSharePoint, FakeUser } from '../../testing/FakeSharePoint';
 import { uniqueName } from '../files';
-import { Harness, JANE, MAX, Person, SAM, describeDataServiceRules } from '../mock/dataServiceContract';
+import { Harness, JANE, MAX, OLIVE, Person, SAM, describeDataServiceRules } from '../mock/dataServiceContract';
 import { SharePointRequestError, SpClient, SpFetch } from './http';
 import { LISTS, SUBMISSION_TYPE_LABELS } from './schema';
+import { notAllowed } from './serviceRules';
 import { NotAllowedError, SharePointDataService, hasPermission } from './SharePointDataService';
 
 const FAKE_USERS: Record<string, FakeUser> = {
   [MAX.email]: { id: 1, title: MAX.name, email: MAX.email, admin: true },
   [JANE.email]: { id: 7, title: JANE.name, email: JANE.email, admin: false },
-  [SAM.email]: { id: 8, title: SAM.name, email: SAM.email, admin: false }
+  [SAM.email]: { id: 8, title: SAM.name, email: SAM.email, admin: false },
+  [OLIVE.email]: { id: 9, title: OLIVE.name, email: OLIVE.email, admin: true }
 };
 const FAKE_MAX = FAKE_USERS[MAX.email];
 const FAKE_JANE = FAKE_USERS[JANE.email];
@@ -94,10 +98,16 @@ async function harness(): Promise<Harness & { site: FakeSharePoint }> {
   };
 }
 
+/** A new request the employee buys (P-037): most tests here are about that case, as in the first build. The approver-buys tests say so. */
+async function createOwn(svc: PurchaseDataService): Promise<PurchaseRequest> {
+  const created = await svc.createRequest();
+  return svc.updateRequest(created.id, { buyer: 'self' });
+}
+
 /** Jane fills in a request that needs no approval, with a receipt and a quote, and returns its ID. */
 async function janeRequest(site: FakeSharePoint): Promise<{ id: number; lineId: string }> {
   const jane = serviceFor(site, FAKE_JANE);
-  const request = await jane.createRequest();
+  const request = await createOwn(jane);
   await jane.updateRequest(request.id, {
     businessPurpose: 'Lab supplies for the Phase 1 assay',
     department: 'R&D',
@@ -189,8 +199,9 @@ describe('Site set-up (travel D-063)', () => {
     expect(choices('PurchaseRequests', 'RequestStatus')).toEqual(['Draft', 'Awaiting approval', 'Approved', 'Submitted', 'Returned', 'Processed']);
     expect(choices('PurchaseRequests', 'ReturnStage')).toEqual(['Approval', 'Processing']);
     expect(choices('PurchaseRequestLines', 'PaidBy')).toEqual(['Company', 'Employee']);
-    expect(choices('PurchaseRequestLines', 'Category')).toHaveLength(8);
-    expect(choices('PurchaseRequestLines', 'Category')).toContain('R&D Materials & Supplies / Equipment');
+    expect(choices('PurchaseRequestLines', 'Category')).toHaveLength(13);
+    expect(choices('PurchaseRequests', 'Buyer')).toEqual(['The approver buys it', 'I will buy it myself']);
+    expect(choices('PurchaseRequestLines', 'Category')).toContain('R&D Materials & Supplies');
     expect(choices('PurchaseSubmissions', 'SubmissionType')).toEqual(['Approval request', 'Processing package']);
     expect(choices('PurchaseSubmissions', 'PackageStatus')).toEqual(['Uploading', 'Ready', 'Processing', 'Packaged', 'Failed']);
   });
@@ -325,7 +336,7 @@ describe('what is stored in the lists (docs/DATA_MODEL.md)', () => {
       PurchaseDate: '2026-10-12',
       Vendor: 'Acme Lab Supply',
       Description: 'Pipette tips',
-      Category: 'R&D Materials & Supplies / Equipment',
+      Category: 'R&D Materials & Supplies',
       Amount: 452.3,
       PaidBy: 'Employee'
     });
@@ -367,7 +378,7 @@ describe('what is stored in the lists (docs/DATA_MODEL.md)', () => {
   it('relabels the rows after a deletion, so the list reads right to anyone viewing it directly', async () => {
     const site = await setUpSite();
     const jane = serviceFor(site, FAKE_JANE);
-    const request = await jane.createRequest();
+    const request = await createOwn(jane);
     const [a, b, c] = await jane.addLinesFromFiles(request.id, [file('a.pdf'), file('b.pdf'), file('c.pdf')], 'receipt');
     const titles = () => [1, 2, 3, 4].map((n) => site.listByUrlName('PurchaseRequestLines')!.items.get(n)?.fields.Title);
     expect(titles()).toEqual(['PR-0001 row 1', 'PR-0001 row 2', 'PR-0001 row 3', undefined]);
@@ -379,7 +390,7 @@ describe('what is stored in the lists (docs/DATA_MODEL.md)', () => {
   it('records the approver as a person column and the time, and clears them when the approval is taken back', async () => {
     const site = await setUpSite();
     const jane = serviceFor(site, FAKE_JANE);
-    const request = await jane.createRequest();
+    const request = await createOwn(jane);
     await jane.updateRequest(request.id, { businessPurpose: 'Lab supplies', department: 'R&D' });
     const line = await jane.addEmptyLine(request.id);
     await jane.updateLine(line.id, {
@@ -417,7 +428,7 @@ describe('what is stored in the lists (docs/DATA_MODEL.md)', () => {
       ApprovedBy: { Id: FAKE_MAX.id, Title: 'Max Wamsley', EMail: 'max.wamsley@example.com' },
       ApprovalNote: 'OK'
     });
-    expect(stored(site, 'PurchaseRequestLines', 1)).toMatchObject({ CategoryConfirmedBy: 'Max Wamsley', Category: 'R&D Materials & Supplies / Equipment' });
+    expect(stored(site, 'PurchaseRequestLines', 1)).toMatchObject({ CategoryConfirmedBy: 'Max Wamsley', Category: 'R&D Materials & Supplies' });
 
     // Back to awaiting approval, then returned: the person and the time are cleared, the stage is written.
     await jane.updateLine(line.id, { amountCents: 130000 });
@@ -487,7 +498,7 @@ describe('what is stored in the lists (docs/DATA_MODEL.md)', () => {
   it('writes an approval request as its own type, titled "approval", with no attachments', async () => {
     const site = await setUpSite();
     const jane = serviceFor(site, FAKE_JANE);
-    const request = await jane.createRequest();
+    const request = await createOwn(jane);
     await jane.updateRequest(request.id, { businessPurpose: 'Lab supplies', department: 'R&D' });
     const line = await jane.addEmptyLine(request.id);
     await jane.updateLine(line.id, {
@@ -583,7 +594,7 @@ describe('what the REST calls do, and in what order', () => {
   it('hands an approval request to the flow last: created Uploading with no files, request locked, then Ready', async () => {
     const site = await setUpSite();
     const jane = serviceFor(site, FAKE_JANE);
-    const request = await jane.createRequest();
+    const request = await createOwn(jane);
     await jane.updateRequest(request.id, { businessPurpose: 'Lab supplies', department: 'R&D' });
     const line = await jane.addEmptyLine(request.id);
     await jane.updateLine(line.id, {
@@ -610,7 +621,7 @@ describe('what the REST calls do, and in what order', () => {
   it('moves rows and requests to the recycle bin instead of deleting them, rows first', async () => {
     const site = await setUpSite();
     const jane = serviceFor(site, FAKE_JANE);
-    const request = await jane.createRequest();
+    const request = await createOwn(jane);
     const [a] = await jane.addLinesFromFiles(request.id, [file('a.pdf'), file('b.pdf')], 'receipt');
     const before = site.log.length;
     await jane.deleteLine(a.id);
@@ -821,7 +832,7 @@ describe('waiting while SharePoint is busy', () => {
     const jane = new SharePointDataService(client, () => NOW);
     await jane.getCurrentUser();
     site.busyReplies = 2;
-    const request = await jane.createRequest();
+    const request = await createOwn(jane);
     expect(request.requestNumber).toBe('PR-0001');
     expect(waits).toEqual([1000, 1000]);
   });
@@ -855,7 +866,7 @@ describe("rows and submissions belong to the request's owner (travel D-002, D-00
   /** Jane's request needing approval: Acme Lab Supply $1,000.00 with a quote, and a small purchase. */
   async function janeBig(site: FakeSharePoint): Promise<{ id: number; lines: string[] }> {
     const jane = serviceFor(site, FAKE_JANE);
-    const request = await jane.createRequest();
+    const request = await createOwn(jane);
     await jane.updateRequest(request.id, { businessPurpose: 'Lab supplies', department: 'R&D' });
     const rows: string[] = [];
     for (const [vendor, amountCents] of [
@@ -970,7 +981,7 @@ describe('what a first send writes (P-019)', () => {
   it('sends a Draft without clearing an approver, a time or a return stage it never had, and clears them when there are some', async () => {
     const site = await setUpSite();
     const jane = serviceFor(site, FAKE_JANE);
-    const request = await jane.createRequest();
+    const request = await createOwn(jane);
     await jane.updateRequest(request.id, { businessPurpose: 'Lab supplies', department: 'R&D' });
     const line = await jane.addEmptyLine(request.id);
     await jane.updateLine(line.id, {
@@ -1029,7 +1040,7 @@ describe('what approving and returning write (P-019)', () => {
   /** Jane's request with Acme Lab Supply at $1,000.00 and a quote, sent for approval for the first time. */
   async function sentOnce(site: FakeSharePoint): Promise<number> {
     const jane = serviceFor(site, FAKE_JANE);
-    const request = await jane.createRequest();
+    const request = await createOwn(jane);
     await jane.updateRequest(request.id, { businessPurpose: 'Lab supplies', department: 'R&D' });
     const line = await jane.addEmptyLine(request.id);
     await jane.updateLine(line.id, {
@@ -1170,7 +1181,7 @@ describe('recording what kind of file each attachment is (P-021)', () => {
   it('does not count a file added directly in SharePoint, with no record of its kind, as the receipt', async () => {
     const site = await setUpSite();
     const jane = serviceFor(site, FAKE_JANE);
-    const request = await jane.createRequest();
+    const request = await createOwn(jane);
     await jane.updateRequest(request.id, { businessPurpose: 'Postage', department: 'R&D' });
     const line = await jane.addEmptyLine(request.id);
     await jane.updateLine(line.id, { date: '2026-10-20', vendor: 'QuickShip Postage', description: 'Postage', category: 'shipping', amountCents: 2500 });
@@ -1197,3 +1208,173 @@ async function refusal(call: Promise<unknown>): Promise<Error> {
   }
   throw new Error('The call was allowed, but it should have been refused.');
 }
+
+describe('a request the approver buys: what is stored, and whose rows and submissions belong to it (P-037, P-039, P-040)', () => {
+  /** An item made directly in the list by this person, as anyone who can add to it could. */
+  async function postAs(site: FakeSharePoint, user: FakeUser, urlName: string, fields: Record<string, unknown>): Promise<number> {
+    const client = new SpClient(site.fetchAs(user), site.webUrl, site.webPath, async () => undefined);
+    const created = await client.post<{ Id: number }>(`${client.listPath(urlName)}/items`, fields);
+    return created!.Id;
+  }
+
+  /** Jane asks for two purchases the approver will buy, certifies, and Max approves. */
+  async function approvedForMax(site: FakeSharePoint, buyer: 'approver' | 'self' = 'approver'): Promise<{ id: number; lines: string[] }> {
+    const jane = serviceFor(site, FAKE_JANE);
+    const created = await jane.createRequest();
+    await jane.updateRequest(created.id, { businessPurpose: 'Lab supplies', department: 'R&D', buyer });
+    const lines: string[] = [];
+    for (const [vendor, amountCents] of [
+      ['Acme Lab Supply', 100000],
+      ['Northwind Office Supply', 8645]
+    ] as const) {
+      const line = await jane.addEmptyLine(created.id);
+      await jane.updateLine(line.id, {
+        date: '2026-10-20',
+        vendor,
+        description: 'Supplies',
+        category: 'rdMaterials',
+        amountCents,
+        paidBy: 'company',
+        itemLink: `https://www.example.com/${encodeURIComponent(vendor)}`
+      });
+      lines.push(line.id);
+    }
+    await jane.addFileToLine(lines[0], file('quote.pdf'), 'quote');
+    if (buyer === 'approver') await jane.sendForApproval(created.id, CERTIFICATION);
+    else await jane.sendForApproval(created.id);
+    await serviceFor(site, FAKE_MAX, new Date(2026, 9, 17, 10, 5)).approveRequest(created.id, { note: 'OK', categories: {} });
+    return { id: created.id, lines };
+  }
+
+  it('stores who buys as its choice, the link and the reason as columns, and the rows as sent in the approval record', async () => {
+    const site = await setUpSite();
+    const { id, lines } = await approvedForMax(site);
+    expect(stored(site, 'PurchaseRequests', id)).toMatchObject({ Buyer: 'The approver buys it', RequestStatus: 'Approved', ApprovedById: FAKE_MAX.id });
+    expect(stored(site, 'PurchaseRequestLines', Number(lines[0]))).toMatchObject({
+      ItemLink: 'https://www.example.com/Acme%20Lab%20Supply',
+      PaidBy: 'Company',
+      Amount: 1000
+    });
+    const record = JSON.parse(String(stored(site, 'PurchaseRequests', id).ApprovalRecord));
+    expect(record.rows.map((r: { vendor: string; amountCents: number }) => [r.vendor, r.amountCents])).toEqual([
+      ['Acme Lab Supply', 100000],
+      ['Northwind Office Supply', 8645]
+    ]);
+    // The employee's certification is on the approval request, the only record of it when the approver buys.
+    expect(stored(site, 'PurchaseSubmissions', 1)).toMatchObject({
+      SubmissionType: SUBMISSION_TYPE_LABELS.approval,
+      SubmitterEmail: JANE.email,
+      CertificationText: CERTIFICATION
+    });
+    // The employee buys: the other choice is stored as its label.
+    await serviceFor(site, FAKE_JANE).updateRequest((await serviceFor(site, FAKE_JANE).createRequest()).id, { buyer: 'self' });
+    expect(stored(site, 'PurchaseRequests', id + 1).Buyer).toBe('I will buy it myself');
+  });
+
+  it('counts the rows and the package the approver made, and not those of anyone else, including another site Owner', async () => {
+    const site = await setUpSite();
+    const { id, lines } = await approvedForMax(site);
+    const max = serviceFor(site, FAKE_MAX, new Date(2026, 9, 18, 9, 0));
+    const added = await max.addEmptyLine(id);
+    await max.updateLine(added.id, { vendor: 'Courier Co', description: 'Courier', category: 'shipping', amountCents: 1500 });
+    const forgedBySam = await postAs(site, FAKE_SAM, 'PurchaseRequestLines', {
+      Title: 'x',
+      RequestId: id,
+      RowNumber: 4,
+      Vendor: 'Acme Lab Supply',
+      Amount: 5000,
+      PaidBy: 'Company'
+    });
+    const forgedByOlive = await postAs(site, FAKE_USERS[OLIVE.email], 'PurchaseRequestLines', {
+      Title: 'y',
+      RequestId: id,
+      RowNumber: 5,
+      Vendor: 'Acme Lab Supply',
+      Amount: 7000,
+      PaidBy: 'Company'
+    });
+    // The approver's own row counts, in the request, its totals and the duplicate checks; the others' do not.
+    expect((await max.getRequest(id)).lines.map((l) => l.id)).toEqual([...lines, added.id]);
+    expect((await max.listAllLineRefs()).map((r) => r.line.id)).toEqual([...lines, added.id]);
+    expect(stored(site, 'PurchaseRequests', id)).toMatchObject({ TotalCompany: 1000 + 86.45 + 15, TotalReimburse: 0 });
+    expect((await refusal(max.updateLine(String(forgedBySam), { vendor: 'Changed' }))).message).toBe(messages.spNotFound);
+    expect((await refusal(max.updateLine(String(forgedByOlive), { vendor: 'Changed' }))).message).toBe(messages.spNotFound);
+    // Max buys it. The package he makes is his own item, which belongs to the request, and the flow's work on it is retried as usual.
+    for (const line of (await max.getRequest(id)).lines) await max.addFileToLine(line.id, file(`receipt-${line.rowNumber}.pdf`), 'receipt');
+    const package_ = await max.markPurchased(id);
+    expect(stored(site, 'PurchaseSubmissions', package_.id)).toMatchObject({
+      AuthorId: FAKE_MAX.id,
+      SubmitterName: 'Max Wamsley',
+      SubmissionType: SUBMISSION_TYPE_LABELS.package
+    });
+    expect((await max.listSubmissions()).map((s) => [s.id, s.type])).toEqual([
+      [1, 'approval'],
+      [package_.id, 'package']
+    ]);
+    expect((await max.listSubmissionsForRequest(id)).map((s) => s.type)).toEqual(['approval', 'package']);
+    // A submission anyone else made that names the request is ignored here too.
+    const forgedSubmission = await postAs(site, FAKE_SAM, 'PurchaseSubmissions', {
+      Title: 'z',
+      RequestId: id,
+      SubmissionType: SUBMISSION_TYPE_LABELS.package,
+      SubmissionNumber: 2,
+      PackageStatus: 'Failed'
+    });
+    expect((await max.listSubmissions()).map((s) => s.id)).not.toContain(forgedSubmission);
+    expect((await refusal(max.retryPackaging(forgedSubmission))).message).toBe(messages.spNotFound);
+  });
+
+  it("shows the employee only what the employee made: rows and the package the approver made are the approver's items", async () => {
+    const site = await setUpSite();
+    const { id, lines } = await approvedForMax(site);
+    const max = serviceFor(site, FAKE_MAX, new Date(2026, 9, 18, 9, 0));
+    const added = await max.addEmptyLine(id);
+    await max.updateLine(added.id, { vendor: 'Courier Co', description: 'Courier', category: 'shipping', amountCents: 1500, sameReceiptAsRow: 1 });
+    await max.addFileToLine(lines[0], file('r.pdf'), 'receipt');
+    await max.addFileToLine(lines[1], file('r2.pdf'), 'receipt');
+    await max.markPurchased(id);
+    const jane = serviceFor(site, FAKE_JANE);
+    // The list shows each person only their own items (travel D-003), so the row Max added is not in Jane's view; her own rows, as Max changed them, are.
+    expect((await jane.getRequest(id)).lines.map((l) => l.id)).toEqual(lines);
+    expect((await jane.listSubmissionsForRequest(id)).map((s) => s.type)).toEqual(['approval']);
+    expect((await jane.getRequest(id)).request.status).toBe('Submitted');
+  });
+
+  it('does not count a row the approver made on a request the employee buys', async () => {
+    const site = await setUpSite();
+    const { id, lines } = await approvedForMax(site, 'self');
+    const byMax = await postAs(site, FAKE_MAX, 'PurchaseRequestLines', {
+      Title: 'x',
+      RequestId: id,
+      RowNumber: 3,
+      Vendor: 'Acme Lab Supply',
+      Amount: 5000,
+      PaidBy: 'Company'
+    });
+    const max = serviceFor(site, FAKE_MAX);
+    expect((await max.getRequest(id)).lines.map((l) => l.id)).toEqual(lines);
+    expect((await max.listAllLineRefs()).map((r) => r.line.id)).not.toContain(String(byMax));
+    // Nor can he change or add to it through the app: the employee buys it.
+    expect((await refusal(max.updateLine(lines[0], { vendor: 'Changed' }))).message).toBe(notAllowed.notYours);
+    expect((await refusal(max.addEmptyLine(id))).message).toBe(notAllowed.notYours);
+  });
+
+  it("stops counting the approver's rows when the approval is taken back, so a request must have them deleted before it is returned", async () => {
+    const site = await setUpSite();
+    const { id } = await approvedForMax(site);
+    const max = serviceFor(site, FAKE_MAX, new Date(2026, 9, 18, 9, 0));
+    const added = await max.addEmptyLine(id);
+    expect((await refusal(max.returnRequest(id, 'No'))).message).toBe(notAllowed.addedRowsFirst('row 3'));
+    expect(stored(site, 'PurchaseRequests', id).RequestStatus).toBe('Approved');
+    await max.deleteLine(added.id);
+    await max.returnRequest(id, 'No');
+    expect(stored(site, 'PurchaseRequests', id)).toMatchObject({ RequestStatus: 'Returned', ApprovedById: null, ApprovedOn: null });
+  });
+
+  it('reads who approved and who buys when it lists every request, so the pages can tell the approver which are theirs to buy', async () => {
+    const site = await setUpSite();
+    const { id } = await approvedForMax(site);
+    const all = await serviceFor(site, FAKE_MAX).listAllRequests();
+    expect(all.find((r) => r.id === id)).toMatchObject({ buyer: 'approver', status: 'Approved', approvedBy: 'Max Wamsley', approvedByEmail: MAX.email });
+  });
+});

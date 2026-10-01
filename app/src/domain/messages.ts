@@ -23,6 +23,10 @@ export const messages = {
   amountRequired: `Enter an amount like 45.10: digits, at most two decimals, up to ${formatCents(MAX_AMOUNT_CENTS)}.`,
   amountNotPositive: 'Enter an amount greater than zero, like 45.10.',
   paidByRequired: 'Choose who paid.',
+  /** For a request the approver buys (P-039): the approver needs the item's web page, or a reason there is none. */
+  linkOrReason: 'Add the web address of the item so the approver can buy it, or say why there is no web page.',
+  linkNotAddress: 'That is not a web address. Paste the whole address, starting with https://.',
+  linkTooLong: (max: number) => `That web address is longer than ${max} characters. Use a shorter address for the item.`,
   receiptOrReason: 'Attach a receipt or invoice, or give a reason there is none.',
   sameReceiptBroken: (row: number) => `Row ${row} has no receipt of its own to share. Choose a row that has a receipt.`,
   suggestionsNotConfirmed: (fields: string) => `Filled in by the app: ${fields}. Check against the receipt, then confirm or correct.`,
@@ -63,6 +67,8 @@ export const messages = {
   actionFailed: (detail: string) => `That did not work. ${detail} Try again. If it keeps happening, tell the administrator.`,
 
   certificationRequired: 'Tick the certification to submit.',
+  certificationRequiredToSend: 'Tick the certification to send the request.',
+  approverBuysNotSubmitted: 'The approver buys this request, so it is marked purchased by the approver, not submitted by the employee.',
   // SharePoint problems, shown inside actionFailed (travel D-060).
   spForbidden: 'You do not have permission for this.',
   spNotFound: 'It could not be found; it may have been deleted. Refresh the page.',
@@ -76,6 +82,11 @@ export const messages = {
 
   submitConfirm: 'After you submit, the request is locked. It can only be changed if an administrator returns it to you.',
   sendConfirm: 'After you send it, the request is locked while the approver decides. The approver can approve it or return it to you with a note.',
+  /** For a request the approver buys (P-037). */
+  sendToApproverConfirm:
+    'After you send it, the request is locked. The approver approves it, buys it and finishes it. You can change it only if the approver returns it to you with a note.',
+  markPurchasedConfirm:
+    'After you mark it purchased, the request is locked and a folder with the receipts and the CSV is made for processing. It can be changed again only if the administrator returns it to you.',
   saved: 'Saved',
   saving: 'Saving'
 } as const;

@@ -2,15 +2,26 @@ import * as React from 'react';
 import { NO_QUOTE_REASONS, NO_RECEIPT_REASONS } from '../../domain/defaults';
 import { FIRST_YEAR, LAST_YEAR, isValidIsoDate } from '../../domain/dates';
 import { centsToPlain, parseAmountToCents } from '../../domain/money';
-import { CATEGORIES, LineApproval, PAID_BY_OPTIONS, categoryNeedsDescription, findCategory, vendorGroups } from '../../domain/purchaseRules';
+import {
+  CATEGORIES,
+  ITEM_LINK_MAX_LENGTH,
+  LineApproval,
+  NO_LINK_REASONS,
+  PAID_BY_OPTIONS,
+  categoryNeedsDescription,
+  findCategory,
+  safeLink,
+  vendorGroups
+} from '../../domain/purchaseRules';
 import { ACCEPT_ATTRIBUTE, hasReceipt, quoteFiles, receiptFiles, receiptSourceRow } from '../../domain/receipts';
 import { LINE_APPROVAL_DISPLAY } from '../../domain/statuses';
 import { messages } from '../../domain/messages';
 import { suggestedFieldsText } from '../../domain/suggestions';
-import { FileKind, PurchaseLine, SuggestedField, TEXT_MAX_LENGTH } from '../../domain/types';
+import { BuyerId, FileKind, PurchaseLine, SuggestedField, TEXT_MAX_LENGTH } from '../../domain/types';
 import { Issue, LineField, ValidationStage, issueForCell, issuesForLine } from '../../domain/validation';
 import { LineChanges } from '../../data/PurchaseDataService';
 import { PASTE_COLUMNS, PasteColumn, parseClipboardTable, pasteWarning, planPaste } from '../pasteParse';
+import { GRID_LINK_COLUMN_PX, gridMinWidth } from '../theme';
 import { Icon } from './Icon';
 import { Badge, FileChip, FullTextSelect, IssueLine, Tag } from './common';
 
@@ -18,6 +29,18 @@ interface Props {
   lines: PurchaseLine[];
   issues: Issue[];
   readOnly: boolean;
+  /**
+   * Who buys the request (P-037). When the approver buys, nobody is asked who
+   * paid, and each row asks for the item's web address (P-039).
+   */
+  buyer: BuyerId;
+  /**
+   * The approver who approved the request is buying it (P-040): receipts and
+   * every column can be changed here. Without it, the employee of a request
+   * the approver buys sends quotes and links only; the receipts are the
+   * approver's.
+   */
+  buying?: boolean;
   /** Which action the request is being checked for: the quote reason is asked at "approval", the receipt reason at "submit" (P-006). */
   stage: ValidationStage;
   /** The approval status of each row, from the vendor totals (P-003). */
@@ -142,6 +165,10 @@ function without(record: Record<string, string>, key: string): Record<string, st
 export function PurchaseGrid(props: Props): React.ReactElement {
   const { lines, issues, readOnly } = props;
   const busy = !!props.busy;
+  const approverBuys = props.buyer === 'approver';
+  // The employee of a request the approver buys sends quotes, not receipts: the approver attaches those when buying (P-037).
+  const employeeSends = approverBuys && !props.buying;
+  const columnCount = approverBuys ? 10 : 11;
   const tableRef = React.useRef<HTMLTableElement>(null);
   const wrapRef = React.useRef<HTMLDivElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -308,7 +335,12 @@ export function PurchaseGrid(props: Props): React.ReactElement {
           <option key={r} value={r} />
         ))}
       </datalist>
-      <table className="ctx-grid" ref={tableRef}>
+      <datalist id="ctx-no-link-reasons">
+        {NO_LINK_REASONS.map((r) => (
+          <option key={r} value={r} />
+        ))}
+      </datalist>
+      <table className="ctx-grid" ref={tableRef} style={{ minWidth: gridMinWidth(approverBuys) }}>
         <thead>
           <tr>
             {/* "What was bought and why" takes the width left over: at least 172 pixels at the grid's narrowest (GRID_MIN_WIDTH_PX). */}
@@ -319,7 +351,8 @@ export function PurchaseGrid(props: Props): React.ReactElement {
             <th>What was bought and why</th>
             <th style={{ width: 148 }}>Category</th>
             <th style={{ width: 86, textAlign: 'right' }}>Amount</th>
-            <th style={{ width: 102 }}>Who paid</th>
+            {approverBuys ? null : <th style={{ width: 102 }}>Who paid</th>}
+            <th style={{ width: GRID_LINK_COLUMN_PX }}>Item link</th>
             <th style={{ width: 108 }}>Approval</th>
             <th style={{ width: 36 }} aria-label="Row menu" />
           </tr>
@@ -337,6 +370,10 @@ export function PurchaseGrid(props: Props): React.ReactElement {
             const quotes = quoteFiles(line);
             const receiptIssue = issueFor(line, 'receipt');
             const quoteIssue = issueFor(line, 'quote');
+            const linkIssue = issueFor(line, 'link');
+            // The reason there is no web page is asked for while the employee is sending a request the approver buys (P-039).
+            const askLinkReason = approverBuys && props.stage === 'approval' && line.itemLink.trim() === '';
+            const showNoLinkReason = (askLinkReason || line.noLinkReason.trim() !== '') && (!readOnly || line.noLinkReason.trim() !== '');
             const askReceiptReason = props.stage === 'submit' && !hasReceipt(line, lines);
             const showQuoteReason = askQuoteReason.has(line.id) && (!readOnly || line.noQuoteReason.trim() !== '');
             const showReceiptReason = askReceiptReason && (!readOnly || line.noReceiptReason.trim() !== '');
@@ -505,22 +542,69 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                       {...common(i, 'amount')}
                     />
                   </td>
+                  {approverBuys ? null : (
+                    <td>
+                      <select
+                        className={cellClass(line, 'paidBy')}
+                        title={cellTitle(line, 'paidBy')}
+                        aria-label={`Row ${line.rowNumber} who paid`}
+                        value={line.paidBy}
+                        onChange={(e) => props.onChange(line.id, { paidBy: e.target.value as PurchaseLine['paidBy'] })}
+                        {...common(i, 'paidBy')}
+                      >
+                        <option value="">Choose</option>
+                        {PAID_BY_OPTIONS.map((p) => (
+                          <option key={p.id} value={p.id} title={p.help}>
+                            {p.shortLabel}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  )}
                   <td>
-                    <select
-                      className={cellClass(line, 'paidBy')}
-                      title={cellTitle(line, 'paidBy')}
-                      aria-label={`Row ${line.rowNumber} who paid`}
-                      value={line.paidBy}
-                      onChange={(e) => props.onChange(line.id, { paidBy: e.target.value as PurchaseLine['paidBy'] })}
-                      {...common(i, 'paidBy')}
-                    >
-                      <option value="">Choose</option>
-                      {PAID_BY_OPTIONS.map((p) => (
-                        <option key={p.id} value={p.id} title={p.help}>
-                          {p.shortLabel}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="ctx-link-cell">
+                      <div className="ctx-link-row">
+                        <input
+                          className={cellClass(line, 'link')}
+                          title={cellTitle(line, 'link')}
+                          aria-label={`Row ${line.rowNumber} item link`}
+                          placeholder="https://"
+                          // One more than the longest allowed, so a longer one can be refused instead of cut.
+                          maxLength={ITEM_LINK_MAX_LENGTH + 1}
+                          value={line.itemLink}
+                          disabled={readOnly}
+                          onChange={(e) => props.onChange(line.id, { itemLink: e.target.value })}
+                          onFocus={() => props.onSelect(line.id)}
+                        />
+                        {safeLink(line.itemLink) ? (
+                          // Security: only an http or https address is made a link (safeLink), and it opens in a new tab with nothing passed on.
+                          <a
+                            className="ctx-link-open"
+                            href={safeLink(line.itemLink)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`Open the item link of row ${line.rowNumber}`}
+                            title="Open the item's web page in a new tab"
+                          >
+                            <Icon name="link" size={14} />
+                          </a>
+                        ) : null}
+                      </div>
+                      {showNoLinkReason ? (
+                        <input
+                          className={`ctx-cell noreceipt ${linkIssue ? linkIssue.severity : ''}`}
+                          placeholder="No web page: say why"
+                          list="ctx-no-link-reasons"
+                          aria-label={`Row ${line.rowNumber} reason there is no web page`}
+                          maxLength={TEXT_MAX_LENGTH}
+                          value={line.noLinkReason}
+                          disabled={readOnly}
+                          title={linkIssue?.message}
+                          onChange={(e) => props.onChange(line.id, { noLinkReason: e.target.value })}
+                          onFocus={() => props.onSelect(line.id)}
+                        />
+                      ) : null}
+                    </div>
                   </td>
                   <td>
                     {approval && approvalDisplay ? (
@@ -560,36 +644,38 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                                 ['receipt', 'Attach a receipt or invoice'],
                                 ['quote', 'Attach a quote']
                               ] as [FileKind, string][]
-                            ).map(([kind, label]) => (
-                              <label
-                                key={kind}
-                                role="menuitem"
-                                tabIndex={0}
-                                aria-disabled={busy ? true : undefined}
-                                title={busy ? BUSY_TITLE : undefined}
-                                onKeyDown={(e) => {
-                                  if (e.key !== 'Enter' && e.key !== ' ') return;
-                                  e.preventDefault();
-                                  // A file box that is turned off does not open.
-                                  e.currentTarget.querySelector('input')?.click();
-                                }}
-                              >
-                                <Icon name="plus" size={15} />
-                                {label}
-                                <input
-                                  type="file"
-                                  accept={ACCEPT_ATTRIBUTE}
-                                  hidden
-                                  disabled={busy}
-                                  onChange={(e) => {
-                                    const f = e.target.files?.[0];
-                                    if (f) props.onAddFile(line.id, f, kind);
-                                    closeMenu();
+                            )
+                              .filter(([kind]) => !(employeeSends && kind === 'receipt'))
+                              .map(([kind, label]) => (
+                                <label
+                                  key={kind}
+                                  role="menuitem"
+                                  tabIndex={0}
+                                  aria-disabled={busy ? true : undefined}
+                                  title={busy ? BUSY_TITLE : undefined}
+                                  onKeyDown={(e) => {
+                                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                                    e.preventDefault();
+                                    // A file box that is turned off does not open.
+                                    e.currentTarget.querySelector('input')?.click();
                                   }}
-                                />
-                              </label>
-                            ))}
-                            {receipts.length === 0 ? (
+                                >
+                                  <Icon name="plus" size={15} />
+                                  {label}
+                                  <input
+                                    type="file"
+                                    accept={ACCEPT_ATTRIBUTE}
+                                    hidden
+                                    disabled={busy}
+                                    onChange={(e) => {
+                                      const f = e.target.files?.[0];
+                                      if (f) props.onAddFile(line.id, f, kind);
+                                      closeMenu();
+                                    }}
+                                  />
+                                </label>
+                              ))}
+                            {receipts.length === 0 && !employeeSends ? (
                               <div style={{ padding: '6px 10px' }}>
                                 <div className="ctx-label" style={{ marginBottom: 4 }}>
                                   Same receipt as row
@@ -654,7 +740,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                 </tr>
                 {rowIssues.length > 0 || showSuggestNote ? (
                   <tr className="ctx-row-issues">
-                    <td colSpan={10}>
+                    <td colSpan={columnCount}>
                       {showSuggestNote ? (
                         <div className="ctx-suggest-note">
                           <span>{messages.suggestionsNotConfirmed(suggestedFieldsText(line.suggested))}</span>

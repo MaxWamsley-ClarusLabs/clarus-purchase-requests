@@ -62,7 +62,7 @@ const lineItem = (overrides: Partial<LineItem> = {}): LineItem => ({
   PurchaseDate: '2026-10-12',
   Vendor: 'Acme Lab Supply',
   Description: 'Pipette tips and centrifuge tubes',
-  Category: 'R&D Materials & Supplies / Equipment',
+  Category: 'R&D Materials & Supplies',
   CategoryOther: null,
   CategoryConfirmedBy: null,
   Amount: 640,
@@ -129,6 +129,7 @@ describe('list definitions (docs/DATA_MODEL.md)', () => {
       'RequestNumber',
       'Department',
       'ProjectCode',
+      'Buyer',
       'RequestStatus',
       'ReturnNote',
       'ReturnStage',
@@ -160,6 +161,8 @@ describe('list definitions (docs/DATA_MODEL.md)', () => {
       'PaidBy',
       'NoQuoteReason',
       'NoReceiptReason',
+      'ItemLink',
+      'NoLinkReason',
       'SameReceiptAsRow',
       'FileFingerprints',
       'SuggestedFields'
@@ -240,13 +243,13 @@ describe('list definitions (docs/DATA_MODEL.md)', () => {
       name: 'Category',
       displayName: 'Category',
       type: 'Choice',
-      choices: ['R&D Materials & Supplies / Equipment', 'Other'],
+      choices: ['R&D Materials & Supplies', 'Other'],
       defaultValue: 'Other',
       indexed: true
     });
     expect(xml).toBe(
       '<Field Type="Choice" DisplayName="Category" Name="Category" StaticName="Category" Required="FALSE" Indexed="TRUE" Format="Dropdown" FillInChoice="FALSE">' +
-        '<Default>Other</Default><CHOICES><CHOICE>R&amp;D Materials &amp; Supplies / Equipment</CHOICE><CHOICE>Other</CHOICE></CHOICES></Field>'
+        '<Default>Other</Default><CHOICES><CHOICE>R&amp;D Materials &amp; Supplies</CHOICE><CHOICE>Other</CHOICE></CHOICES></Field>'
     );
     expect(fieldXml({ name: 'Vendor', displayName: 'Vendor "name"', type: 'Text' })).toContain('DisplayName="Vendor &quot;name&quot;"');
     expect(fieldXml({ name: 'Vendor', displayName: 'Vendor', type: 'Text' })).toContain('MaxLength="255"');
@@ -748,7 +751,7 @@ describe('writing changes', () => {
       Amount: 42.1,
       PaidBy: 'Employee'
     });
-    expect(lineFields({ category: 'rdMaterials' })).toEqual({ Category: 'R&D Materials & Supplies / Equipment' });
+    expect(lineFields({ category: 'rdMaterials' })).toEqual({ Category: 'R&D Materials & Supplies' });
     expect(lineFields({ category: '', amountCents: null, paidBy: '' })).toEqual({ Category: null, Amount: null, PaidBy: null });
     expect(lineFields({ suggested: ['vendor', 'date'] })).toEqual({ SuggestedFields: 'date,vendor' });
     expect(lineFields({ suggested: [] })).toEqual({ SuggestedFields: '' });
@@ -906,5 +909,101 @@ describe('dates and times', () => {
     expect(localTime(undefined)).toBe('');
     expect(localTime('')).toBe('');
     expect(localTime('yesterday')).toBe('');
+  });
+});
+
+describe('who buys, the item link and the rows as sent (P-037, P-039, P-040)', () => {
+  it('reads who buys from its choice, and anything else as the approver, the more controlled reading', () => {
+    expect(requestFromItem(requestItem({ Buyer: 'The approver buys it' })).buyer).toBe('approver');
+    expect(requestFromItem(requestItem({ Buyer: 'I will buy it myself' })).buyer).toBe('self');
+    for (const edited of [null, undefined, '', 'Self', 'i will buy it myself', 'Nobody']) {
+      expect(requestFromItem(requestItem({ Buyer: edited })).buyer).toBe('approver');
+    }
+  });
+
+  it('writes who buys as its choice label, and only when asked', () => {
+    expect(requestFields({ buyer: 'approver' })).toEqual({ Buyer: 'The approver buys it' });
+    expect(requestFields({ buyer: 'self' })).toEqual({ Buyer: 'I will buy it myself' });
+    expect(requestFields({ buyer: 'nobody' as never })).toEqual({ Buyer: null });
+    expect(requestFields({ department: 'R&D' })).not.toHaveProperty('Buyer');
+  });
+
+  it('stores who buys as a choice column that defaults to the approver, and the link as plain text kept whole', () => {
+    const buyer = LISTS.requests.fields.find((f) => f.name === 'Buyer')!;
+    expect(buyer).toMatchObject({ type: 'Choice', choices: ['The approver buys it', 'I will buy it myself'], defaultValue: 'The approver buys it' });
+    expect(LISTS.lines.fields.find((f) => f.name === 'ItemLink')).toMatchObject({ type: 'Note' });
+    expect(LISTS.lines.fields.find((f) => f.name === 'NoLinkReason')).toMatchObject({ type: 'Text' });
+  });
+
+  it('reads and writes the item link and the reason there is none', () => {
+    const read = lineFromItem(lineItem({ ItemLink: 'https://www.example.com/item/42', NoLinkReason: 'Not sold online' }));
+    expect([read.itemLink, read.noLinkReason]).toEqual(['https://www.example.com/item/42', 'Not sold online']);
+    const empty = lineFromItem(lineItem({ ItemLink: null, NoLinkReason: undefined }));
+    expect([empty.itemLink, empty.noLinkReason]).toEqual(['', '']);
+    expect(lineFields({ itemLink: 'https://www.example.com/x', noLinkReason: 'Quote only' })).toEqual({
+      ItemLink: 'https://www.example.com/x',
+      NoLinkReason: 'Quote only'
+    });
+    // The address is never cut to 255 characters, which would open another page; a reason is one line.
+    const long = `https://www.example.com/${'a'.repeat(1500)}`;
+    expect(lineFields({ itemLink: long }).ItemLink).toBe(long);
+    expect(String(lineFields({ noLinkReason: 'r'.repeat(300) }).NoLinkReason)).toHaveLength(255);
+    expect(lineFields({ vendor: 'Acme' })).not.toHaveProperty('ItemLink');
+  });
+
+  it('keeps the rows as sent in the approval record, only when there are some', () => {
+    const rows = [
+      {
+        rowNumber: 1,
+        date: '2026-10-14',
+        vendor: 'Acme Lab Supply',
+        description: 'Tips',
+        category: 'Office Supplies',
+        amountCents: 6400,
+        itemLink: 'https://www.example.com/a',
+        noLinkReason: ''
+      },
+      {
+        rowNumber: 2,
+        date: '2026-10-14',
+        vendor: 'Northwind',
+        description: 'Paper',
+        category: 'Other: Paper',
+        amountCents: null,
+        itemLink: '',
+        noLinkReason: 'Not sold online'
+      }
+    ];
+    const record = { sent: [], approved: [], earlier: [], rows };
+    expect(parseApprovalRecord(approvalRecordJson(record))).toEqual(record);
+    // A request the employee buys writes nothing new, and a record from before this reads as it always did.
+    expect(JSON.parse(approvalRecordJson({ sent: [], approved: [], earlier: [] }))).toEqual({ sent: [], approved: [], earlier: [] });
+    expect(JSON.parse(approvalRecordJson({ sent: [], approved: [], earlier: [], rows: [] }))).toEqual({ sent: [], approved: [], earlier: [] });
+    expect(parseApprovalRecord(JSON.stringify({ sent: [], approved: [] }))).toEqual({ sent: [], approved: [], earlier: [] });
+  });
+
+  it('reads the rows as sent defensively: a row that is not well formed is dropped, and what is read is only text and numbers', () => {
+    const parsed = parseApprovalRecord(
+      JSON.stringify({
+        sent: [],
+        approved: [],
+        earlier: [],
+        rows: [
+          { rowNumber: 1, vendor: 'Acme', description: 7, category: null, amountCents: '12', itemLink: 'x', noLinkReason: {}, date: '2026-10-14' },
+          'nonsense',
+          { vendor: 'No row number' },
+          { rowNumber: 'two' },
+          { rowNumber: 3.6, amountCents: 99.5 }
+        ]
+      })
+    );
+    expect(parsed.rows).toEqual([
+      { rowNumber: 1, date: '2026-10-14', vendor: 'Acme', description: '', category: '', amountCents: null, itemLink: 'x', noLinkReason: '' },
+      { rowNumber: 4, date: '', vendor: '', description: '', category: '', amountCents: 100, itemLink: '', noLinkReason: '' }
+    ]);
+    expect(parseApprovalRecord(JSON.stringify({ sent: [], approved: [], earlier: [], rows: 'not a list' })).rows).toBeUndefined();
+    // At most 500 are kept.
+    const many = Array.from({ length: 600 }, (_, i) => ({ rowNumber: i + 1 }));
+    expect(parseApprovalRecord(JSON.stringify({ sent: [], approved: [], earlier: [], rows: many })).rows).toHaveLength(500);
   });
 });

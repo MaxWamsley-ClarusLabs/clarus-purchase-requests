@@ -7,20 +7,22 @@
 //
 // A row or a submission names its request by RequestId, which anyone can type.
 // It belongs to the request only if the request's owner (the request item's
-// author) made it; any other is ignored everywhere, so nobody can add a
-// purchase to someone else's request.
+// author) made it, or, for a request the approver buys, the approver recorded
+// on the request (P-037, P-040); any other is ignored everywhere, so nobody
+// can add a purchase to someone else's request.
 
+import { toIsoDate } from '../../domain/dates';
 import { defaultPaidBy, latestDepartment } from '../../domain/defaults';
 import { LineRef } from '../../domain/duplicates';
 import { messages } from '../../domain/messages';
 import { cleanFileName, requestNumber } from '../../domain/naming';
-import { EMPTY_APPROVAL, groupsForApproved, matchesWhatWasSent } from '../../domain/purchaseRules';
+import { DEFAULT_BUYER, EMPTY_APPROVAL, findBuyer, groupsForApproved, matchesWhatWasSent } from '../../domain/purchaseRules';
 import { checkReceiptFile } from '../../domain/receipts';
-import { isEditable } from '../../domain/statuses';
+import { isEditable, mayBuy } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
 import { AttachedFile, CurrentUser, FileKind, PurchaseLine, PurchaseRequest, Submission } from '../../domain/types';
 import { FlowConfig, FlowMode, LIVE_DESTINATION, MAX_APPROVERS, TEST_FOLDERS, TEST_LIBRARY_URL_NAME, isSafeEmailAddress } from '../../export/flowPackage';
-import { prepareApprovalRequest, prepareSubmission } from '../../export/submission';
+import { PreparedSubmission, prepareApprovalRequest, prepareSubmission } from '../../export/submission';
 import { fingerprintFile, uniqueName } from '../files';
 import { ApproveOptions, CategoryChoice, LineChanges, PurchaseDataService, RequestChanges, RequestWithLines } from '../PurchaseDataService';
 import { SetupStatus } from '../setup';
@@ -30,6 +32,7 @@ import {
   RequestItem,
   RequestWrite,
   SubmissionItem,
+  buyerFrom,
   lineFields,
   lineFromItem,
   requestFields,
@@ -40,34 +43,40 @@ import {
 } from './mapping';
 import { LISTS } from './schema';
 import {
+  LineEditor,
   NotAllowedError,
   applyLineChanges,
   approvalWhenApproved,
   approvalWhenReturned,
   approvalWhenSent,
+  buyRefusal,
   canConfirmCategories,
   categoryUpdates,
   changesAfterDelete,
+  employeeCertification,
   holdsApproval,
   nextRowNumber,
   notAllowed,
   previousFolderName,
   retryRefusal,
   returnStageFor,
+  rowsPhrase,
+  rowsToReview,
   sortSubmissionsForRequest,
-  staleUploading
+  staleUploading,
+  statusAfterReturn
 } from './serviceRules';
 import { SiteSetup } from './SiteSetup';
 
 export { NotAllowedError };
 
 const REQUEST_SELECT =
-  '$select=Id,Title,RequestNumber,Department,ProjectCode,RequestStatus,ReturnNote,ReturnStage,TotalReimburse,TotalCompany,TotalRequest,SubmissionCount,ApprovalRounds,' +
-  'SentForApprovalOn,BoughtBeforeApproval,ApprovalRecord,ApprovalNote,ApprovedOn,SubmittedOn,ProcessedOn,Modified,AuthorId,Author/Title,Author/EMail,' +
+  '$select=Id,Title,RequestNumber,Department,ProjectCode,Buyer,RequestStatus,ReturnNote,ReturnStage,TotalReimburse,TotalCompany,TotalRequest,SubmissionCount,ApprovalRounds,' +
+  'SentForApprovalOn,BoughtBeforeApproval,ApprovalRecord,ApprovalNote,ApprovedOn,SubmittedOn,ProcessedOn,Modified,AuthorId,ApprovedById,Author/Title,Author/EMail,' +
   'ApprovedBy/Title,ApprovedBy/EMail,ProcessedBy/Title&$expand=Author,ApprovedBy,ProcessedBy';
 const LINE_FIELDS =
   'Id,AuthorId,RequestId,RowNumber,PurchaseDate,Vendor,Description,Category,CategoryOther,CategoryConfirmedBy,Amount,PaidBy,NoQuoteReason,NoReceiptReason,' +
-  'SameReceiptAsRow,FileFingerprints,SuggestedFields';
+  'ItemLink,NoLinkReason,SameReceiptAsRow,FileFingerprints,SuggestedFields';
 const LINE_SELECT = `$select=${LINE_FIELDS},AttachmentFiles&$expand=AttachmentFiles`;
 const SUBMISSION_SELECT =
   '$select=Id,AuthorId,RequestId,SubmissionType,SubmissionNumber,PackageStatus,FolderName,PreviousFolderName,SubmitterName,SubmitterEmail,CertificationText,' +
@@ -97,10 +106,17 @@ interface Owner {
   email: string;
 }
 
-/** A request with the user ID of the person who created the item: its owner, the only one whose rows and submissions belong to it. */
+/**
+ * A request with the user ID of the person who created the item, its owner,
+ * and of the approver recorded on it. The owner's rows and submissions belong
+ * to the request. So do the approver's, but only for a request the approver
+ * buys (P-037, P-040): a row made by anyone else that names the request is not
+ * part of it.
+ */
 interface StoredRequest {
   request: PurchaseRequest;
   authorId: number;
+  approverId: number;
 }
 
 /** The user ID of the person who created an item; 0 when SharePoint did not give one. */
@@ -108,13 +124,22 @@ function authorOf(item: { AuthorId?: number | null }): number {
   return typeof item.AuthorId === 'number' && item.AuthorId > 0 ? item.AuthorId : 0;
 }
 
-/** Whether an item was made by this person. An item whose author is not known belongs to nobody. */
-function madeBy(item: { AuthorId?: number | null }, authorId: number): boolean {
-  return authorId > 0 && authorOf(item) === authorId;
+/** The people whose rows and submissions belong to a request. */
+function authorsOf(stored: StoredRequest): ReadonlySet<number> {
+  const authors = new Set<number>();
+  if (stored.authorId > 0) authors.add(stored.authorId);
+  if (stored.request.buyer === 'approver' && stored.approverId > 0) authors.add(stored.approverId);
+  return authors;
+}
+
+/** Whether an item was made by one of these people. An item whose author is not known belongs to nobody. */
+function madeBy(item: { AuthorId?: number | null }, authors: ReadonlySet<number>): boolean {
+  const id = authorOf(item);
+  return id > 0 && authors.has(id);
 }
 
 function storedFrom(item: RequestItem): StoredRequest {
-  return { request: requestFromItem(item), authorId: authorOf(item) };
+  return { request: requestFromItem(item), authorId: authorOf(item), approverId: authorOf({ AuthorId: item.ApprovedById }) };
 }
 
 type Signed = CurrentUser & { id: number };
@@ -205,8 +230,8 @@ export class SharePointDataService implements PurchaseDataService {
   }
 
   async getRequest(requestId: number): Promise<RequestWithLines> {
-    const { request, authorId } = await this.readStored(requestId);
-    return { request, lines: await this.readLines(requestId, authorId) };
+    const stored = await this.readStored(requestId);
+    return { request: stored.request, lines: await this.readLines(requestId, stored) };
   }
 
   async createRequest(): Promise<PurchaseRequest> {
@@ -217,6 +242,7 @@ export class SharePointDataService implements PurchaseDataService {
       requestFields({
         businessPurpose: '',
         department,
+        buyer: DEFAULT_BUYER,
         status: 'Draft',
         submissionCount: 0,
         approvalRounds: 0,
@@ -234,33 +260,45 @@ export class SharePointDataService implements PurchaseDataService {
   }
 
   async updateRequest(requestId: number, changes: RequestChanges): Promise<PurchaseRequest> {
-    await this.requestForEdit(requestId);
-    // Only the three header fields can be changed here, whatever else is passed.
+    const stored = await this.requestForEdit(requestId);
+    const buyer = changes.buyer !== undefined && findBuyer(changes.buyer) && changes.buyer !== stored.request.buyer ? changes.buyer : undefined;
+    // Only the header fields and who buys can be changed here, whatever else is passed.
     await this.sp.merge(
       this.item('requests', requestId),
-      requestFields({ businessPurpose: changes.businessPurpose, department: changes.department, projectCode: changes.projectCode })
+      requestFields({ businessPurpose: changes.businessPurpose, department: changes.department, projectCode: changes.projectCode, buyer })
     );
+    if (buyer) {
+      // The company pays for everything the approver buys (P-037), so every row says so, and the totals follow.
+      if (buyer === 'approver') {
+        for (const line of await this.readLines(requestId, stored)) {
+          if (line.paidBy !== 'company') await this.sp.merge(this.item('lines', Number(line.id)), lineFields({ paidBy: 'company' }));
+        }
+      }
+      await this.updateTotals(requestId, { ...stored, request: { ...stored.request, buyer } });
+    }
     return this.readRequest(requestId);
   }
 
   async deleteRequest(requestId: number): Promise<void> {
-    const { request, authorId } = await this.requestForEdit(requestId);
+    const stored = await this.requestForEdit(requestId);
+    const { request } = stored;
     if (request.status !== 'Draft') throw new NotAllowedError(notAllowed.draftsOnly);
     // Moved to the site's recycle bin, so a mistake can be undone there. A draft
     // has no submissions except one that stopped part-way while being sent.
-    for (const line of await this.readLines(requestId, authorId)) await this.recycle('lines', Number(line.id));
-    for (const submission of await this.readSubmissions(requestId, request.requestNumber, authorId)) await this.recycle('submissions', submission.id);
+    for (const line of await this.readLines(requestId, stored)) await this.recycle('lines', Number(line.id));
+    for (const submission of await this.readSubmissions(requestId, request.requestNumber, stored)) await this.recycle('submissions', submission.id);
     await this.recycle('requests', requestId);
   }
 
   async addLinesFromFiles(requestId: number, files: File[], kind: FileKind): Promise<PurchaseLine[]> {
-    const { request, authorId } = await this.requestForEdit(requestId);
-    const lines = await this.readLines(requestId, authorId);
+    const { stored } = await this.requestForChange(requestId);
+    const { request } = stored;
+    const lines = await this.readLines(requestId, stored);
     const added: PurchaseLine[] = [];
     for (const file of files) {
       if (!checkReceiptFile(file.name, file.size).ok) continue; // the screen reports refused files
       const soFar = [...lines, ...added];
-      const id = await this.createLine(request, nextRowNumber(soFar), defaultPaidBy(soFar));
+      const id = await this.createLine(request, nextRowNumber(soFar), this.newRowDefaults(request, soFar));
       try {
         await this.attach(id, [], file, kind);
       } catch (e) {
@@ -274,35 +312,35 @@ export class SharePointDataService implements PurchaseDataService {
   }
 
   async addEmptyLine(requestId: number): Promise<PurchaseLine> {
-    const { request, authorId } = await this.requestForEdit(requestId);
-    const lines = await this.readLines(requestId, authorId);
-    const id = await this.createLine(request, nextRowNumber(lines), defaultPaidBy(lines));
+    const { stored } = await this.requestForChange(requestId);
+    const lines = await this.readLines(requestId, stored);
+    const id = await this.createLine(stored.request, nextRowNumber(lines), this.newRowDefaults(stored.request, lines));
     return this.readLine(id);
   }
 
   async updateLine(lineId: string, changes: LineChanges): Promise<PurchaseLine> {
-    const { line, authorId } = await this.lineForEdit(lineId);
-    const applied = applyLineChanges(line, changes);
+    const { line, stored, editor } = await this.lineForChange(lineId);
+    const applied = applyLineChanges(line, changes, editor);
     const columns = lineFields(applied.written);
     if (Object.keys(columns).length > 0) await this.sp.merge(this.item('lines', Number(lineId)), columns);
-    if (applied.written.amountCents !== undefined || applied.written.paidBy !== undefined) await this.updateTotals(line.requestId, authorId);
+    if (applied.written.amountCents !== undefined || applied.written.paidBy !== undefined) await this.updateTotals(line.requestId, stored);
     return applied.line;
   }
 
   async deleteLine(lineId: string): Promise<void> {
-    const { line, request, authorId } = await this.lineForEdit(lineId);
+    const { line, stored } = await this.lineForChange(lineId);
     await this.recycle('lines', Number(lineId));
     // Renumber the rows after it, and keep "same receipt as row" pointers correct.
-    for (const [id, change] of changesAfterDelete(await this.readLines(line.requestId, authorId), line.rowNumber)) {
+    for (const [id, change] of changesAfterDelete(await this.readLines(line.requestId, stored), line.rowNumber)) {
       const columns = lineFields(change);
-      if (change.rowNumber !== undefined) columns.Title = `${request.requestNumber} row ${change.rowNumber}`;
+      if (change.rowNumber !== undefined) columns.Title = `${stored.request.requestNumber} row ${change.rowNumber}`;
       await this.sp.merge(this.item('lines', Number(id)), columns);
     }
-    await this.updateTotals(line.requestId, authorId);
+    await this.updateTotals(line.requestId, stored);
   }
 
   async addFileToLine(lineId: string, file: File, kind: FileKind): Promise<PurchaseLine> {
-    const { line } = await this.lineForEdit(lineId);
+    const { line } = await this.lineForChange(lineId);
     if (!checkReceiptFile(file.name, file.size).ok) return line;
     await this.attach(Number(lineId), line.files, file, kind);
     // A receipt of its own replaces "same receipt as row N"; a quote never does (P-021).
@@ -311,7 +349,7 @@ export class SharePointDataService implements PurchaseDataService {
   }
 
   async removeFileFromLine(lineId: string, fileId: string): Promise<PurchaseLine> {
-    const { line } = await this.lineForEdit(lineId);
+    const { line } = await this.lineForChange(lineId);
     const file = line.files.find((f) => f.id === fileId);
     if (!file) return line;
     await this.sp.remove(this.attachmentPath('lines', Number(lineId), file.fileName));
@@ -330,22 +368,25 @@ export class SharePointDataService implements PurchaseDataService {
       .map((item) => ({ item, line: lineFromItem(item) }))
       .filter(({ item, line }) => {
         const owner = owned.get(line.requestId);
-        return !!owner && madeBy(item, owner.authorId);
+        return !!owner && madeBy(item, authorsOf(owner));
       })
       .map(({ line }) => ({ line, requestNumber: owned.get(line.requestId)!.request.requestNumber, ownerEmail: request.ownerEmail }));
   }
 
-  async sendForApproval(requestId: number): Promise<Submission> {
+  async sendForApproval(requestId: number, certificationText?: string): Promise<Submission> {
     const me = await this.currentUser();
-    const { request, authorId } = await this.requestForEdit(requestId);
-    const lines = await this.readLines(requestId, authorId);
+    const stored = await this.requestForEdit(requestId);
+    const { request } = stored;
+    const lines = await this.readLines(requestId, stored);
     const others = await this.getOwnerOtherLines(requestId);
-    const earlier = await this.readSubmissions(requestId, request.requestNumber, authorId);
+    const earlier = await this.readSubmissions(requestId, request.requestNumber, stored);
     const round = request.approvalRounds + 1;
     // An earlier attempt that stopped part-way never reached the flow; remove it.
     for (const stale of staleUploading(earlier, 'approval', round)) await this.recycle('submissions', stale.id);
     const now = this.now();
-    const prepared = prepareApprovalRequest(request, lines, others, now, { name: me.displayName, email: me.email }, round);
+    // The employee certifies now when the approver buys, because they will not submit anything (P-037).
+    const certification = request.buyer === 'approver' ? { text: certificationText ?? '', email: me.email } : undefined;
+    const prepared = prepareApprovalRequest(request, lines, others, now, { name: me.displayName, email: me.email }, round, certification);
 
     // 1. The approval request, marked Uploading so the flow ignores it for now. It has no files.
     const created = await this.sp.post<{ Id: number }>(this.items('submissions'), submissionFields(prepared.submission));
@@ -358,7 +399,7 @@ export class SharePointDataService implements PurchaseDataService {
       approvalRounds: round,
       sentForApprovalOn: now.toISOString(),
       boughtBeforeApproval: prepared.boughtBefore,
-      approval: approvalWhenSent(request.approval, prepared.sentGroups),
+      approval: approvalWhenSent(request.approval, prepared.sentGroups, prepared.sentRows),
       returnNote: ''
     };
     // An earlier approval or return is cleared only if there is one, so a first send never
@@ -372,16 +413,45 @@ export class SharePointDataService implements PurchaseDataService {
 
   async submitRequest(requestId: number, certificationText: string): Promise<Submission> {
     const me = await this.currentUser();
-    const { request, authorId } = await this.requestForEdit(requestId);
-    const lines = await this.readLines(requestId, authorId);
+    const stored = await this.requestForEdit(requestId);
+    const { request } = stored;
+    // The approver buys it and marks it purchased; there is nothing for the employee to submit (P-037).
+    if (request.buyer === 'approver') throw new NotAllowedError(notAllowed.approverBuys);
+    const lines = await this.readLines(requestId, stored);
     const others = await this.getOwnerOtherLines(requestId);
-    const earlier = await this.readSubmissions(requestId, request.requestNumber, authorId);
+    const earlier = await this.readSubmissions(requestId, request.requestNumber, stored);
     const number = request.submissionCount + 1;
     // An earlier attempt that stopped part-way never reached the flow; remove it.
     for (const stale of staleUploading(earlier, 'package', number)) await this.recycle('submissions', stale.id);
     const now = this.now();
     const prepared = prepareSubmission(request, lines, others, now, previousFolderName(earlier, number), { text: certificationText, email: me.email });
+    return this.createPackage(stored, lines, prepared, now);
+  }
 
+  async markPurchased(requestId: number): Promise<Submission> {
+    const me = await this.requireAdmin();
+    const stored = await this.readStored(requestId);
+    const { request } = stored;
+    const refusal = buyRefusal(request, me);
+    if (refusal) throw new NotAllowedError(refusal);
+    const lines = await this.readLines(requestId, stored);
+    const others = await this.getOwnerOtherLines(requestId);
+    const earlier = await this.readSubmissions(requestId, request.requestNumber, stored);
+    // What the employee certified when they sent it (P-037): kept on the newest approval request.
+    const certification = employeeCertification(earlier, request);
+    const number = request.submissionCount + 1;
+    for (const stale of staleUploading(earlier, 'package', number)) await this.recycle('submissions', stale.id);
+    const now = this.now();
+    const prepared = prepareSubmission(request, lines, others, now, previousFolderName(earlier, number), certification, {
+      name: me.displayName,
+      email: me.email
+    });
+    return this.createPackage(stored, lines, prepared, now);
+  }
+
+  /** Creates a processing package from what was prepared, locks the request and hands the package to the flow. */
+  private async createPackage(stored: StoredRequest, lines: readonly PurchaseLine[], prepared: PreparedSubmission, now: Date): Promise<Submission> {
+    const { request } = stored;
     // 1. The submission, marked Uploading so the flow ignores it for now.
     const created = await this.sp.post<{ Id: number }>(this.items('submissions'), submissionFields(prepared.submission));
     if (!created) throw new Error(messages.spOther(500));
@@ -394,16 +464,16 @@ export class SharePointDataService implements PurchaseDataService {
     }
     // 3. Lock the request, then 4. hand the submission to the flow. If step 4
     // fails, the administrator sees it under Needs attention and can retry.
-    const write: RequestWrite = { status: 'Submitted', submissionCount: number, submittedOn: now.toISOString(), returnNote: '' };
+    const write: RequestWrite = { status: 'Submitted', submissionCount: prepared.submission.submissionNumber, submittedOn: now.toISOString(), returnNote: '' };
     if (request.returnStage !== '') write.returnStage = '';
-    await this.sp.merge(this.item('requests', requestId), requestFields(write));
+    await this.sp.merge(this.item('requests', request.id), requestFields(write));
     await this.sp.merge(this.item('submissions', created.Id), { PackageStatus: 'Ready' });
     return this.readSubmission(created.Id, request.requestNumber);
   }
 
   async listSubmissionsForRequest(requestId: number): Promise<Submission[]> {
-    const { request, authorId } = await this.readStored(requestId);
-    return sortSubmissionsForRequest(await this.readSubmissions(requestId, request.requestNumber, authorId));
+    const stored = await this.readStored(requestId);
+    return sortSubmissionsForRequest(await this.readSubmissions(requestId, stored.request.requestNumber, stored));
   }
 
   async getSubmissionCsv(submissionId: number): Promise<string> {
@@ -426,7 +496,7 @@ export class SharePointDataService implements PurchaseDataService {
     return items
       .filter((i) => {
         const owner = owners.get(Number(i.RequestId));
-        return !!owner && madeBy(i, owner.authorId);
+        return !!owner && madeBy(i, owner);
       })
       .map((i) => submissionFromItem(i, requestNumber(Number(i.RequestId))));
   }
@@ -439,7 +509,7 @@ export class SharePointDataService implements PurchaseDataService {
       .map((item) => ({ item, line: lineFromItem(item) }))
       .filter(({ item, line }) => {
         const owner = requests.get(line.requestId);
-        return !!owner && madeBy(item, owner.authorId);
+        return !!owner && madeBy(item, authorsOf(owner));
       })
       .map(({ line }) => {
         const r = requests.get(line.requestId)!.request;
@@ -449,15 +519,16 @@ export class SharePointDataService implements PurchaseDataService {
 
   async approveRequest(requestId: number, options: ApproveOptions): Promise<PurchaseRequest> {
     const me = await this.requireAdmin();
-    const { request, authorId } = await this.readStored(requestId);
+    const stored = await this.readStored(requestId);
+    const { request } = stored;
     if (request.status !== 'Awaiting approval') throw new NotAllowedError(notAllowed.approveWhen);
-    const lines = await this.readLines(requestId, authorId);
+    const lines = await this.readLines(requestId, stored);
     // The approver approves what was sent. A request changed since (directly in SharePoint, travel D-002)
     // is refused before anything is written (P-019).
-    if (!matchesWhatWasSent(lines, request.approval.sent)) throw new NotAllowedError(notAllowed.changedSinceSent);
+    if (!matchesWhatWasSent(lines, request.approval.sent, request.buyer)) throw new NotAllowedError(notAllowed.changedSinceSent);
     // Approving confirms every row's category as shown, with the changes given.
     const confirmed = await this.confirmCategoriesOn(lines, options.categories, me.displayName);
-    const approved = groupsForApproved(confirmed, request.approval.sent);
+    const approved = groupsForApproved(confirmed, request.approval.sent, request.buyer);
     const write: RequestWrite = {
       status: 'Approved',
       approval: approvalWhenApproved(request.approval, approved),
@@ -473,11 +544,20 @@ export class SharePointDataService implements PurchaseDataService {
   }
 
   async returnRequest(requestId: number, note: string): Promise<PurchaseRequest> {
-    await this.requireAdmin();
-    const request = await this.readRequest(requestId);
-    const stage = returnStageFor(request.status);
+    const me = await this.requireAdmin();
+    const stored = await this.readStored(requestId);
+    const { request } = stored;
+    const stage = returnStageFor(request.status, request.buyer);
     if (!stage) throw new NotAllowedError(notAllowed.returnWhen);
-    const write: RequestWrite = { status: 'Returned', returnNote: note, returnStage: stage };
+    if (request.status === 'Approved') {
+      // The approver who was to buy it may send it back to the employee instead (P-037). Rows the approver
+      // added are not the employee's and would stop counting once the approval is taken back, so they go first.
+      const refusal = buyRefusal(request, me);
+      if (refusal) throw new NotAllowedError(refusal);
+      const added = (await this.readLinesMadeBy(requestId, stored)).filter((l) => l.madeByApprover);
+      if (added.length > 0) throw new NotAllowedError(notAllowed.addedRowsFirst(rowsPhrase(added.map((a) => a.line))));
+    }
+    const write: RequestWrite = { status: statusAfterReturn(stage, request.buyer), returnNote: note, returnStage: stage };
     // A return at the approval step takes the approval back, keeping the earlier ones; one at processing
     // keeps it (P-027). The approver, time and note are cleared only if the request holds an approval.
     if (stage === 'approval') {
@@ -490,15 +570,18 @@ export class SharePointDataService implements PurchaseDataService {
 
   async confirmCategories(requestId: number, changes: Record<string, CategoryChoice>): Promise<PurchaseLine[]> {
     const me = await this.requireAdmin();
-    const { request, authorId } = await this.readStored(requestId);
-    if (!canConfirmCategories(request.status)) throw new NotAllowedError(notAllowed.confirmWhen);
-    return this.confirmCategoriesOn(await this.readLines(requestId, authorId), changes, me.displayName);
+    const stored = await this.readStored(requestId);
+    if (!canConfirmCategories(stored.request.status)) throw new NotAllowedError(notAllowed.confirmWhen);
+    return this.confirmCategoriesOn(await this.readLines(requestId, stored), changes, me.displayName);
   }
 
   async markProcessed(requestId: number): Promise<PurchaseRequest> {
     const me = await this.requireAdmin();
-    const request = await this.readRequest(requestId);
-    if (request.status !== 'Submitted') throw new NotAllowedError(notAllowed.processWhen);
+    const stored = await this.readStored(requestId);
+    if (stored.request.status !== 'Submitted') throw new NotAllowedError(notAllowed.processWhen);
+    // A row whose account depends on a decision (Equipment, Other) must be confirmed first (P-038).
+    const review = rowsToReview(await this.readLines(requestId, stored));
+    if (review.length > 0) throw new NotAllowedError(notAllowed.reviewFirst(rowsPhrase(review)));
     await this.sp.merge(this.item('requests', requestId), requestFields({ status: 'Processed', processedOn: this.now().toISOString(), processedById: me.id }));
     return this.readRequest(requestId);
   }
@@ -506,9 +589,10 @@ export class SharePointDataService implements PurchaseDataService {
   async retryPackaging(submissionId: number): Promise<Submission> {
     await this.requireAdmin();
     const item = await this.readSubmissionItem(submissionId);
-    const { request, authorId } = await this.readStored(Number(item.RequestId));
-    if (!madeBy(item, authorId)) throw new NotAllowedError(messages.spNotFound);
-    const all = await this.readSubmissions(request.id, request.requestNumber, authorId);
+    const stored = await this.readStored(Number(item.RequestId));
+    const { request } = stored;
+    if (!madeBy(item, authorsOf(stored))) throw new NotAllowedError(messages.spNotFound);
+    const all = await this.readSubmissions(request.id, request.requestNumber, stored);
     // Only a failed or stuck one, the newest of its kind, while its request is still at that step (P-030).
     const refusal = retryRefusal(submissionFromItem(item, request.requestNumber), all, request.status, this.now());
     if (refusal) throw new NotAllowedError(refusal);
@@ -589,13 +673,19 @@ export class SharePointDataService implements PurchaseDataService {
     return (await this.sp.getAll<RequestItem>(`${this.items('requests')}?${REQUEST_SELECT}&${PAGE}`)).map(storedFrom);
   }
 
-  /** The rows of a request: those its owner made, in row order. */
-  private async readLines(requestId: number, authorId: number): Promise<PurchaseLine[]> {
+  /** The rows of a request: those its owner made, and the approver's for a request the approver buys, in row order. */
+  private async readLines(requestId: number, stored: StoredRequest): Promise<PurchaseLine[]> {
+    return (await this.readLinesMadeBy(requestId, stored)).map((l) => l.line);
+  }
+
+  /** The same, with whether the approver, and not the owner, made each row (P-037). */
+  private async readLinesMadeBy(requestId: number, stored: StoredRequest): Promise<{ line: PurchaseLine; madeByApprover: boolean }[]> {
+    const authors = authorsOf(stored);
     const items = await this.sp.getAll<LineItem>(`${this.items('lines')}?${LINE_SELECT}&$filter=RequestId eq ${requestId}&$orderby=RowNumber&${PAGE}`);
     return items
-      .filter((i) => madeBy(i, authorId))
-      .map(lineFromItem)
-      .sort((a, b) => a.rowNumber - b.rowNumber);
+      .filter((i) => madeBy(i, authors))
+      .map((i) => ({ line: lineFromItem(i), madeByApprover: stored.authorId !== authorOf(i) }))
+      .sort((a, b) => a.line.rowNumber - b.line.rowNumber);
   }
 
   private readLineItem(lineId: number): Promise<LineItem> {
@@ -614,45 +704,78 @@ export class SharePointDataService implements PurchaseDataService {
     return submissionFromItem(await this.readSubmissionItem(id), requestNo);
   }
 
-  /** The submissions of a request: those its owner made. */
-  private async readSubmissions(requestId: number, requestNo: string, authorId: number): Promise<Submission[]> {
+  /** The submissions of a request: those its owner made, and the approver's for a request the approver buys. */
+  private async readSubmissions(requestId: number, requestNo: string, stored: StoredRequest): Promise<Submission[]> {
+    const authors = authorsOf(stored);
     const items = await this.sp.getAll<SubmissionItem>(`${this.items('submissions')}?${SUBMISSION_SELECT}&$filter=RequestId eq ${requestId}&${PAGE}`);
-    return items.filter((i) => madeBy(i, authorId)).map((i) => submissionFromItem(i, requestNo));
+    return items.filter((i) => madeBy(i, authors)).map((i) => submissionFromItem(i, requestNo));
   }
 
-  /** The owner of every request, by request ID. */
-  private async requestOwners(): Promise<Map<number, { authorId: number }>> {
-    const items = await this.sp.getAll<{ Id: number; AuthorId?: number | null }>(`${this.items('requests')}?$select=Id,AuthorId&${PAGE}`);
-    return new Map(items.map((i) => [i.Id, { authorId: authorOf(i) }]));
+  /** The people whose rows and submissions belong to each request, by request ID. */
+  private async requestOwners(): Promise<Map<number, ReadonlySet<number>>> {
+    const items = await this.sp.getAll<{ Id: number; AuthorId?: number | null; Buyer?: string | null; ApprovedById?: number | null }>(
+      `${this.items('requests')}?$select=Id,AuthorId,Buyer,ApprovedById&${PAGE}`
+    );
+    return new Map(
+      items.map((i) => {
+        const authors = new Set<number>();
+        if (authorOf(i) > 0) authors.add(authorOf(i));
+        const approver = authorOf({ AuthorId: i.ApprovedById });
+        if (buyerFrom(i.Buyer) === 'approver' && approver > 0) authors.add(approver);
+        return [i.Id, authors];
+      })
+    );
   }
 
-  /** A request the signed-in employee may change: their own, and not locked (P-027). */
+  /** A request the signed-in employee may change: their own, and not locked (P-027). Not the approver's buying (`requestForChange`). */
   private async requestForEdit(requestId: number): Promise<StoredRequest> {
     const me = await this.currentUser();
     const stored = await this.readStored(requestId);
     if (stored.request.ownerEmail !== me.email) throw new NotAllowedError(notAllowed.notYours);
-    if (!isEditable(stored.request.status)) throw new NotAllowedError(notAllowed.locked);
+    if (!isEditable(stored.request.status, stored.request.buyer)) throw new NotAllowedError(notAllowed.locked);
     return stored;
   }
 
-  /** A row the signed-in employee may change: a row of their own request, made by them, while the request is not locked. */
-  private async lineForEdit(lineId: string): Promise<{ line: PurchaseLine; request: PurchaseRequest; authorId: number }> {
+  /**
+   * A request whose rows and files the signed-in person may change: the approver
+   * who approved a request the approver buys, while it is Approved (P-037,
+   * P-040), or the owner as in `requestForEdit`. The approver's changes are
+   * recorded as the approver's: a category they choose is confirmed by them.
+   */
+  private async requestForChange(requestId: number): Promise<{ stored: StoredRequest; editor: LineEditor }> {
+    const me = await this.currentUser();
+    const stored = await this.readStored(requestId);
+    if (mayBuy(stored.request, me)) return { stored, editor: { buyer: 'approver', approverName: me.displayName } };
+    if (stored.request.ownerEmail !== me.email) {
+      throw new NotAllowedError(me.isAdministrator && stored.request.buyer === 'approver' ? notAllowed.buyerOnly : notAllowed.notYours);
+    }
+    if (!isEditable(stored.request.status, stored.request.buyer)) throw new NotAllowedError(notAllowed.locked);
+    return { stored, editor: { buyer: stored.request.buyer } };
+  }
+
+  /** A row the signed-in person may change: a row of a request they may change (`requestForChange`), made by its owner or its approver, while the request allows it. */
+  private async lineForChange(lineId: string): Promise<{ line: PurchaseLine; stored: StoredRequest; editor: LineEditor }> {
     // A row ID is a list item number; anything else is a row that does not exist.
     if (!/^[1-9]\d*$/.test(lineId)) throw new NotAllowedError(messages.spNotFound);
     const item = await this.readLineItem(Number(lineId));
     const line = lineFromItem(item);
-    const { request, authorId } = await this.requestForEdit(line.requestId);
+    const { stored, editor } = await this.requestForChange(line.requestId);
     // A row someone else made that names this request is not part of it.
-    if (!madeBy(item, authorId)) throw new NotAllowedError(messages.spNotFound);
-    return { line, request, authorId };
+    if (!madeBy(item, authorsOf(stored))) throw new NotAllowedError(messages.spNotFound);
+    return { line, stored, editor };
   }
 
-  private async createLine(request: PurchaseRequest, rowNumber: number, paidBy: PurchaseLine['paidBy']): Promise<number> {
+  /** What a new row starts with: "who paid" and, when the approver buys, today as the date, which the approver sets right when buying (P-037). */
+  private newRowDefaults(request: PurchaseRequest, existing: readonly PurchaseLine[]): { paidBy: PurchaseLine['paidBy']; date: string } {
+    return request.buyer === 'approver' ? { paidBy: 'company', date: toIsoDate(this.now()) } : { paidBy: defaultPaidBy(existing), date: '' };
+  }
+
+  private async createLine(request: PurchaseRequest, rowNumber: number, start: { paidBy: PurchaseLine['paidBy']; date: string }): Promise<number> {
     const created = await this.sp.post<{ Id: number }>(this.items('lines'), {
       Title: `${request.requestNumber} row ${rowNumber}`,
       RequestId: request.id,
       RowNumber: rowNumber,
-      ...lineFields({ paidBy })
+      ...lineFields({ paidBy: start.paidBy, ...(start.date ? { date: start.date } : {}) })
     });
     if (!created) throw new Error(messages.spOther(500));
     return created.Id;
@@ -688,10 +811,14 @@ export class SharePointDataService implements PurchaseDataService {
   }
 
   /** Keeps the request's stored totals current, for the request lists (docs/DATA_MODEL.md). */
-  private async updateTotals(requestId: number, authorId: number): Promise<void> {
+  private async updateTotals(requestId: number, stored: StoredRequest): Promise<void> {
     // The stored fingerprints are enough for totals; the attachment list is not needed.
+    const authors = authorsOf(stored);
     const items = await this.sp.getAll<LineItem>(`${this.items('lines')}?$select=${LINE_FIELDS}&$filter=RequestId eq ${requestId}&${PAGE}`);
-    const totals = computeTotals(items.filter((i) => madeBy(i, authorId)).map(lineFromItem));
+    const totals = computeTotals(
+      items.filter((i) => madeBy(i, authors)).map(lineFromItem),
+      stored.request.buyer
+    );
     await this.sp.merge(
       this.item('requests', requestId),
       requestFields({ totalReimburseCents: totals.reimburseCents, totalCompanyCents: totals.companyCents, totalRequestCents: totals.requestCents })

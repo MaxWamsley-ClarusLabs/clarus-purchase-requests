@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { BadgeTone } from '../../domain/statuses';
 import { formatCents } from '../../domain/money';
+import { safeLink } from '../../domain/purchaseRules';
 import { Totals } from '../../domain/totals';
 import { AttachedFile } from '../../domain/types';
 import { useDialogFocus } from '../hooks';
@@ -68,6 +69,8 @@ export function TotalsStrip(props: {
   fresh?: boolean;
   status?: StatusMetric;
   approvalNote?: string;
+  /** The approver buys (P-037): the company pays for everything, so nothing is to reimburse. */
+  approverBuys?: boolean;
 }): React.ReactElement {
   const { totals, blockingCount, warningCount } = props;
   const attention = blockingCount > 0 && !props.fresh;
@@ -78,7 +81,7 @@ export function TotalsStrip(props: {
       <div className="ctx-metric">
         <div className="ctx-metric-label">To reimburse</div>
         <div className="ctx-metric-value">{formatCents(totals.reimburseCents)}</div>
-        <div className="ctx-metric-note">Paid by the employee</div>
+        <div className="ctx-metric-note">{props.approverBuys ? 'The approver buys it' : 'Paid by the employee'}</div>
       </div>
       <div className="ctx-metric">
         <div className="ctx-metric-label">Paid by Clarus</div>
@@ -200,6 +203,26 @@ function breakAfterSlashes(text: string): React.ReactNode {
 }
 
 /** A date and time ("2026-10-12 16:40") that wraps only between the two, never at a hyphen. */
+/**
+ * An item's web address (P-039). Security: it is a link only when `safeLink` accepts it (an http or https
+ * address); anything else, which an employee could have typed into the list, is shown as plain text and
+ * is never a link. A link opens in a new tab and passes nothing on to the page it opens.
+ */
+export function ItemLinkText(props: { value: string; maxChars?: number }): React.ReactElement {
+  const text = props.value.trim();
+  if (!text) return <span className="ctx-muted">None</span>;
+  const href = safeLink(text);
+  const max = props.maxChars ?? 40;
+  if (!href) return <span title="Not a web address, so it is not a link">{text.length > max ? `${text.slice(0, max)}...` : text}</span>;
+  const url = new URL(href);
+  const shown = `${url.host}${url.pathname === '/' ? '' : url.pathname}`;
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" title={href}>
+      {shown.length > max ? `${shown.slice(0, max)}...` : shown}
+    </a>
+  );
+}
+
 export function DateTime(props: { value: string }): React.ReactElement {
   const [date, ...rest] = props.value.split(' ');
   const time = rest.join(' ');

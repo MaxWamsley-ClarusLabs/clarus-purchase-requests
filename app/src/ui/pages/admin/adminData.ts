@@ -2,8 +2,8 @@
 // A submission is either an approval request (the flow emails the approvers) or
 // a processing package (the flow creates the request folder), P-018.
 
-import { submissionNeedsAttention } from '../../../domain/statuses';
-import { PurchaseRequest, Submission, SubmissionType } from '../../../domain/types';
+import { mayBuy, submissionNeedsAttention } from '../../../domain/statuses';
+import { CurrentUser, PurchaseRequest, Submission, SubmissionType } from '../../../domain/types';
 
 /** Newest first: the highest submission number, and for the same number the highest ID. */
 function newerFirst(a: Submission, b: Submission): number {
@@ -65,4 +65,15 @@ export function requestsToProcess(requests: readonly PurchaseRequest[]): Purchas
 
 export function requestsAwaitingApproval(requests: readonly PurchaseRequest[]): PurchaseRequest[] {
   return requests.filter((r) => r.status === 'Awaiting approval');
+}
+
+/**
+ * Approved requests the approver buys (P-037), which wait for their approver to
+ * buy them. Newest approval first. `mine` keeps only those this person approved
+ * and so buys; the rest belong to another site Owner.
+ */
+export function requestsToBuy(requests: readonly PurchaseRequest[], user?: Pick<CurrentUser, 'email' | 'isAdministrator'>): PurchaseRequest[] {
+  return requests
+    .filter((r) => r.buyer === 'approver' && r.status === 'Approved' && (!user || mayBuy(r, user)))
+    .sort((a, b) => b.approvedOn.localeCompare(a.approvedOn) || b.id - a.id);
 }

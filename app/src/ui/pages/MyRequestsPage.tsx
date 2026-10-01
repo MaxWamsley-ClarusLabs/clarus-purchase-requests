@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { formatCents } from '../../domain/money';
-import { REQUEST_STATUS_DISPLAY, isEditable } from '../../domain/statuses';
+import { isEditable, requestStatusDisplay } from '../../domain/statuses';
 import { PurchaseRequest } from '../../domain/types';
 import { useApp } from '../AppContext';
 import { useMountedRef } from '../hooks';
@@ -40,9 +40,11 @@ export function MyRequestsPage(): React.ReactElement {
 
   // A request still being worked on opens at its purchases (or its details, if it has no business purpose yet); a sent one opens at Review.
   const open = (r: PurchaseRequest) =>
-    app.navigate({ name: 'request', requestId: r.id, step: isEditable(r.status) ? (r.businessPurpose.trim() ? 'purchases' : 'details') : 'review' });
+    app.navigate({ name: 'request', requestId: r.id, step: isEditable(r.status, r.buyer) ? (r.businessPurpose.trim() ? 'purchases' : 'details') : 'review' });
   const returned = (requests ?? []).filter((r) => r.status === 'Returned');
-  const approved = (requests ?? []).filter((r) => r.status === 'Approved');
+  // Approved: the employee buys these themselves; the approver buys the rest (P-037).
+  const approved = (requests ?? []).filter((r) => r.status === 'Approved' && r.buyer === 'self');
+  const approvedForApprover = (requests ?? []).filter((r) => r.status === 'Approved' && r.buyer === 'approver');
 
   return (
     <>
@@ -90,6 +92,21 @@ export function MyRequestsPage(): React.ReactElement {
           </button>
         </div>
       ))}
+      {approvedForApprover.map((r) => (
+        <div key={r.id} className="ctx-banner green">
+          <Icon name="check" />
+          <div style={{ flex: 1 }}>
+            <strong>
+              {r.requestNumber} {r.businessPurpose} is approved.
+            </strong>{' '}
+            {r.approvedBy ? `${r.approvedBy} buys it.` : 'The approver buys it.'}
+            {r.approvalNote.trim() ? ` Note: ${r.approvalNote.trim()}` : ''}
+          </div>
+          <button className="ctx-btn ctx-btn-secondary ctx-btn-small" aria-label={`Open ${r.requestNumber}`} onClick={() => open(r)}>
+            Open
+          </button>
+        </div>
+      ))}
       <Card title="Requests">
         {requests === null ? (
           <div className="ctx-empty">Loading</div>
@@ -114,7 +131,7 @@ export function MyRequestsPage(): React.ReactElement {
               </thead>
               <tbody>
                 {requests.map((r) => {
-                  const s = REQUEST_STATUS_DISPLAY[r.status];
+                  const s = requestStatusDisplay(r.status, r.buyer);
                   return (
                     <tr key={r.id} {...openRowProps(`Open ${r.requestNumber}`, () => open(r))}>
                       <td className="ctx-strong nowrap">{r.requestNumber}</td>

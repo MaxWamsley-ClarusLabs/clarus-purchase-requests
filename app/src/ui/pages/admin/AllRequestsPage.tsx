@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { formatCents } from '../../../domain/money';
-import { REQUEST_STATUSES, REQUEST_STATUS_DISPLAY } from '../../../domain/statuses';
+import { REQUEST_STATUSES, REQUEST_STATUS_DISPLAY, requestStatusDisplay } from '../../../domain/statuses';
 import { PurchaseRequest, RequestStatus } from '../../../domain/types';
 import { useApp } from '../../AppContext';
 import { useMountedRef } from '../../hooks';
@@ -64,7 +64,7 @@ export function AllRequestsPage(): React.ReactElement {
                     <td>{r.ownerName}</td>
                     <td>{r.businessPurpose || <span className="ctx-muted">Untitled draft</span>}</td>
                     <td>
-                      <Badge tone={REQUEST_STATUS_DISPLAY[r.status].tone}>{REQUEST_STATUS_DISPLAY[r.status].label}</Badge>
+                      <Badge tone={requestStatusDisplay(r.status, r.buyer).tone}>{requestStatusDisplay(r.status, r.buyer).label}</Badge>
                       {r.boughtBeforeApproval ? (
                         <>
                           {' '}

@@ -63,6 +63,13 @@
     "vendor": "Kestrel Instruments"
   },
   {
+    "file": "cobalt-biosupply-invoice.pdf",
+    "kind": "invoice",
+    "date": "2026-10-09",
+    "total": "215.50",
+    "vendor": "Cobalt Biosupply"
+  },
+  {
     "file": "kestrel-instruments-invoice.pdf",
     "kind": "invoice",
     "date": "2026-10-02",

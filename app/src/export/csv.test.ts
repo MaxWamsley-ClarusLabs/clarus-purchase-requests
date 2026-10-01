@@ -1,4 +1,4 @@
-import { CSV_COLUMNS, SUGGESTED_ACCOUNT_COLUMN, approverText, buildPurchasesCsv, csvCell } from './csv';
+import { ACCOUNT_COLUMN, CSV_COLUMNS, approverText, buildPurchasesCsv, csvCell } from './csv';
 import { QUICKBOOKS_MAPPING_STATUS, vendorKey } from '../domain/purchaseRules';
 import { ApprovalRecord } from '../domain/types';
 import { file, line, quote, request } from '../testing/builders';
@@ -113,8 +113,8 @@ describe('buildPurchasesCsv', () => {
     lines,
     submissionNumber: 1,
     submitterName: 'Jane Doe',
-    submitterEmail: 'jane.doe@example.com',
     submittedOn: '2026-10-16 09:00',
+    certifiedBy: { name: 'Jane Doe', email: 'jane.doe@example.com' },
     warnings: []
   });
   const rows = parseCsv(csv.slice(1));
@@ -128,39 +128,43 @@ describe('buildPurchasesCsv', () => {
 
   it('has one header row and one row per purchase, with the agreed columns', () => {
     expect(rows[0]).toEqual([...CSV_COLUMNS]);
-    expect(CSV_COLUMNS).toHaveLength(28);
+    expect(CSV_COLUMNS).toHaveLength(31);
     expect(rows).toHaveLength(5);
     expect(rows.every((r) => r.length === CSV_COLUMNS.length)).toBe(true);
   });
 
-  it('says in the header that the suggested QuickBooks account is unverified (P-025), in the eighth column', () => {
-    expect(SUGGESTED_ACCOUNT_COLUMN).toBe(`Suggested QuickBooks account (${QUICKBOOKS_MAPPING_STATUS})`);
-    expect(rows[0][7]).toBe('Suggested QuickBooks account (Unverified, to confirm with Max)');
-    expect(csv.slice(1).split('\r\n')[0]).toContain(',"Suggested QuickBooks account (Unverified, to confirm with Max)",Amount,');
-    expect(rows[0].slice(0, 8)).toEqual([
+  it('says in the header where the QuickBooks account is from (P-038), in the ninth column', () => {
+    expect(ACCOUNT_COLUMN).toBe(`QuickBooks account (${QUICKBOOKS_MAPPING_STATUS})`);
+    expect(rows[0][8]).toBe('QuickBooks account (from the May 1, 2026 account list)');
+    // The header has a comma, so it is quoted.
+    expect(csv.slice(1).split('\r\n')[0]).toContain(',"QuickBooks account (from the May 1, 2026 account list)",Amount,');
+    expect(rows[0].slice(0, 10)).toEqual([
       'Request',
       'Row',
       'Date',
       'Vendor',
       'What was bought and why',
+      'Item link',
       'Category',
       'Category confirmed by',
-      SUGGESTED_ACCOUNT_COLUMN
+      ACCOUNT_COLUMN,
+      'Amount'
     ]);
   });
 
-  it('has the category, the suggested account, the grant code, the approval status and the approver (P-009)', () => {
+  it('has the category, the account, the grant code, the approval status and the approver (P-009, P-038)', () => {
     const at = (name: string) => cellOf(1, name);
     expect(at('Request')).toBe('PR-0042');
     expect(at('What was bought and why')).toBe('Pipette tips, 10 boxes');
-    expect(at('Category')).toBe('R&D Materials & Supplies / Equipment');
+    expect(at('Category')).toBe('R&D Materials & Supplies');
     expect(at('Category confirmed by')).toBe('Max Wamsley');
-    expect(at(SUGGESTED_ACCOUNT_COLUMN)).toBe('R&D Materials and Supplies');
+    expect(at(ACCOUNT_COLUMN)).toBe('6182 R&D Materials & Supplies');
     expect(at('Project or grant code')).toBe('NSF SBIR Phase 1 (Award # 2528301)');
     expect(at('Approval status')).toBe('Approved');
     expect(at('Approved by')).toBe('Max Wamsley');
     expect(at('Approved on')).toBe('2026-10-14 10:05');
     expect(at('Amount')).toBe('612.44');
+    expect(at('Who bought')).toBe('Employee');
     expect(at('Who paid')).toBe('Company');
     expect(at('Reimbursable')).toBe('No');
     expect(at('Certified by')).toBe('Jane Doe (jane.doe@example.com)');
@@ -189,10 +193,11 @@ describe('buildPurchasesCsv', () => {
     expect(cellOf(3, 'Reimbursable')).toBe('Yes');
   });
 
-  it('writes Other with its description, and no account for it', () => {
+  it('writes Other with its description, and says the administrator decides the account (P-038)', () => {
     expect(cellOf(4, 'Category')).toBe('Other: Lab safety audit');
-    expect(cellOf(4, SUGGESTED_ACCOUNT_COLUMN)).toBe('');
+    expect(cellOf(4, ACCOUNT_COLUMN)).toBe('Administrator decides');
     expect(cellOf(3, 'Category confirmed by')).toBe('');
+    expect(cellOf(3, ACCOUNT_COLUMN)).toBe('6180 Office Supplies');
   });
 
   it('marks a self-approval (P-020)', () => {
@@ -207,8 +212,8 @@ describe('buildPurchasesCsv', () => {
       lines: [lines[0], lines[2]],
       submissionNumber: 2,
       submitterName: 'Jane Doe',
-      submitterEmail: 'jane.doe@example.com',
       submittedOn: '2026-10-16 09:00',
+      certifiedBy: { name: 'Jane Doe', email: 'jane.doe@example.com' },
       warnings: [
         {
           severity: 'warning',
@@ -224,5 +229,83 @@ describe('buildPurchasesCsv', () => {
     expect(parsed[1][header.indexOf('Warnings')]).toBe('');
     expect(parsed[2][header.indexOf('Warnings')]).toContain('Same date, vendor and amount as row 9');
     expect(parsed[1][header.indexOf('Submission')]).toBe('2');
+  });
+});
+
+describe('buildPurchasesCsv when the approver buys (P-037, P-039, P-040)', () => {
+  const approverRequest = request({
+    buyer: 'approver',
+    status: 'Approved',
+    approval: { sent: [], approved: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 12500, bought: false }], earlier: [] },
+    approvedBy: 'Max Wamsley',
+    approvedByEmail: 'max.wamsley@example.com',
+    approvedOn: '2026-10-14 10:05'
+  });
+  const lines = [
+    line({ id: 'a', rowNumber: 1, itemLink: 'https://www.example.com/item/42', paidBy: 'employee', category: 'equipment', files: [file()] }),
+    line({
+      id: 'b',
+      rowNumber: 2,
+      vendor: 'Local Hardware',
+      amountCents: 800,
+      itemLink: '',
+      noLinkReason: 'Not sold online',
+      paidBy: '',
+      category: 'repairs',
+      files: [file({ id: 'f2', fileName: 'r2.pdf', fingerprint: 'b' })]
+    })
+  ];
+  const csv = buildPurchasesCsv({
+    request: approverRequest,
+    lines,
+    submissionNumber: 1,
+    submitterName: 'Max Wamsley',
+    submittedOn: '2026-10-16 09:00',
+    certifiedBy: { name: 'Jane Doe', email: 'jane.doe@example.com' },
+    warnings: []
+  });
+  const rows = parseCsv(csv.slice(1));
+  const header = CSV_COLUMNS as readonly string[];
+  const at = (rowIndex: number, name: string) => rows[rowIndex][header.indexOf(name)];
+
+  it('says the approver bought it, and counts the company as the payer on every row, whatever is stored', () => {
+    for (const i of [1, 2]) {
+      expect(at(i, 'Who bought')).toBe('Approver');
+      expect(at(i, 'Who paid')).toBe('Company');
+      expect(at(i, 'Reimbursable')).toBe('No');
+      expect(at(i, 'Approval status')).toBe('Approved');
+      expect(at(i, 'Bought before approval')).toBe('No');
+    }
+  });
+
+  it('names the approver as the one who submitted and the employee as the one who certified', () => {
+    expect(at(1, 'Submitted by')).toBe('Max Wamsley');
+    expect(at(1, 'Certified by')).toBe('Jane Doe (jane.doe@example.com)');
+    expect(at(1, 'Approved by')).toBe('Max Wamsley');
+  });
+
+  it('carries the item link, or the reason there is none', () => {
+    expect(at(1, 'Item link')).toBe('https://www.example.com/item/42');
+    expect(at(2, 'Item link')).toBe('');
+    expect(at(2, 'No-link reason')).toBe('Not sold online');
+  });
+
+  it('says the administrator decides Equipment, and gives the repairs account', () => {
+    expect(at(1, ACCOUNT_COLUMN)).toContain('6175 Equipment');
+    expect(at(1, ACCOUNT_COLUMN)).toContain('administrator decides');
+    expect(at(2, ACCOUNT_COLUMN)).toBe('6170 Repairs & maintenance');
+  });
+
+  it('stops a link typed into the list from running as a formula', () => {
+    const hostile = buildPurchasesCsv({
+      request: approverRequest,
+      lines: [line({ id: 'a', itemLink: '=HYPERLINK("http://evil.example")' })],
+      submissionNumber: 1,
+      submitterName: 'Max Wamsley',
+      submittedOn: '2026-10-16 09:00',
+      certifiedBy: { name: 'Jane Doe', email: 'jane.doe@example.com' },
+      warnings: []
+    });
+    expect(parseCsv(hostile.slice(1))[1][header.indexOf('Item link')]).toBe(`'=HYPERLINK("http://evil.example")`);
   });
 });

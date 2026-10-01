@@ -1,7 +1,7 @@
 # Status
 
 **Last updated:** 2026-10-01 (see `docs/CHANGELOG.md` for every change)
-**Current stage:** The overnight build is finished through Stage 9. Everything is on branch `claude/festive-ramanujan-nljy44` and in draft pull request MaxWamsley-ClarusLabs/clarus-purchase-requests#1. Nothing is merged, deployed or installed. Next: Max reads this, answers `docs/QUESTIONS_FOR_MAX.md` (the first five first), and follows `docs/CHECKPOINT.md` on a test site.
+**Current stage:** The overnight build is finished through Stage 9; Stage 10 (review with Max) has started: Max answered some questions on 2026-10-01 and added a requirement. Everything is on branch `claude/festive-ramanujan-nljy44` and in draft pull request MaxWamsley-ClarusLabs/clarus-purchase-requests#1. Nothing is merged, deployed or installed. Next: Max reads this, answers `docs/QUESTIONS_FOR_MAX.md` (the first five first), and follows `docs/CHECKPOINT.md` on a test site.
 
 ## Summary
 
@@ -37,7 +37,7 @@
 
 ## Pending items
 
-- Max to answer `docs/QUESTIONS_FOR_MAX.md`. Each provisional choice is built as recommended and stays in force until he answers.
+- Answered by Max on 2026-10-01: questions 2, 4 and 5 (yes) and 3 ("do whatever you think"); recorded in `docs/DECISIONS.md` and `docs/SOP.md`. Open: question 1 (categories and QuickBooks accounts: Claude needs the chart of accounts, and the categories may be renamed) and the new questions 24 to 26 (the approver buys most purchases, so who buys should default to the approver). Nothing for the approver-buys workflow is built yet. The other provisional choices stay in force until he answers.
 - Max to follow `docs/CHECKPOINT.md` on a test site (about 75 minutes).
 - Known gaps, recorded for Max: after approval only vendor amounts are re-checked (question 22); an employee could make the flow send an approval email to the Owners with text of their choosing (question 19); an employee could mark their own request Approved directly in SharePoint (question 15); the suggested QuickBooks accounts are Unverified (question 1).
 - Known limits, not fixed: typing slows with hundreds of rows; files are judged by extension only; two browser tabs adding rows at the same moment can number them the same (SharePoint only); leaving a page within about a tenth of a second of typing can lose the last characters (the browser asks first); a site address with an apostrophe cannot be used (Set-up refuses to make the package and says why).
@@ -45,4 +45,4 @@
 
 ## Next step
 
-Max reads the morning report, answers the first five questions in `docs/QUESTIONS_FOR_MAX.md`, and follows `docs/CHECKPOINT.md`. Claude then makes any changes his answers need and fixes what the checkpoint finds (Stages 10 and 11).
+Max answers questions 1, 24, 25 and 26. Claude then builds the approver-buys default and updates the categories and accounts, re-runs the checks, and updates `docs/CHECKPOINT.md`. After that Max follows the checkpoint on a test site and Claude fixes what it finds (Stages 10 and 11).

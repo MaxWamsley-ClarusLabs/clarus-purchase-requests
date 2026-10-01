@@ -4,19 +4,23 @@ Written during the overnight build (2026-09-30). Every choice Claude made where 
 
 From your next message the normal rule applies again: Claude pauses and asks, at most five numbered questions at a time. So these are listed in order of how much they matter, and the first five are the ones to answer first.
 
-**Answer these five first**
+**Answered by Max on 2026-10-01:** questions 2, 4 and 5: yes. Question 3: "do whatever you think", so the recommendation stands. Question 1: still open, see below. New from Max: about 95% of purchases will be bought by the approver after approving the employee's request, and that should be the default (questions 24 to 26).
+
+**The first five, as asked**
 
 | # | Question | Why it is first |
 |---|---|---|
-| 1 | Which QuickBooks account goes with each category? | The CSV suggests accounts that Claude could not check |
-| 2 | Is "$500 or more" right for the quote rule, and is the old form's $100 retired? | The attached form says something different |
-| 3 | Is "send for approval first, then submit" right for a purchase already made? | It decides how an after-the-fact purchase is handled |
-| 4 | Keep the rule that a vendor total more than 10% above what was approved needs approval again? | Claude's own rule; a guess |
-| 5 | Is it right that the site Owners approve, and that an Owner may approve their own request? | Decides who gets the email and what "approved" means |
+| 1 | Which QuickBooks account goes with each category? | **Open.** Max asked whether Claude can infer them, and whether to rename the categories (the form was a template). Claude needs the chart of accounts |
+| 2 | Is "$500 or more" right for the quote rule, and is the old form's $100 retired? | **Answered: yes.** To go in the new SOP |
+| 3 | Is "send for approval first, then submit" right for a purchase already made? | **Answered: do whatever Claude thinks.** Option A stands |
+| 4 | Keep the rule that a vendor total more than 10% above what was approved needs approval again? | **Answered: yes** |
+| 5 | Is it right that the site Owners approve, and that an Owner may approve their own request? | **Answered: yes** |
 
 ---
 
 ## 1. QuickBooks accounts for the eight categories (Unverified, to confirm with Max)
+
+- **Max, 2026-10-01:** asked what the categories are, whether Claude can infer the accounts or needs more information, and whether to rename the categories, because the policy was only a template. **Status: open.** Claude cannot know the real accounts without the chart of accounts, so the suggestions below stay Unverified. The categories can now be renamed (P-012).
 
 - **Built:** a suggested account name for each category in the CSV, without account numbers, under a column header that says "Suggested QuickBooks account (Unverified, to confirm with Max)", because Claude could not look up your chart of accounts (the QuickBooks connector is not used, and the travel repository lists travel accounts only).
 
@@ -37,6 +41,8 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ## 2. The quote rule, and the attached form's older numbers (P-015, P-005)
 
+- **Answered (Max, 2026-10-01): yes.** Quote at "$500 or more", and the form's $100 and "over $500" are retired. It goes in the new SOP (`docs/SOP.md`, "Rules confirmed by Max") and in the purchasing policy at the last stage.
+
 - **Built:** a vendor total of **$500 or more** needs a quote or a written no-quote reason before the request can be sent for approval. Approval is also at $500 or more (your decision).
 - **What the attached form says:** purchases of **$100 or more** need supervisor approval, and purchases **over $500** need a quote or a written no-quote justification. That is the old P4 wording. You decided $500 for approval, and the app does not use the $100. The form's text is not changed by this build.
 - **Options:** A. Quote at "$500 or more" (built). B. Quote at "over $500", as the form says (the difference is a purchase of exactly $500.00). C. A different quote threshold, for example $1,000. D. No quote rule.
@@ -45,6 +51,8 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ## 3. A purchase already made without approval (P-017)
 
+- **Answered (Max, 2026-10-01): "do whatever you think".** Claude's recommendation, option A, stands. With the approver buying most purchases (question 24), this mostly concerns the few an employee makes for themselves.
+
 - **Built:** when a request is sent for approval, a vendor total of $500 or more is flagged **Bought before approval** if any of its lines is dated before the day it is sent, or already has a receipt or invoice attached. The request still goes to the approver first. The flag stays on the request. The administrator sees it in the email and in a CSV column. After the approval, the employee submits for processing as usual. A flag, once set, stays in later rounds. If the request is sent again after an approval (a vendor total rose past the allowance), a vendor total an approval still covers, including an approval from an earlier round, is not newly flagged, because it was approved before it was bought. (That second-send rule is Claude's; your prompt did not cover it.)
 - **Options:** A. As built: flag, approve, then submit (two steps; the folder and CSV are built once, with the approval in them). B. Let the employee submit straight to processing, flagged, with the approval still to come (one step, but the CSV and folder would be made before the approval exists and would say "pending"). C. Ask the employee to tick "already bought" instead of working it out from dates and receipts.
 - **Recommendation:** A.
@@ -52,12 +60,16 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ## 4. Approval covers what the approver saw (P-019)
 
+- **Answered (Max, 2026-10-01): yes.** Option A, with 10%.
+
 - **Built:** the approver approves each vendor total at the amount shown. Later, the employee may change amounts (real prices differ). A vendor total that is more than **10%** above its approved amount, or a new vendor total of $500 or more, needs approval again, and Submit says so. Lower amounts never need approval again.
 - **Options:** A. 10% allowance (built; the number is a guess). B. No allowance (any increase needs approval). C. No check after approval.
 - **Recommendation:** A, with your number in place of mine.
 - **If you choose differently:** `OVERRUN_TOLERANCE_PERCENT` in `purchaseRules.ts` (0 for B). For C, change `approvalCoverage` and `approvalState` in `purchaseRules.ts`; `prepareSubmission` and `prepareApprovalRequest` (`app/src/export/submission.ts`) and the Review step follow.
 
 ## 5. Who approves (P-018, P-020)
+
+- **Answered (Max, 2026-10-01): yes.** Option A: the site Owners approve, and an Owner may approve their own request.
 
 - **Built:** approvers are the site Owners (people with "Manage web site"), the same test the travel app uses for administrators. The approval email goes to the Owners' addresses as they are when you make the flow package on Set-up (fallback: your own address). An Owner who is also the requester can approve their own request; the record, email and CSV say "self-approved". Employees cannot withdraw a request that is awaiting approval.
 - **Options:** A. As built. B. A separate approver list, kept on the site (needs a fourth list or a setting in the code). C. Block self-approval (you could never approve your own purchases while you are the only Owner). D. Add a Withdraw button for employees.
@@ -190,6 +202,33 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 - Whether SharePoint accepts clearing a Person column and the "Returned at" choice, which the app does when an approver returns a request at the approval step (Unverified; a first send no longer does it, P-034).
 - Whether the Owners can open a row's attachments in the app, which the approver's file preview relies on (Unverified).
 - Everything Microsoft-side from the travel strategy's evidence table, which was not re-checked.
+
+## 24. The approver buys most purchases: how should the app work? (new, 2026-10-01)
+
+- **From Max:** about 95% of purchases will be bought by the person who approves the request. The employee submits a purchase request and the approver buys it. Make that the default if possible.
+- **Today's build** assumes the employee buys after approval, attaches the receipt and submits. The approver cannot edit rows or attach files, and an approval is needed only at $500 or more.
+- **Recommendation (needs approval), per request:**
+  1. A choice on Request details, "Who buys this?", with **The approver buys it** as the default and **I will buy it myself** as the other.
+  2. If the approver buys: the employee enters what to buy (vendor, what and why, estimated amount, category, and a quote at $500 or more). No receipt is asked for, and "Who paid" is not asked (it is the company).
+  3. Every such request goes to the approver, whatever the amount, because the approver has to act on it. The $500 threshold, the 10% rule and the "Bought before approval" flag then apply only to requests the employee buys themselves, which stay exactly as they are today. The quote rule at $500 stays for both.
+  4. The approver approves (confirming categories), buys, then on the request page corrects the actual amounts and vendor, attaches the receipt or invoice, and chooses "Mark purchased". The app then builds the folder (receipt copies, quote copies, CSV) for processing, as it does today after a submit.
+- **What it needs built:** a "Who buys this?" field and its default; approver editing of rows and attaching of files (today only categories can be changed); the integrity rule in P-034 widened so that rows and files the recorded approver adds count; wording for the statuses; CSV and email text; the Instructions, SOP and checkpoint steps.
+- **Options:** A. As recommended. B. A setting for the whole site instead of a choice on each request. C. Keep today's flow and treat approver purchases as an exception.
+- **Recommendation:** A. A per-request choice keeps the 5% where an employee buys working as today, and the default means the 95% case needs no extra click.
+- **If you choose differently:** `app/src/ui/pages/RequestWorkspace.tsx`, `AdminRequestPage.tsx`, both data services, `purchaseRules.ts`.
+
+## 25. After the approver buys, who attaches the receipt and finishes the request? (new)
+
+- **Options:** A. The approver attaches the receipt or invoice on the request page and chooses "Mark purchased"; the app builds the folder for processing (recommended: one person finishes it, and the receipt is with the person who bought). B. The employee attaches it after the approver forwards it, and submits as today (the app changes least, but the employee has a step only the approver can trigger). C. Receipts go through your existing receipt filing and the request just closes in the app (the folder would hold the CSV only, so the app no longer shows that a receipt exists).
+- **Recommendation:** A.
+- **If you choose differently:** the submit and processing actions in both data services and the request pages.
+
+## 26. Who ticks the certification when the approver buys? (new)
+
+- **The sentence** (yours, exact): "I certify that the listed purchases are for official Clarus Labs business purposes, are not personal expenses, have not been reimbursed elsewhere, and that the information provided is accurate to the best of my knowledge."
+- **Options:** A. The employee ticks it when they send the request (recommended: they no longer submit anything, and the sentence is about business purpose and the accuracy of what they entered). B. The approver ticks it when marking the purchase done. C. Both.
+- **Recommendation:** A. For requests an employee buys themselves, the tick stays at Submit as today.
+- **If you choose differently:** `sendForApproval` and `submitRequest` in both data services, the send and submit dialogs.
 
 ## Not built, on purpose
 

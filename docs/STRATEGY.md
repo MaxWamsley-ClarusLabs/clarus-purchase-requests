@@ -301,7 +301,7 @@ Each stage ends with a commit on the project branch and an entry in `docs/CHANGE
 | 12. Security review and SOP proof pass | Permissions, flow safety, repository check; SOP read against the built app | Claude and Max |
 | 13. Pilot | Production site and flow, used on real purchases by a few employees | Max |
 | 14. Production | Teams app; the Word form and the Teams posting are retired when Max decides | Max |
-| 15. **New purchasing policy (last stage)** | Max writes a new purchasing policy with Claude. The thresholds, quote rule, categories, certification sentence and account mapping in `purchaseRules.ts` are changed to match, in one place; the Instructions, SOP and the form text are updated | Max and Claude |
+| 15. **New purchasing policy (last stage)** | Max writes a new purchasing policy with Claude. The thresholds, quote rule, categories, certification sentence and account mapping in `purchaseRules.ts` are changed to match, in one place; the Instructions, SOP and the form text are updated. Inputs already decided (2026-10-01, `docs/SOP.md` "Rules confirmed by Max"): $500 for approval and the quote rule, the old form's $100 retired, the Owners approve, the 10% rule | Max and Claude |
 
 ---
 

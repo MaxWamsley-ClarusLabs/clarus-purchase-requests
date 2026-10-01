@@ -41,7 +41,7 @@ A decision stays settled unless new facts affect it. If a later entry replaces a
 ## P-005. Approval threshold: $500
 
 - **Date:** 2026-09-30
-- **Status:** Decided (Max)
+- **Status:** Decided (Max). Confirmed again on 2026-10-01, with the quote rule (P-015): the attached F2 form's $100 supervisor approval and "over $500" quote wording are retired and are not to appear in the new SOP or the purchasing policy.
 - **Decision:** Under $500: no approval is needed, but the employee still submits the request with receipts. $500 or more: needs approval in the app before the purchase.
 - **Note:** The attached F2 form (P4 wording) still says that purchases of $100 or more need approval and that purchases over $500 need a quote. Max's prompt decides $500 for approval, and the form's $100 is not used. The form text is one of the things the new policy stage updates. Listed as a question so Max sees it.
 
@@ -85,7 +85,7 @@ A decision stays settled unless new facts affect it. If a later entry replaces a
 ## P-012. Expense categories
 
 - **Date:** 2026-09-30
-- **Status:** Decided (Max)
+- **Status:** Decided (Max), from the attached form. On 2026-10-01 Max said the form was only a template, so the categories may be renamed. Open: which names, and which QuickBooks account each maps to, once Claude has the chart of accounts (question 1).
 - **Decision:** R&D Materials & Supplies / Equipment; Advertising/Marketing/Website; Computer, H/W & S/W Supplies; Office Supplies; Training and Education; Shipping/Postage; Business Insurance; Other (with a description). The employee suggests one per line, with vendor memory as in travel. The approver or administrator can confirm or change it.
 
 ## P-013. Overnight mode
@@ -109,7 +109,7 @@ The first three are the default rules Max asked to have built and listed.
 ## P-015. Quote rule: $500 or more
 
 - **Date:** 2026-09-30
-- **Status:** Provisional (Claude, awaiting Max). Max's prompt names this as a recommended default to build and list.
+- **Status:** Decided (Max, 2026-10-01: yes to "$500 or more", and the old form's $100 is retired; to be put in the new SOP). It was first built as Provisional (Claude).
 - **Decision:** A vendor total of $500 or more also needs a quote, or a written no-quote reason, attached to the approval request. A quote is a file marked "quote" on one of the vendor's lines; the reason is text on one of those lines. The threshold is a separate constant from the approval threshold, so the two can differ.
 - **Options considered:** "over $500" (above $500, which is what the attached F2 form says); a higher quote threshold; no quote rule; a quote required with no reason allowed. Chosen because Max wrote "$500 or more" and using the same number for both keeps the rule easy to explain.
 - **Where a change goes:** `QUOTE_THRESHOLD_CENTS` and the comparison in `purchaseRules.ts`; wording in `messages.ts`.
@@ -126,7 +126,7 @@ The first three are the default rules Max asked to have built and listed.
 ## P-017. Bought before approval
 
 - **Date:** 2026-09-30
-- **Status:** Provisional (Claude, awaiting Max). Max's prompt names this as a recommended default.
+- **Status:** Decided (Max, 2026-10-01: "do whatever you think", so Claude's recommendation, option A, stands: send for approval flagged, then submit). It was first built as Provisional (Claude). With most purchases now to be made by the approver (question 24), the flag applies to the purchases an employee makes for themselves.
 - **Decision:** A purchase of $500 or more already made without approval can still go through. When the request is sent for approval, a vendor total of $500 or more is flagged **Bought before approval** if any of its lines is dated before the day it is sent, or already has a receipt or invoice attached. The request still goes to the approver first. The flag stays on the request after approval. The administrator sees it in the submission email and in the CSV (a "Bought before approval" column). The employee submits for processing after the approval, as for any approved request. A flag, once set for a vendor, stays in later rounds, even if a date is changed. When a request is sent again after an approval, a vendor total the approval still covers (within the 10% allowance, P-019) is not newly flagged by a receipt or a date, because it was approved before it was bought; one that has risen past it, or was never approved, is.
 - **Options considered:** block the request (Max said it can still be submitted); let the employee submit straight to processing while approval is pending (the folder and CSV would be made before the approval exists, so the CSV would be out of date after approval); ask the employee to tick "already bought" (an honest answer is needed; the date and receipt tests need no extra click). Chosen: two steps, send for approval flagged, then submit, because the folder and CSV are then built once with the approval in them.
 - **Where a change goes:** `isAlreadyBought` and `groupsForApproval` in `purchaseRules.ts`, `approvalGroupsToSend` in `validation.ts`; the wording in `messages.ts`; the send dialog in `RequestWorkspace`.
@@ -136,7 +136,7 @@ The first three are the default rules Max asked to have built and listed.
 ## P-018. The approval email is a branch of the same flow
 
 - **Date:** 2026-09-30
-- **Status:** Provisional (Claude, awaiting Max). Max asked Claude to choose and explain.
+- **Status:** Provisional (Claude, awaiting Max) for the flow's design (question 7). Max asked Claude to choose and explain. That the approvers are the site Owners is Decided (Max, 2026-10-01, with P-020).
 - **Decision:** One flow. The app records each request for approval as a Purchase Submissions item of type **Approval request**, written Uploading and then Ready like a package. The flow starts on Ready, claims the item, and branches on the type: an approval request only emails the approvers and is marked Packaged (shown in the app as "Approver emailed"); a processing package is handled exactly as in the travel flow. The approvers' addresses are the site Owners' addresses read by Set-up when it makes the flow package, with the administrator's own address as the fallback.
 - **Options considered:**
   - A second flow triggered by the requests list: a second import, a second trigger to keep turned on, and no shared monitoring of failures. Not chosen.
@@ -148,7 +148,7 @@ The first three are the default rules Max asked to have built and listed.
 ## P-019. Approval covers what the approver saw
 
 - **Date:** 2026-09-30
-- **Status:** Provisional (Claude, awaiting Max)
+- **Status:** Decided (Max, 2026-10-01: yes, keep the rule). It was first built as Provisional (Claude); the 10% figure is now Max's.
 - **Decision:** When the approver approves, the app records each vendor total of $500 or more as approved at that amount. The employee may change the request afterwards (actual prices differ from planned ones). A vendor total that is now more than 10% above its approved amount, or a vendor total of $500 or more that was not approved, needs approval again: Submit is blocked with a message, and the employee uses Send for approval again. Amounts below the approved amount never need approval again. The approver approves what was sent: if the vendor totals that need approval no longer match what was sent (the same vendors at the same amounts), for example after an edit made directly in SharePoint while the request awaited approval, Approve is refused and nothing is written; the approver returns the request with a note.
 - **Options considered:** no check after approval (an approved request could be edited to any amount); no allowance (a small tax or shipping difference would need a second approval); a fixed dollar allowance. The 10% is a guess.
 - **Where a change goes:** `OVERRUN_TOLERANCE_PERCENT`, `approvalCoverage` and `matchesWhatWasSent` in `purchaseRules.ts`.
@@ -157,7 +157,7 @@ The first three are the default rules Max asked to have built and listed.
 ## P-020. One role for approver and administrator; self-approval; no withdrawing
 
 - **Date:** 2026-09-30
-- **Status:** Provisional (Claude, awaiting Max)
+- **Status:** Decided (Max, 2026-10-01: yes, the site Owners approve and an Owner may approve their own request). The no-withdrawing part was not asked and stays Provisional (Claude).
 - **Decision:** The approver and the administrator are the same role for now: people with SharePoint's "Manage web site" permission, which site Owners have (travel D-066). An approver who is also the requester may approve their own request; the record, the email and the CSV say it was self-approved. An employee cannot withdraw a request that is awaiting approval; the approver returns it.
 - **Options considered:** a separate approver list (no place to keep it without a fourth list or code changes; travel D-029 and O14 left this for later); no self-approval (Max is the only Owner, so his own requests could never be approved); a Withdraw button (more states and an email that has already gone out).
 - **Where a change goes:** `SharePointDataService.requireAdmin` and `MockDataService`; `isSelfApproved` in `purchaseRules.ts`.

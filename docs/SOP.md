@@ -6,6 +6,17 @@
 
 **Scope:** non-travel purchase requests only. Travel goes to the Travel app. This SOP does not change `Clarus_Accounting_SOP.md`, which governs processing in QuickBooks, and it does not replace a purchasing policy: Max will write a new one with Claude after the app is complete (strategy, last stage).
 
+## Rules confirmed by Max
+
+These are decided, not provisional. The new purchasing policy (the last stage) must keep them.
+
+- **Approval and quote threshold: $500.** A vendor total of $500 or more within one request needs the approver's approval before the purchase, and a quote or a written no-quote reason. Under $500 needs no approval, but the request is still submitted with its receipts (confirmed 2026-10-01).
+- **The old form's wording is retired.** The attached F2 form's $100 supervisor approval and its "over $500" quote wording are not used and must not appear in this SOP or the purchasing policy (2026-10-01).
+- **Who approves.** The site Owners approve. An Owner may approve their own request; it is recorded as self-approved (2026-10-01).
+- **After approval.** A vendor total that rises more than 10% above the approved amount, or a new vendor total of $500 or more, needs approval again (2026-10-01).
+- **A purchase already made.** It can still be sent for approval first and submitted afterwards, flagged "Bought before approval". Max left the detail to Claude (2026-10-01).
+- **Still open:** who buys (about 95% of purchases will be bought by the approver, questions 24 to 26) and the category and account names (question 1). Neither is in this SOP yet.
+
 ---
 
 ## Part A. Employees

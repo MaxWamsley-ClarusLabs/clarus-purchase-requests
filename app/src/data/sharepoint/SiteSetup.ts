@@ -1,7 +1,7 @@
-// Creates and checks the three lists on the travel site (D-063). Run by an
+// Creates and checks the three lists on the site (travel D-063). Run by an
 // administrator from the Set-up page; safe to run again at any time: it only
 // adds what is missing and never deletes a list, a column or an item. It
-// never changes a list it did not create (D-077).
+// never changes a list it did not create (travel D-077).
 
 import { APP_LIST_MARKER, FieldDef, LISTS, ListDef, fieldXml } from './schema';
 import { SharePointRequestError, SpClient, odataString } from './http';

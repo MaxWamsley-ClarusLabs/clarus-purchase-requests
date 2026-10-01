@@ -77,7 +77,7 @@ export function departmentSuggestions(requests: readonly PurchaseRequest[]): str
 
 /** The department on the employee's latest request that has one, to fill in a new request (P-022). */
 export function latestDepartment(requests: readonly PurchaseRequest[]): string {
-  const sorted = requests.filter((r) => r.department.trim()).sort((a, b) => b.lastChanged.localeCompare(a.lastChanged));
+  const sorted = requests.filter((r) => r.department.trim()).sort((a, b) => b.lastChanged.localeCompare(a.lastChanged) || b.id - a.id);
   return sorted.length > 0 ? sorted[0].department.trim() : '';
 }
 

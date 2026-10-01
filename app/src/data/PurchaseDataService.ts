@@ -104,7 +104,7 @@ export interface PurchaseDataService {
    * SubmissionBlockedError if something must be fixed first.
    */
   submitRequest(requestId: number, certificationText: string): Promise<Submission>;
-  /** Approval requests and packages for a request, newest first within each type. */
+  /** The submissions of a request: approval requests first, then packages, each newest first. */
   listSubmissionsForRequest(requestId: number): Promise<Submission[]>;
   /** The CSV attached to a package submission, for the administrator to preview. */
   getSubmissionCsv(submissionId: number): Promise<string>;
@@ -116,7 +116,10 @@ export interface PurchaseDataService {
   /**
    * Approves a request that is Awaiting approval: records the approved vendor
    * totals, the approver and the time, confirms every line's category (with
-   * the changes given), and sets the status to Approved (P-006, P-019).
+   * the changes given), and sets the status to Approved (P-006, P-019). A
+   * category choice that is not valid throws an Error whose message is plain
+   * text for the screen; a wrong status or a non-administrator throws
+   * NotAllowedError.
    */
   approveRequest(requestId: number, options: ApproveOptions): Promise<PurchaseRequest>;
   /** Returns a request that is Awaiting approval or Submitted, with a note (P-006). */
@@ -124,7 +127,8 @@ export interface PurchaseDataService {
   /**
    * Confirms the categories of a request that is Awaiting approval, Approved
    * or Submitted, changing those given (P-012, P-024). The CSV already in a
-   * folder keeps the category as submitted.
+   * folder keeps the category as submitted. Invalid choices throw as in
+   * approveRequest.
    */
   confirmCategories(requestId: number, changes: Record<string, CategoryChoice>): Promise<PurchaseLine[]>;
   markProcessed(requestId: number): Promise<PurchaseRequest>;

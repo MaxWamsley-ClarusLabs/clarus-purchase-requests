@@ -1,14 +1,28 @@
-// Synthetic sample data for the prototype and tests. People, vendors and
-// receipts are made up (see test/fixtures/receipts). No real data.
+// Synthetic sample data for the preview and tests. People, vendors and
+// receipts are made up (see test/fixtures/receipts). No real data. The sample
+// is one time in the life of the app: requests at every stage, including the
+// ones that need attention (a failed package, a failed approval email, a
+// duplicate receipt between two people).
 
+import { dateRange, dateRangeText, toLocalDateTime } from '../../domain/dates';
+import { csvFileName, folderName, packageFiles } from '../../domain/naming';
+import { CERTIFICATION, PROJECT_QUICK_PICKS, anyBoughtBefore, groupsForApproval, groupsForApproved } from '../../domain/purchaseRules';
+import { hasReceipt } from '../../domain/receipts';
 import { computeTotals } from '../../domain/totals';
-import { activeTrips } from '../../domain/mileage';
-import { csvFileName, packageReceipts } from '../../domain/naming';
-import { messages } from '../../domain/messages';
-import { validateReport } from '../../domain/validation';
-import { buildExpensesCsv } from '../../export/csv';
-import { buildEmailSummary, emailSubject } from '../../export/email';
-import { CurrentUser, ExpenseLine, ReceiptFile, Submission, TravelReport } from '../../domain/types';
+import {
+  ApprovalGroup,
+  AttachedFile,
+  CurrentUser,
+  FileKind,
+  PackageStatus,
+  PurchaseLine,
+  PurchaseRequest,
+  Submission,
+  SubmissionType
+} from '../../domain/types';
+import { validateRequest } from '../../domain/validation';
+import { buildPurchasesCsv } from '../../export/csv';
+import { approvalEmailSubject, buildApprovalEmailSummary, buildSubmissionEmailSummary, submissionEmailSubject } from '../../export/email';
 
 export const SAMPLE_USERS: Record<'jane' | 'sam' | 'admin', CurrentUser> = {
   jane: { displayName: 'Jane Doe', email: 'jane.doe@example.com', isAdministrator: false },
@@ -16,36 +30,48 @@ export const SAMPLE_USERS: Record<'jane' | 'sam' | 'admin', CurrentUser> = {
   admin: { displayName: 'Max Wamsley', email: 'max.wamsley@example.com', isAdministrator: true }
 };
 
-function file(id: string, fileName: string, sizeBytes: number, fingerprint: string): ReceiptFile {
-  const contentType = fileName.endsWith('.pdf') ? 'application/pdf' : 'image/png';
-  return { id, fileName, sizeBytes, fingerprint, contentType, url: `/receipts/${fileName}` };
+/** Where the flow says a package went, for the preview (P-008). */
+export function packagedFolderLink(folderNameText: string): string {
+  return `Accounting > Purchases > Purchases_To_Process > ${folderNameText}`;
 }
 
+function file(id: string, fileName: string, sizeBytes: number, fingerprint: string, kind: FileKind): AttachedFile {
+  const contentType = fileName.endsWith('.pdf') ? 'application/pdf' : 'image/png';
+  return { id, fileName, sizeBytes, fingerprint, contentType, kind, url: `/receipts/${fileName}` };
+}
+
+// Every file has its own ID and fingerprint, except the Northwind receipt, which
+// Jane and Sam both attached (a possible duplicate for the administrator).
 const FILES = {
-  skyway: () => file('f-skyway', 'skyway-airlines-eticket.pdf', 36058, 'sample-skyway'),
-  conference: () => file('f-conf', 'northeast-science-conference-registration.pdf', 34101, 'sample-conference'),
-  hotel: () => file('f-hotel', 'harbor-view-hotel-folio.pdf', 35786, 'sample-hotel'),
-  cab: () => file('f-cab', 'city-cab-receipt.png', 40235, 'sample-cab'),
-  bistro: () => file('f-bistro', 'blue-door-bistro.png', 42557, 'sample-bistro'),
-  parking: () => file('f-parking', 'metro-parking.png', 42265, 'sample-parking')
+  acmeQuote: () => file('f-acme-quote', 'acme-lab-supply-quote.pdf', 31204, 'sample-acme-quote', 'quote'),
+  harborQuote: () => file('f-harbor-quote', 'harbor-software-quote.pdf', 30871, 'sample-harbor-quote', 'quote'),
+  kestrelQuote: () => file('f-kestrel-quote', 'kestrel-instruments-quote.pdf', 32560, 'sample-kestrel-quote', 'quote'),
+  blueFernInvoice: () => file('f-bluefern-invoice', 'blue-fern-web-invoice.pdf', 29940, 'sample-bluefern-invoice', 'receipt'),
+  northwindReceipt: (id: string) => file(id, 'northwind-office-receipt.png', 40812, 'sample-northwind-receipt', 'receipt'),
+  quickshipReceipt: () => file('f-quickship-receipt', 'quickship-postage-receipt.png', 38420, 'sample-quickship-receipt', 'receipt'),
+  summitReceipt: () => file('f-summit-receipt', 'summit-training-receipt.pdf', 33715, 'sample-summit-receipt', 'receipt')
 };
 
-function report(r: Partial<TravelReport> & Pick<TravelReport, 'id' | 'tripName' | 'ownerName' | 'ownerEmail'>): TravelReport {
+function request(r: Partial<PurchaseRequest> & Pick<PurchaseRequest, 'id' | 'businessPurpose' | 'ownerName' | 'ownerEmail'>): PurchaseRequest {
   return {
-    reportNumber: `TR-${String(r.id).padStart(4, '0')}`,
-    destination: '',
-    businessPurpose: '',
-    tripPurpose: '',
-    tripStart: '',
-    tripEnd: '',
-    hasMileage: false,
-    mileageTrips: [],
+    requestNumber: `PR-${String(r.id).padStart(4, '0')}`,
+    department: '',
+    projectCode: '',
     status: 'Draft',
     returnNote: '',
+    returnStage: '',
     submissionCount: 0,
+    approvalRounds: 0,
     totalReimburseCents: 0,
     totalCompanyCents: 0,
-    totalTripCents: 0,
+    totalRequestCents: 0,
+    sentForApprovalOn: '',
+    boughtBeforeApproval: false,
+    approval: { sent: [], approved: [] },
+    approvalNote: '',
+    approvedOn: '',
+    approvedBy: '',
+    approvedByEmail: '',
     submittedOn: '',
     processedOn: '',
     processedBy: '',
@@ -55,407 +81,529 @@ function report(r: Partial<TravelReport> & Pick<TravelReport, 'id' | 'tripName' 
 }
 
 let lineCounter = 0;
-function row(reportId: number, rowNumber: number, l: Partial<ExpenseLine>): ExpenseLine {
+function row(requestId: number, rowNumber: number, l: Partial<PurchaseLine>): PurchaseLine {
   lineCounter += 1;
   return {
     id: `sample-${lineCounter}`,
-    reportId,
+    requestId,
     rowNumber,
     date: '',
     vendor: '',
-    category: '',
     description: '',
+    category: '',
+    categoryOther: '',
+    categoryConfirmedBy: '',
     amountCents: null,
-    paymentType: '',
+    paidBy: '',
+    noQuoteReason: '',
     noReceiptReason: '',
     sameReceiptAsRow: null,
-    receipts: [],
+    files: [],
     suggested: [],
     ...l
   };
 }
 
 export interface SampleStore {
-  reports: TravelReport[];
-  lines: ExpenseLine[];
+  requests: PurchaseRequest[];
+  lines: PurchaseLine[];
   submissions: Submission[];
   csvBySubmission: Record<number, string>;
-  nextReportId: number;
+  nextRequestId: number;
   nextSubmissionId: number;
 }
+
+/** A store with nothing in it, for tests that start from a new site. */
+export function createEmptyStore(): SampleStore {
+  return { requests: [], lines: [], submissions: [], csvBySubmission: {}, nextRequestId: 1, nextSubmissionId: 1 };
+}
+
+/** The vendor totals as they were when the request was sent for approval (P-017), worked out by the real rule. */
+function sentGroups(lines: readonly PurchaseLine[], sentOn: string): ApprovalGroup[] {
+  return groupsForApproval(
+    lines.map((l) => ({ id: l.id, vendor: l.vendor, amountCents: l.amountCents, date: l.date, hasReceipt: hasReceipt(l, lines) })),
+    sentOn.slice(0, 10)
+  );
+}
+
+interface SubmissionSpec {
+  id: number;
+  requestId: number;
+  type: SubmissionType;
+  number: number;
+  status: PackageStatus;
+  /** When the app created it: "YYYY-MM-DD HH:MM". */
+  on: string;
+  /** When the flow finished with it, for one that is Packaged. */
+  packagedAt?: string;
+  errorMessage?: string;
+}
+
+const SAMPLE_SUBMISSIONS: SubmissionSpec[] = [
+  { id: 1, requestId: 37, type: 'approval', number: 1, status: 'Packaged', on: '2026-09-21 11:05', packagedAt: '2026-09-21 11:09' },
+  { id: 2, requestId: 38, type: 'approval', number: 1, status: 'Packaged', on: '2026-09-24 15:40', packagedAt: '2026-09-24 15:44' },
+  { id: 3, requestId: 37, type: 'package', number: 1, status: 'Packaged', on: '2026-09-24 08:50', packagedAt: '2026-09-24 08:54' },
+  { id: 4, requestId: 40, type: 'approval', number: 1, status: 'Packaged', on: '2026-09-29 09:12', packagedAt: '2026-09-29 09:16' },
+  { id: 5, requestId: 33, type: 'approval', number: 1, status: 'Packaged', on: '2026-10-01 10:20', packagedAt: '2026-10-01 10:24' },
+  {
+    id: 6,
+    requestId: 32,
+    type: 'approval',
+    number: 1,
+    status: 'Failed',
+    on: '2026-10-02 16:45',
+    errorMessage: 'The SharePoint connection in the flow needs to be signed in again.'
+  },
+  { id: 7, requestId: 34, type: 'package', number: 1, status: 'Packaged', on: '2026-10-05 10:15', packagedAt: '2026-10-05 10:19' },
+  { id: 8, requestId: 36, type: 'package', number: 1, status: 'Packaged', on: '2026-10-08 08:30', packagedAt: '2026-10-08 08:34' },
+  {
+    id: 9,
+    requestId: 35,
+    type: 'package',
+    number: 1,
+    status: 'Failed',
+    on: '2026-10-08 09:05',
+    errorMessage: 'The SharePoint connection in the flow needs to be signed in again.'
+  }
+];
 
 export function createSampleStore(): SampleStore {
   lineCounter = 0;
   const jane = SAMPLE_USERS.jane;
   const sam = SAMPLE_USERS.sam;
+  const grant = PROJECT_QUICK_PICKS[0];
 
-  const reports: TravelReport[] = [
-    report({
-      id: 41,
-      tripName: 'Boston Conference',
-      destination: 'Boston, MA',
-      businessPurpose: 'Present Phase I results at the Northeast Science Conference and meet two potential partners.',
-      tripPurpose: 'nsfPhase1',
-      tripStart: '2026-09-14',
-      tripEnd: '2026-09-17',
-      ownerName: jane.displayName,
-      ownerEmail: jane.email,
-      lastChanged: '2026-09-23 16:40'
+  const lines: PurchaseLine[] = [
+    // PR-0041: Jane's draft. A vendor total of $640.00 needs approval, which has not been asked for yet.
+    row(41, 1, {
+      date: '2026-10-14',
+      vendor: 'Acme Lab Supply',
+      description: 'Pipette tips and centrifuge tubes for the assay',
+      category: 'rdMaterials',
+      amountCents: 64000,
+      paidBy: 'company',
+      files: [FILES.acmeQuote()]
     }),
-    report({
-      id: 38,
-      tripName: 'Customer visit, Denver',
-      destination: 'Denver, CO',
-      businessPurpose: 'Demonstrate the analyzer to a prospective customer.',
-      tripPurpose: 'commercial',
-      tripStart: '2026-09-08',
-      tripEnd: '2026-09-10',
-      status: 'Submitted',
-      submissionCount: 1,
-      submittedOn: '2026-09-12 08:15',
-      ownerName: jane.displayName,
-      ownerEmail: jane.email,
-      lastChanged: '2026-09-12 08:15'
-    }),
-    report({
-      id: 33,
-      tripName: 'Phase I kickoff, Arlington',
-      destination: 'Arlington, VA',
-      businessPurpose: 'Phase I kickoff meeting with the program officer.',
-      tripPurpose: 'nsfPhase1',
-      tripStart: '2026-08-03',
-      tripEnd: '2026-08-04',
-      status: 'Processed',
-      submissionCount: 1,
-      submittedOn: '2026-08-06 11:02',
-      processedOn: '2026-08-10 14:20',
-      processedBy: 'Max Wamsley',
-      ownerName: jane.displayName,
-      ownerEmail: jane.email,
-      lastChanged: '2026-08-10 14:20'
-    }),
-    report({
-      id: 39,
-      tripName: 'Supplier audit, Chicago',
-      destination: 'Chicago, IL',
-      businessPurpose: 'Audit the optics supplier before the next order.',
-      tripPurpose: 'internalRnd',
-      tripStart: '2026-09-01',
-      tripEnd: '2026-09-03',
-      status: 'Submitted',
-      submissionCount: 1,
-      submittedOn: '2026-09-05 17:48',
-      ownerName: sam.displayName,
-      ownerEmail: sam.email,
-      lastChanged: '2026-09-05 17:48'
-    }),
-    report({
-      id: 40,
-      tripName: 'Trade show, Austin',
-      destination: 'Austin, TX',
-      businessPurpose: 'Staff the Clarus booth at the trade show.',
-      tripPurpose: 'generalBusiness',
-      tripStart: '2026-09-09',
-      tripEnd: '2026-09-11',
-      status: 'Returned',
-      returnNote: 'Row 2: please attach the itemized hotel bill, not the card slip.',
-      submissionCount: 1,
-      submittedOn: '2026-09-13 09:30',
-      ownerName: sam.displayName,
-      ownerEmail: sam.email,
-      lastChanged: '2026-09-14 10:05'
-    })
-  ];
-
-  const lines: ExpenseLine[] = [
-    // TR-0041, the draft used to show the Expenses step.
-    row(41, 1, { date: '2026-08-20', vendor: 'Skyway Airlines', category: 'airfare', amountCents: 45230, paymentType: 'personal', receipts: [FILES.skyway()] }),
     row(41, 2, {
-      date: '2026-08-10',
-      vendor: 'Northeast Science Conference',
-      category: 'registration',
-      amountCents: 39500,
-      paymentType: 'companyCard',
-      receipts: [FILES.conference()]
-    }),
-    row(41, 3, {
-      date: '2026-09-17',
-      vendor: 'Harbor View Hotel',
-      category: 'lodging',
-      description: 'Room and tax, 3 nights',
-      amountCents: 61224,
-      paymentType: 'companyCard',
-      receipts: [FILES.hotel()]
-    }),
-    row(41, 4, {
-      date: '2026-09-15',
-      vendor: 'Harbor Grill (hotel restaurant)',
-      category: 'meals',
-      amountCents: 4210,
-      paymentType: 'companyCard',
-      sameReceiptAsRow: 3
-    }),
-    row(41, 5, {
-      date: '2026-09-14',
-      vendor: 'City Cab Co.',
-      category: 'transportation',
-      description: 'Airport to hotel',
-      amountCents: 4500,
-      paymentType: 'personal',
-      receipts: [FILES.cab()]
-    }),
-    row(41, 6, {
-      date: '2026-09-15',
-      vendor: 'Blue Door Bistro',
-      category: 'businessMeal',
-      amountCents: 14000,
-      paymentType: 'personal',
-      receipts: [FILES.bistro()]
-    }),
-    row(41, 7, { date: '2026-09-17', vendor: 'Metro Parking', category: 'transportation', amountCents: 7200, paymentType: '', receipts: [FILES.parking()] }),
-    row(41, 8, {
-      date: '2026-09-18',
-      vendor: 'Harbor Water Taxi',
-      category: 'transportation',
-      amountCents: 1800,
-      paymentType: 'personal',
-      noReceiptReason: 'Paid cash; no receipt offered'
+      date: '2026-10-14',
+      vendor: 'Northwind Office Supply',
+      description: 'Lab notebooks and labels',
+      category: 'office',
+      amountCents: 8645,
+      paidBy: 'employee'
     }),
 
-    // TR-0038 (submitted)
-    row(38, 1, {
-      date: '2026-09-08',
-      vendor: 'Skyway Airlines',
-      category: 'airfare',
-      amountCents: 31840,
-      paymentType: 'companyCard',
-      receipts: [{ ...FILES.skyway(), id: 'f38-1', fingerprint: 'sample-38-1' }]
-    }),
-    row(38, 2, {
-      date: '2026-09-09',
-      vendor: 'Mile High Inn',
-      category: 'lodging',
-      amountCents: 28900,
-      paymentType: 'companyCard',
-      receipts: [{ ...FILES.hotel(), id: 'f38-2', fingerprint: 'sample-38-2' }]
-    }),
-    row(38, 3, {
-      date: '2026-09-09',
-      vendor: 'Blue Door Bistro',
-      category: 'businessMeal',
-      amountCents: 14000,
-      paymentType: 'personal',
-      description: 'Dinner with two customer engineers',
-      receipts: [{ ...FILES.bistro(), id: 'f38-3', fingerprint: 'sample-38-3' }]
-    }),
-
-    // TR-0033 (processed)
-    row(33, 1, {
-      date: '2026-08-03',
-      vendor: 'Capitol Rail',
-      category: 'transportation',
-      amountCents: 16800,
-      paymentType: 'companyCard',
-      receipts: [{ ...FILES.cab(), id: 'f33-1', fingerprint: 'sample-33-1' }]
-    }),
-
-    // TR-0039 (Sam, packaging failed). Row 2 matches Jane's TR-0038 row 3: a cross-employee duplicate.
-    row(39, 1, {
-      date: '2026-09-01',
-      vendor: 'Lakeshore Hotel',
-      category: 'lodging',
-      amountCents: 41800,
-      paymentType: 'companyCard',
-      receipts: [{ ...FILES.hotel(), id: 'f39-1', fingerprint: 'sample-39-1' }]
-    }),
-    row(39, 2, {
-      date: '2026-09-09',
-      vendor: 'Blue Door Bistro',
-      category: 'businessMeal',
-      amountCents: 14000,
-      paymentType: 'personal',
-      description: 'Dinner with Jane Doe and two customer engineers',
-      receipts: [{ ...FILES.bistro(), id: 'f39-2', fingerprint: 'sample-39-2' }]
-    }),
-
-    // TR-0040 (Sam, returned)
+    // PR-0040: sent for approval, waiting for the approver. The Blue Fern total is under the threshold.
     row(40, 1, {
-      date: '2026-09-09',
-      vendor: 'Skyway Airlines',
-      category: 'airfare',
-      amountCents: 27600,
-      paymentType: 'personal',
-      receipts: [{ ...FILES.skyway(), id: 'f40-1', fingerprint: 'sample-40-1' }]
+      date: '2026-10-05',
+      vendor: 'Harbor Software',
+      description: 'Annual licence for the analysis software',
+      category: 'computer',
+      amountCents: 87000,
+      paidBy: 'company',
+      files: [FILES.harborQuote()]
     }),
     row(40, 2, {
-      date: '2026-09-11',
-      vendor: 'Riverside Suites',
-      category: 'lodging',
-      amountCents: 50400,
-      paymentType: 'companyCard',
-      receipts: [{ ...FILES.parking(), id: 'f40-2', fingerprint: 'sample-40-2' }]
+      date: '2026-10-05',
+      vendor: 'Blue Fern Web Co.',
+      description: 'Domain renewal for the company website',
+      category: 'advertising',
+      amountCents: 12900,
+      paidBy: 'company'
+    }),
+
+    // PR-0038: approved. The quote is attached; the receipt is still to come.
+    row(38, 1, {
+      date: '2026-09-28',
+      vendor: 'Kestrel Instruments',
+      description: 'Benchtop sensor kit',
+      category: 'rdMaterials',
+      categoryConfirmedBy: 'Max Wamsley',
+      amountCents: 115000,
+      paidBy: 'company',
+      files: [FILES.kestrelQuote()]
+    }),
+
+    // PR-0037: bought before approval, approved, then submitted. One receipt covers both rows.
+    row(37, 1, {
+      date: '2026-09-15',
+      vendor: 'Blue Fern Web Co.',
+      description: 'Website hosting for the year',
+      category: 'advertising',
+      categoryConfirmedBy: 'Max Wamsley',
+      amountCents: 62000,
+      paidBy: 'company',
+      noQuoteReason: 'Already purchased',
+      files: [FILES.blueFernInvoice()]
+    }),
+    row(37, 2, {
+      date: '2026-09-16',
+      vendor: 'Blue Fern Web Co.',
+      description: 'Search marketing package',
+      category: 'advertising',
+      categoryConfirmedBy: 'Max Wamsley',
+      amountCents: 52000,
+      paidBy: 'company',
+      sameReceiptAsRow: 1
+    }),
+
+    // PR-0036: processed. Row 1 is the receipt Sam also attached to PR-0035.
+    row(36, 1, {
+      date: '2026-10-07',
+      vendor: 'Northwind Office Supply',
+      description: 'Printer paper and toner for the lab office',
+      category: 'office',
+      amountCents: 8645,
+      paidBy: 'employee',
+      files: [FILES.northwindReceipt('f36-1')]
+    }),
+    row(36, 2, {
+      date: '2026-10-07',
+      vendor: 'QuickShip Postage',
+      description: 'Postage for the sample return shipment',
+      category: 'shipping',
+      amountCents: 2460,
+      paidBy: 'company',
+      files: [FILES.quickshipReceipt()]
+    }),
+
+    // PR-0035: Sam's submission, the same receipt, date, vendor and amount as PR-0036 row 1 (a cross-employee duplicate).
+    row(35, 1, {
+      date: '2026-10-07',
+      vendor: 'Northwind Office Supply',
+      description: 'Desk organiser and stationery for the new hire',
+      category: 'office',
+      amountCents: 8645,
+      paidBy: 'employee',
+      files: [FILES.northwindReceipt('f35-1')]
+    }),
+
+    // PR-0034: returned at processing. Row 2 has no receipt.
+    row(34, 1, {
+      date: '2026-10-01',
+      vendor: 'Summit Training Institute',
+      description: 'Two-day laboratory safety course',
+      category: 'training',
+      amountCents: 45000,
+      paidBy: 'employee',
+      files: [FILES.summitReceipt()]
+    }),
+    row(34, 2, {
+      date: '2026-10-02',
+      vendor: 'Lakeview Bookshop',
+      description: 'Course workbook',
+      category: 'training',
+      amountCents: 3820,
+      paidBy: 'employee',
+      noReceiptReason: 'Card slip only'
+    }),
+
+    // PR-0033: returned at approval. The second vendor has no quote and no reason.
+    row(33, 1, {
+      date: '2026-10-06',
+      vendor: 'Northwind Office Supply',
+      description: 'Storage bins and labels',
+      category: 'office',
+      amountCents: 6430,
+      paidBy: 'company'
+    }),
+    row(33, 2, {
+      date: '2026-10-06',
+      vendor: 'Redwood Fabrication',
+      description: 'Stainless steel workbench',
+      category: 'other',
+      categoryOther: 'Lab furniture',
+      amountCents: 90000,
+      paidBy: 'company'
+    }),
+
+    // PR-0032: sent for approval, but the approval email failed to go out.
+    row(32, 1, {
+      date: '2026-10-20',
+      vendor: 'Ridgeline Displays',
+      description: 'Pop-up banner stands and table cover for the booth',
+      category: 'advertising',
+      amountCents: 130000,
+      paidBy: 'company',
+      noQuoteReason: 'The show organizer requires its approved vendor'
+    })
+  ];
+  const of = (id: number) => lines.filter((l) => l.requestId === id);
+
+  const sent40 = sentGroups(of(40), '2026-09-29');
+  const sent38 = sentGroups(of(38), '2026-09-24');
+  const sent37 = sentGroups(of(37), '2026-09-21');
+  const sent33 = sentGroups(of(33), '2026-10-01');
+  const sent32 = sentGroups(of(32), '2026-10-02');
+  const max = SAMPLE_USERS.admin;
+
+  const requests: PurchaseRequest[] = [
+    request({
+      id: 41,
+      businessPurpose: 'Lab supplies for the Phase 1 assay',
+      department: 'R&D',
+      projectCode: grant,
+      ownerName: jane.displayName,
+      ownerEmail: jane.email,
+      lastChanged: '2026-10-12 16:40'
+    }),
+    request({
+      id: 40,
+      businessPurpose: 'Software licence for the analysis pipeline',
+      department: 'R&D',
+      projectCode: grant,
+      status: 'Awaiting approval',
+      approvalRounds: 1,
+      sentForApprovalOn: '2026-09-29 09:12',
+      approval: { sent: sent40, approved: [] },
+      ownerName: jane.displayName,
+      ownerEmail: jane.email,
+      lastChanged: '2026-09-29 09:12'
+    }),
+    request({
+      id: 38,
+      businessPurpose: 'Sensor kit for the Phase 1 prototype',
+      department: 'R&D',
+      projectCode: grant,
+      status: 'Approved',
+      approvalRounds: 1,
+      sentForApprovalOn: '2026-09-24 15:40',
+      approval: { sent: sent38, approved: groupsForApproved(of(38), sent38) },
+      approvalNote: 'OK, use the company card.',
+      approvedOn: '2026-09-25 10:05',
+      approvedBy: max.displayName,
+      approvedByEmail: max.email,
+      ownerName: jane.displayName,
+      ownerEmail: jane.email,
+      lastChanged: '2026-09-25 10:05'
+    }),
+    request({
+      id: 37,
+      businessPurpose: 'Website hosting and marketing',
+      department: 'R&D',
+      projectCode: grant,
+      status: 'Submitted',
+      submissionCount: 1,
+      approvalRounds: 1,
+      sentForApprovalOn: '2026-09-21 11:05',
+      boughtBeforeApproval: anyBoughtBefore(sent37),
+      approval: { sent: sent37, approved: groupsForApproved(of(37), sent37) },
+      approvedOn: '2026-09-22 14:30',
+      approvedBy: max.displayName,
+      approvedByEmail: max.email,
+      submittedOn: '2026-09-24 08:50',
+      ownerName: jane.displayName,
+      ownerEmail: jane.email,
+      lastChanged: '2026-09-24 08:50'
+    }),
+    request({
+      id: 36,
+      businessPurpose: 'Office supplies and postage',
+      department: 'R&D',
+      projectCode: grant,
+      status: 'Processed',
+      submissionCount: 1,
+      submittedOn: '2026-10-08 08:30',
+      processedOn: '2026-10-12 11:20',
+      processedBy: max.displayName,
+      ownerName: jane.displayName,
+      ownerEmail: jane.email,
+      lastChanged: '2026-10-12 11:20'
+    }),
+    request({
+      id: 35,
+      businessPurpose: 'Office supplies for the new hire',
+      department: 'Operations',
+      status: 'Submitted',
+      submissionCount: 1,
+      submittedOn: '2026-10-08 09:05',
+      ownerName: sam.displayName,
+      ownerEmail: sam.email,
+      lastChanged: '2026-10-08 09:05'
+    }),
+    request({
+      id: 34,
+      businessPurpose: 'Training course',
+      department: 'Operations',
+      status: 'Returned',
+      returnStage: 'processing',
+      returnNote: 'Row 2: please attach the itemized invoice, not the card slip.',
+      submissionCount: 1,
+      submittedOn: '2026-10-05 10:15',
+      ownerName: sam.displayName,
+      ownerEmail: sam.email,
+      lastChanged: '2026-10-09 15:30'
+    }),
+    request({
+      id: 33,
+      businessPurpose: 'Workbench for the new lab space',
+      department: 'Operations',
+      status: 'Returned',
+      returnStage: 'approval',
+      returnNote: 'Please add a quote for the second vendor, or say why there is none.',
+      approvalRounds: 1,
+      sentForApprovalOn: '2026-10-01 10:20',
+      approval: { sent: sent33, approved: [] },
+      ownerName: sam.displayName,
+      ownerEmail: sam.email,
+      lastChanged: '2026-10-02 09:40'
+    }),
+    request({
+      id: 32,
+      businessPurpose: 'Conference booth materials',
+      department: 'Operations',
+      status: 'Awaiting approval',
+      approvalRounds: 1,
+      sentForApprovalOn: '2026-10-02 16:45',
+      approval: { sent: sent32, approved: [] },
+      ownerName: sam.displayName,
+      ownerEmail: sam.email,
+      lastChanged: '2026-10-02 16:45'
     })
   ];
 
-  const base = {
-    previousFolderName: '',
-    folderLink: '',
-    errorMessage: '',
-    packagedAt: '',
-    emailSubject: '',
-    emailSummary: '',
-    packageFileNames: [] as string[],
-    certificationText: messages.certification
-  };
-  const submissions: Submission[] = [
-    {
-      ...base,
-      id: 1,
-      reportId: 38,
-      reportNumber: 'TR-0038',
-      submissionNumber: 1,
-      packageStatus: 'Packaged',
-      folderName: '2026-09-08_Jane-Doe_Customer-visit-Denver_TR-0038',
-      folderLink: 'Accounting > Trips > Trips_To_Process > 2026-09-08_Jane-Doe_Customer-visit-Denver_TR-0038',
-      submitterName: jane.displayName,
-      submitterEmail: jane.email,
-      submittedOn: '2026-09-12 08:15',
-      tripName: 'Customer visit, Denver',
-      destination: 'Denver, CO',
-      tripStart: '2026-09-08',
-      tripEnd: '2026-09-10',
-      tripPurpose: 'Customer or commercial work',
-      suggestedClass: '2.0 Commercial',
-      totalReimburseCents: 14000,
-      totalCompanyCents: 60740,
-      totalTripCents: 74740,
-      receiptCount: 3,
-      rowsWithoutReceipt: 0,
-      packagedAt: '2026-09-12 08:19'
-    },
-    {
-      ...base,
-      id: 2,
-      reportId: 33,
-      reportNumber: 'TR-0033',
-      submissionNumber: 1,
-      packageStatus: 'Packaged',
-      folderName: '2026-08-03_Jane-Doe_Phase-I-kickoff-Arlington_TR-0033',
-      folderLink: 'Accounting > Trips > Trips_To_Process > 2026-08-03_Jane-Doe_Phase-I-kickoff-Arlington_TR-0033',
-      submitterName: jane.displayName,
-      submitterEmail: jane.email,
-      submittedOn: '2026-08-06 11:02',
-      tripName: 'Phase I kickoff, Arlington',
-      destination: 'Arlington, VA',
-      tripStart: '2026-08-03',
-      tripEnd: '2026-08-04',
-      tripPurpose: 'NSF Phase I project work',
-      suggestedClass: '1.01 NSF Phase 1 SBIR',
-      totalReimburseCents: 0,
-      totalCompanyCents: 16800,
-      totalTripCents: 16800,
-      receiptCount: 1,
-      rowsWithoutReceipt: 0,
-      packagedAt: '2026-08-06 11:06'
-    },
-    {
-      ...base,
-      id: 3,
-      reportId: 39,
-      reportNumber: 'TR-0039',
-      submissionNumber: 1,
-      packageStatus: 'Failed',
-      folderName: '2026-09-01_Sam-Lee_Supplier-audit-Chicago_TR-0039',
-      submitterName: sam.displayName,
-      submitterEmail: sam.email,
-      submittedOn: '2026-09-05 17:48',
-      tripName: 'Supplier audit, Chicago',
-      destination: 'Chicago, IL',
-      tripStart: '2026-09-01',
-      tripEnd: '2026-09-03',
-      tripPurpose: 'Internal research and development',
-      suggestedClass: '5.0 Internal R&D',
-      totalReimburseCents: 14000,
-      totalCompanyCents: 41800,
-      totalTripCents: 55800,
-      receiptCount: 2,
-      rowsWithoutReceipt: 0,
-      errorMessage: 'The SharePoint connection in the flow needs to be signed in again.'
-    },
-    {
-      ...base,
-      id: 4,
-      reportId: 40,
-      reportNumber: 'TR-0040',
-      submissionNumber: 1,
-      packageStatus: 'Packaged',
-      folderName: '2026-09-09_Sam-Lee_Trade-show-Austin_TR-0040',
-      folderLink: 'Accounting > Trips > Trips_To_Process > 2026-09-09_Sam-Lee_Trade-show-Austin_TR-0040',
-      submitterName: sam.displayName,
-      submitterEmail: sam.email,
-      submittedOn: '2026-09-13 09:30',
-      tripName: 'Trade show, Austin',
-      destination: 'Austin, TX',
-      tripStart: '2026-09-09',
-      tripEnd: '2026-09-11',
-      tripPurpose: 'General company business',
-      suggestedClass: '8.0 Indirect Expenses',
-      totalReimburseCents: 27600,
-      totalCompanyCents: 50400,
-      totalTripCents: 78000,
-      receiptCount: 2,
-      rowsWithoutReceipt: 0,
-      packagedAt: '2026-09-13 09:34'
-    }
-  ];
-
-  for (const r of reports) {
-    const t = computeTotals(
-      lines.filter((l) => l.reportId === r.id),
-      activeTrips(r)
-    );
+  for (const r of requests) {
+    const t = computeTotals(of(r.id));
     r.totalReimburseCents = t.reimburseCents;
     r.totalCompanyCents = t.companyCents;
-    r.totalTripCents = t.tripCents;
+    r.totalRequestCents = t.requestCents;
   }
 
-  const store: SampleStore = { reports, lines, submissions, csvBySubmission: {}, nextReportId: 42, nextSubmissionId: 5 };
+  const store: SampleStore = {
+    requests,
+    lines,
+    submissions: [],
+    csvBySubmission: {},
+    nextRequestId: 42,
+    nextSubmissionId: SAMPLE_SUBMISSIONS.length + 1
+  };
   completeSampleOutputs(store);
   return store;
 }
 
 /**
- * Fills in what the app would have written at Submit for the sample
- * submissions (email text, CSV, package file names), using the real builders.
+ * Makes the sample submissions and fills in what the app would have written at
+ * Send for approval or Submit (email text, CSV, package file names), using
+ * the real builders, so the preview shows the real wording.
  */
 function completeSampleOutputs(store: SampleStore): void {
-  for (const s of store.submissions) {
-    const report = store.reports.find((r) => r.id === s.reportId)!;
-    const reportLines = store.lines.filter((l) => l.reportId === s.reportId).sort((a, b) => a.rowNumber - b.rowNumber);
-    const warnings = validateReport(report, reportLines, [], s.submittedOn.slice(0, 10)).filter((i) => i.severity === 'warning');
-    const totals = computeTotals(reportLines, activeTrips(report));
-    const receipts = packageReceipts(reportLines);
-    const csvName = csvFileName(report.reportNumber, s.submissionNumber);
-    s.emailSubject = emailSubject(s.submitterName, s.tripName, s.reportNumber, s.submissionNumber);
-    s.emailSummary = buildEmailSummary({
-      report,
-      lines: reportLines,
-      totals,
-      submitterName: s.submitterName,
-      certification: { email: s.submitterEmail, text: s.certificationText, submittedOn: s.submittedOn },
-      receiptCount: receipts.length,
-      warnings,
-      previousFolderName: s.previousFolderName
+  for (const spec of SAMPLE_SUBMISSIONS) {
+    const request = store.requests.find((r) => r.id === spec.requestId)!;
+    const lines = store.lines.filter((l) => l.requestId === request.id).sort((a, b) => a.rowNumber - b.rowNumber);
+    const totals = computeTotals(lines);
+    const submitter = { name: request.ownerName, email: request.ownerEmail };
+    const frozen = {
+      id: spec.id,
+      requestId: request.id,
+      requestNumber: request.requestNumber,
+      type: spec.type,
+      submissionNumber: spec.number,
+      packageStatus: spec.status,
+      submitterName: submitter.name,
+      submitterEmail: submitter.email,
+      submittedOn: spec.on,
+      businessPurpose: request.businessPurpose,
+      department: request.department,
+      projectCode: request.projectCode,
+      purchaseDates: dateRangeText(lines.map((l) => l.date)),
+      totalReimburseCents: totals.reimburseCents,
+      totalCompanyCents: totals.companyCents,
+      totalRequestCents: totals.requestCents,
+      packagedAt: spec.packagedAt ?? '',
+      errorMessage: spec.errorMessage ?? ''
+    };
+
+    if (spec.type === 'approval') {
+      const groups = request.approval.sent;
+      store.submissions.push({
+        ...frozen,
+        folderName: '',
+        previousFolderName: '',
+        certificationText: '',
+        receiptCount: 0,
+        quoteCount: lines.reduce((n, l) => n + l.files.filter((f) => f.kind === 'quote').length, 0),
+        rowsWithoutReceipt: 0,
+        boughtBeforeApproval: anyBoughtBefore(groups),
+        approvedBy: '',
+        approvedOn: '',
+        emailSubject: approvalEmailSubject(request.ownerName, request.businessPurpose, request.requestNumber, spec.number),
+        emailSummary: buildApprovalEmailSummary({
+          request,
+          lines,
+          totals,
+          submitterName: submitter.name,
+          submitterEmail: submitter.email,
+          round: spec.number,
+          sentOn: spec.on,
+          groups
+        }),
+        folderLink: '',
+        packageFileNames: []
+      });
+      store.csvBySubmission[spec.id] = '';
+      continue;
+    }
+
+    const warnings = validateRequest(request, lines, [], spec.on.slice(0, 10)).filter((i) => i.severity === 'warning');
+    const files = packageFiles(lines);
+    const receiptCount = files.filter((f) => f.kind === 'receipt').length;
+    const quoteCount = files.filter((f) => f.kind === 'quote').length;
+    const name = folderName({
+      firstPurchaseDate: dateRange(lines.map((l) => l.date)).first,
+      ownerName: request.ownerName,
+      businessPurpose: request.businessPurpose,
+      requestNumber: request.requestNumber,
+      submissionNumber: spec.number
     });
-    s.packageFileNames = [...receipts.map((r) => r.packageName), csvName];
-    store.csvBySubmission[s.id] = buildExpensesCsv({
-      report,
-      lines: reportLines,
-      submissionNumber: s.submissionNumber,
-      submitterName: s.submitterName,
-      submitterEmail: s.submitterEmail,
-      submittedOn: s.submittedOn,
+    store.submissions.push({
+      ...frozen,
+      folderName: name,
+      previousFolderName: '',
+      certificationText: CERTIFICATION,
+      receiptCount,
+      quoteCount,
+      rowsWithoutReceipt: lines.filter((l) => !hasReceipt(l, lines)).length,
+      boughtBeforeApproval: request.boughtBeforeApproval || anyBoughtBefore(request.approval.approved),
+      approvedBy: request.approvedBy,
+      approvedOn: request.approvedOn,
+      emailSubject: submissionEmailSubject(request.ownerName, request.businessPurpose, request.requestNumber, spec.number),
+      emailSummary: buildSubmissionEmailSummary({
+        request,
+        lines,
+        totals,
+        submitterName: submitter.name,
+        certification: { email: submitter.email, text: CERTIFICATION, submittedOn: spec.on },
+        receiptCount,
+        quoteCount,
+        warnings,
+        previousFolderName: ''
+      }),
+      folderLink: spec.status === 'Packaged' ? packagedFolderLink(name) : '',
+      packageFileNames: [...files.map((f) => f.packageName), csvFileName(request.requestNumber, spec.number)]
+    });
+    store.csvBySubmission[spec.id] = buildPurchasesCsv({
+      request,
+      lines,
+      submissionNumber: spec.number,
+      submitterName: submitter.name,
+      submitterEmail: submitter.email,
+      submittedOn: spec.on,
       warnings
     });
+  }
+}
+
+/**
+ * Finishes what the simulated flow had still to do. The preview keeps the store
+ * as plain data when it switches between people, and the timers that would have
+ * finished the work die with the page, so a restored store has every
+ * submission that was Uploading, Ready or Processing marked Packaged.
+ */
+export function finishPendingWork(store: SampleStore, now: Date = new Date()): void {
+  for (const s of store.submissions) {
+    if (s.packageStatus !== 'Uploading' && s.packageStatus !== 'Ready' && s.packageStatus !== 'Processing') continue;
+    s.packageStatus = 'Packaged';
+    s.packagedAt = toLocalDateTime(now);
+    if (s.type === 'package') s.folderLink = packagedFolderLink(s.folderName);
   }
 }

@@ -22,7 +22,7 @@ export interface SpRequestInit {
 
 export type SpFetch = (url: string, init: SpRequestInit) => Promise<SpResponse>;
 
-/** A failed SharePoint request, with a plain-language message (D-060). */
+/** A failed SharePoint request, with a plain-language message (travel D-060). */
 export class SharePointRequestError extends Error {
   constructor(
     public readonly status: number,
@@ -54,9 +54,9 @@ const MAX_ATTEMPTS = 4;
 export class SpClient {
   constructor(
     private readonly fetcher: SpFetch,
-    /** The travel site's full address, without a trailing slash. */
+    /** The site's full address, without a trailing slash. */
     public readonly webUrl: string,
-    /** The travel site's path, for example /sites/Travel. */
+    /** The site's path, for example /sites/FormsAndApps. */
     public readonly webServerRelativeUrl: string,
     private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   ) {}
@@ -67,7 +67,7 @@ export class SpClient {
     return new SpClient(this.fetcher, url, new URL(url).pathname || '/', this.sleep);
   }
 
-  /** The server-relative address of a list: /sites/Travel/Lists/TravelReports. */
+  /** The server-relative address of a list: /sites/FormsAndApps/Lists/PurchaseRequests. */
   listUrl(urlName: string): string {
     const base = this.webServerRelativeUrl === '/' ? '' : this.webServerRelativeUrl.replace(/\/$/, '');
     return `${base}/Lists/${urlName}`;

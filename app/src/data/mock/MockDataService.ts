@@ -1,39 +1,68 @@
-// In-memory implementation of TravelDataService for the prototype. It keeps
-// the same rules as the real service will: employees see only their own
-// reports, submitted reports are locked, and packaging is simulated.
+// In-memory implementation of PurchaseDataService for the preview and for the
+// screens' tests. It keeps the same rules as SharePointDataService (the parts
+// they share are in sharepoint/serviceRules.ts): employees see only their own
+// requests, a request awaiting approval or submitted is locked, only site
+// Owners approve and process, and packaging and the approval email are
+// simulated.
 
-import { LineRef } from '../../domain/duplicates';
 import { toLocalDateTime } from '../../domain/dates';
-import { reportNumber } from '../../domain/naming';
+import { defaultPaidBy, latestDepartment } from '../../domain/defaults';
+import { LineRef } from '../../domain/duplicates';
+import { messages } from '../../domain/messages';
+import { cleanFileName, requestNumber } from '../../domain/naming';
+import { groupsForApproved } from '../../domain/purchaseRules';
 import { checkReceiptFile } from '../../domain/receipts';
 import { isEditable } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
-import { activeTrips } from '../../domain/mileage';
-import { defaultPaymentType } from '../../domain/defaults';
-import { CurrentUser, ExpenseLine, ReceiptFile, Submission, TravelReport } from '../../domain/types';
-import { prepareSubmission } from '../../export/submission';
-import { fingerprintFile } from '../files';
-import { LineChanges, ReportChanges, ReportWithLines, TravelDataService } from '../TravelDataService';
-import { ListCheck, SetupStatus } from '../setup';
+import { AttachedFile, CurrentUser, FileKind, PurchaseLine, PurchaseRequest, Submission } from '../../domain/types';
 import { FlowConfig, FlowMode, LIVE_DESTINATION, TEST_FOLDERS } from '../../export/flowPackage';
-import { SampleStore } from './sampleData';
+import { prepareApprovalRequest, prepareSubmission } from '../../export/submission';
+import { fingerprintFile, uniqueName } from '../files';
+import { ApproveOptions, CategoryChoice, LineChanges, PurchaseDataService, RequestChanges, RequestWithLines } from '../PurchaseDataService';
+import { ListCheck, SetupStatus } from '../setup';
+import { contentTypeFor } from '../sharepoint/mapping';
+import { LISTS } from '../sharepoint/schema';
+import {
+  NotAllowedError,
+  applyLineChanges,
+  applyRequestChanges,
+  canConfirmCategories,
+  categoryUpdates,
+  changesAfterDelete,
+  nextRowNumber,
+  notAllowed,
+  previousFolderName,
+  returnStageFor,
+  sortSubmissionsForRequest,
+  staleUploading
+} from '../sharepoint/serviceRules';
+import { SAMPLE_USERS, SampleStore, finishPendingWork, packagedFolderLink } from './sampleData';
+
+export { NotAllowedError, finishPendingWork };
 
 const LATENCY_MS = 120;
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
-export class NotAllowedError extends Error {}
+/** The site the sample set-up and flow settings describe. */
+const SAMPLE_SITE = 'https://contoso.sharepoint.com/sites/FormsAndApps';
 
-export class MockDataService implements TravelDataService {
-  private idCounter = 0;
+/** Shared by every service made in this page, so two services on one store never make the same ID. */
+let idCounter = 0;
+
+export class MockDataService implements PurchaseDataService {
   /** Set to notSetUp() to show the set-up page in the preview. */
   public setupStatus: SetupStatus = readySetup();
 
   constructor(
     private readonly store: SampleStore,
     private readonly user: CurrentUser,
-    /** Packaging steps in milliseconds; tests can make them instant. */
-    private readonly packagingDelayMs = 1500
+    /** Packaging steps in milliseconds. Calls take no longer than this either, so 0 makes the tests instant. */
+    private readonly packagingDelayMs = 1500,
+    /** Called after every change, so the preview can keep the store when it switches between people. */
+    private readonly onChange: () => void = () => undefined,
+    /** The clock; tests fix it. */
+    private readonly now: () => Date = () => new Date()
   ) {}
 
   async getCurrentUser(): Promise<CurrentUser> {
@@ -49,212 +78,292 @@ export class MockDataService implements TravelDataService {
     this.requireAdmin();
     for (const list of this.setupStatus.lists) {
       progress(`Creating the ${list.title} list`);
-      await wait(LATENCY_MS * 3);
+      await this.pause(3);
     }
     this.setupStatus = readySetup();
     return this.setupStatus;
   }
 
-  async receiptPreviewUrl(_lineId: string, receipt: ReceiptFile): Promise<string> {
-    return receipt.url ?? '';
+  async filePreviewUrl(_lineId: string, file: AttachedFile): Promise<string> {
+    return file.url ?? '';
+  }
+
+  async listApprovers(): Promise<string[]> {
+    return [SAMPLE_USERS.admin.displayName];
   }
 
   async getFlowSettings(mode: FlowMode, appPageUrl: string): Promise<FlowConfig> {
     this.requireAdmin();
-    await wait(LATENCY_MS);
-    const travel = 'https://contoso.sharepoint.com/sites/Travel';
+    await this.pause();
     return {
       mode,
-      travelSiteUrl: travel,
+      siteUrl: SAMPLE_SITE,
       submissionsListId: this.setupStatus.lists[2].listId,
-      destinationSiteUrl: mode === 'live' ? LIVE_DESTINATION.siteUrl : travel,
+      destinationSiteUrl: mode === 'live' ? LIVE_DESTINATION.siteUrl : SAMPLE_SITE,
       libraryUrlName: 'Shared Documents',
       folders: mode === 'live' ? [...LIVE_DESTINATION.folders] : [...TEST_FOLDERS],
       adminEmail: this.user.email,
+      approverEmails: [SAMPLE_USERS.admin.email],
       appPageUrl
     };
   }
 
   // ---- Employee -------------------------------------------------------
 
-  async listMyReports(): Promise<TravelReport[]> {
-    await wait(LATENCY_MS);
-    return clone(this.store.reports.filter((r) => r.ownerEmail === this.user.email).sort(byLastChanged));
+  async listMyRequests(): Promise<PurchaseRequest[]> {
+    await this.pause();
+    return clone(this.myRequests().sort(byLastChanged));
   }
 
-  async getReport(reportId: number): Promise<ReportWithLines> {
-    await wait(LATENCY_MS);
-    const report = this.findReportForRead(reportId);
-    return { report: clone(report), lines: clone(this.linesOf(reportId)) };
+  async getRequest(requestId: number): Promise<RequestWithLines> {
+    await this.pause();
+    const request = this.findRequestForRead(requestId);
+    return { request: clone(request), lines: clone(this.linesOf(requestId)) };
   }
 
-  async createReport(): Promise<TravelReport> {
-    await wait(LATENCY_MS);
-    const id = this.store.nextReportId++;
-    const report: TravelReport = {
+  async createRequest(): Promise<PurchaseRequest> {
+    await this.pause();
+    const id = this.store.nextRequestId++;
+    const request: PurchaseRequest = {
       id,
-      reportNumber: reportNumber(id),
-      tripName: '',
-      destination: '',
+      requestNumber: requestNumber(id),
       businessPurpose: '',
-      tripPurpose: '',
-      tripStart: '',
-      tripEnd: '',
-      hasMileage: false,
-      mileageTrips: [],
+      department: latestDepartment(this.myRequests()),
+      projectCode: '',
       status: 'Draft',
       returnNote: '',
+      returnStage: '',
       ownerName: this.user.displayName,
-      ownerEmail: this.user.email,
+      ownerEmail: this.email,
       submissionCount: 0,
+      approvalRounds: 0,
       totalReimburseCents: 0,
       totalCompanyCents: 0,
-      totalTripCents: 0,
+      totalRequestCents: 0,
+      sentForApprovalOn: '',
+      boughtBeforeApproval: false,
+      approval: { sent: [], approved: [] },
+      approvalNote: '',
+      approvedOn: '',
+      approvedBy: '',
+      approvedByEmail: '',
       submittedOn: '',
       processedOn: '',
       processedBy: '',
-      lastChanged: toLocalDateTime(new Date())
+      lastChanged: this.stamp()
     };
-    this.store.reports.push(report);
-    return clone(report);
+    this.store.requests.push(request);
+    this.changed();
+    return clone(request);
   }
 
-  async updateReport(reportId: number, changes: ReportChanges): Promise<TravelReport> {
-    await wait(LATENCY_MS);
-    const report = this.findReportForEdit(reportId);
-    Object.assign(report, clone(changes), { lastChanged: toLocalDateTime(new Date()) });
-    if (changes.hasMileage !== undefined || changes.mileageTrips !== undefined) this.touch(reportId);
-    return clone(report);
+  async updateRequest(requestId: number, changes: RequestChanges): Promise<PurchaseRequest> {
+    await this.pause();
+    const request = this.requestForEdit(requestId);
+    Object.assign(request, applyRequestChanges(request, changes), { lastChanged: this.stamp() });
+    this.changed();
+    return clone(request);
   }
 
-  async deleteReport(reportId: number): Promise<void> {
-    await wait(LATENCY_MS);
-    const report = this.findReportForEdit(reportId);
-    if (report.status !== 'Draft') throw new NotAllowedError('Only drafts can be deleted.');
-    this.store.reports = this.store.reports.filter((r) => r.id !== reportId);
-    this.store.lines = this.store.lines.filter((l) => l.reportId !== reportId);
+  async deleteRequest(requestId: number): Promise<void> {
+    await this.pause();
+    const request = this.requestForEdit(requestId);
+    if (request.status !== 'Draft') throw new NotAllowedError(notAllowed.draftsOnly);
+    this.store.requests = this.store.requests.filter((r) => r.id !== requestId);
+    this.store.lines = this.store.lines.filter((l) => l.requestId !== requestId);
+    // A draft has no submissions except one that stopped part-way while being sent.
+    for (const s of this.submissionsOf(requestId)) this.removeSubmission(s.id);
+    this.changed();
   }
 
-  async addLinesFromFiles(reportId: number, files: File[]): Promise<ExpenseLine[]> {
-    this.findReportForEdit(reportId);
-    const added: ExpenseLine[] = [];
+  async addLinesFromFiles(requestId: number, files: File[], kind: FileKind): Promise<PurchaseLine[]> {
+    this.requestForEdit(requestId);
+    const added: PurchaseLine[] = [];
     for (const f of files) {
       if (!checkReceiptFile(f.name, f.size).ok) continue; // the screen reports refused files
-      const receipt = await this.toReceipt(f);
-      const line = this.newLine(reportId, { receipts: [receipt] });
+      const line = this.newLine(requestId, { files: [await this.toAttachment(f, kind, [])] });
       this.store.lines.push(line);
       added.push(line);
     }
-    this.touch(reportId);
+    this.touch(requestId);
+    this.changed();
     return clone(added);
   }
 
-  async addEmptyLine(reportId: number): Promise<ExpenseLine> {
-    await wait(LATENCY_MS);
-    this.findReportForEdit(reportId);
-    const line = this.newLine(reportId, {});
+  async addEmptyLine(requestId: number): Promise<PurchaseLine> {
+    await this.pause();
+    this.requestForEdit(requestId);
+    const line = this.newLine(requestId, {});
     this.store.lines.push(line);
-    this.touch(reportId);
+    this.touch(requestId);
+    this.changed();
     return clone(line);
   }
 
-  async updateLine(lineId: string, changes: LineChanges): Promise<ExpenseLine> {
-    await wait(LATENCY_MS);
-    const line = this.findLineForEdit(lineId);
-    Object.assign(line, clone(changes));
-    this.touch(line.reportId);
+  async updateLine(lineId: string, changes: LineChanges): Promise<PurchaseLine> {
+    await this.pause();
+    const line = this.lineForEdit(lineId);
+    Object.assign(line, applyLineChanges(line, changes).line);
+    this.touch(line.requestId);
+    this.changed();
     return clone(line);
   }
 
   async deleteLine(lineId: string): Promise<void> {
-    await wait(LATENCY_MS);
-    const line = this.findLineForEdit(lineId);
-    const removedRow = line.rowNumber;
+    await this.pause();
+    const line = this.lineForEdit(lineId);
     this.store.lines = this.store.lines.filter((l) => l.id !== lineId);
     // Renumber the rows after it, and keep "same receipt as row" pointers correct.
-    for (const l of this.linesOf(line.reportId)) {
-      if (l.sameReceiptAsRow === removedRow) l.sameReceiptAsRow = null;
-      else if (l.sameReceiptAsRow !== null && l.sameReceiptAsRow > removedRow) l.sameReceiptAsRow -= 1;
-      if (l.rowNumber > removedRow) l.rowNumber -= 1;
-    }
-    this.touch(line.reportId);
+    const remaining = this.linesOf(line.requestId);
+    for (const [id, change] of changesAfterDelete(remaining, line.rowNumber)) Object.assign(remaining.find((l) => l.id === id)!, change);
+    this.touch(line.requestId);
+    this.changed();
   }
 
-  async addFileToLine(lineId: string, f: File): Promise<ExpenseLine> {
-    const line = this.findLineForEdit(lineId);
+  async addFileToLine(lineId: string, f: File, kind: FileKind): Promise<PurchaseLine> {
+    const line = this.lineForEdit(lineId);
     if (!checkReceiptFile(f.name, f.size).ok) return clone(line);
-    line.receipts.push(await this.toReceipt(f));
-    line.sameReceiptAsRow = null;
-    this.touch(line.reportId);
+    line.files.push(await this.toAttachment(f, kind, line.files));
+    // A receipt of its own replaces "same receipt as row N"; a quote never does (P-021).
+    if (kind === 'receipt') line.sameReceiptAsRow = null;
+    this.touch(line.requestId);
+    this.changed();
     return clone(line);
   }
 
-  async removeFileFromLine(lineId: string, receiptId: string): Promise<ExpenseLine> {
-    await wait(LATENCY_MS);
-    const line = this.findLineForEdit(lineId);
-    line.receipts = line.receipts.filter((r) => r.id !== receiptId);
-    this.touch(line.reportId);
+  async removeFileFromLine(lineId: string, fileId: string): Promise<PurchaseLine> {
+    await this.pause();
+    const line = this.lineForEdit(lineId);
+    line.files = line.files.filter((f) => f.id !== fileId);
+    this.touch(line.requestId);
+    this.changed();
     return clone(line);
   }
 
-  async getOwnerOtherLines(reportId: number): Promise<LineRef[]> {
-    const report = this.findReportForRead(reportId);
+  async getOwnerOtherLines(requestId: number): Promise<LineRef[]> {
+    const request = this.findRequestForRead(requestId);
     return clone(
       this.store.lines
-        .filter((l) => l.reportId !== reportId)
-        .map((l) => ({ line: l, owner: this.store.reports.find((r) => r.id === l.reportId) }))
-        .filter((x) => x.owner && x.owner.ownerEmail === report.ownerEmail)
-        .map((x) => ({ line: x.line, reportNumber: x.owner!.reportNumber, ownerEmail: x.owner!.ownerEmail }))
+        .filter((l) => l.requestId !== requestId)
+        .map((l) => ({ line: l, owner: this.store.requests.find((r) => r.id === l.requestId) }))
+        .filter((x) => x.owner && x.owner.ownerEmail === request.ownerEmail)
+        .map((x) => ({ line: x.line, requestNumber: x.owner!.requestNumber, ownerEmail: x.owner!.ownerEmail }))
     );
   }
 
-  async submitReport(reportId: number, certificationText: string): Promise<Submission> {
-    await wait(LATENCY_MS);
-    const report = this.findReportForEdit(reportId);
-    const lines = this.linesOf(reportId);
-    const previous = this.store.submissions.filter((s) => s.reportId === reportId).sort((a, b) => b.submissionNumber - a.submissionNumber)[0];
-    const prepared = prepareSubmission(report, lines, await this.getOwnerOtherLines(reportId), new Date(), previous ? previous.folderName : '', {
-      text: certificationText,
-      email: this.user.email
-    });
+  async sendForApproval(requestId: number): Promise<Submission> {
+    await this.pause();
+    const request = this.requestForEdit(requestId);
+    const lines = this.linesOf(requestId);
+    const round = request.approvalRounds + 1;
+    // An earlier attempt that stopped part-way never reached the flow; remove it.
+    for (const stale of staleUploading(this.submissionsOf(requestId), 'approval', round)) this.removeSubmission(stale.id);
+    const prepared = prepareApprovalRequest(
+      request,
+      lines,
+      await this.getOwnerOtherLines(requestId),
+      this.now(),
+      { name: this.user.displayName, email: this.email },
+      round
+    );
 
+    // 1. The approval request, marked Uploading so the flow ignores it for now.
     const submission: Submission = {
       ...prepared.submission,
       id: this.store.nextSubmissionId++,
-      packageStatus: 'Ready',
+      packageStatus: 'Uploading',
+      folderLink: '',
+      packagedAt: '',
+      errorMessage: ''
+    };
+    this.store.submissions.push(submission);
+    this.changed();
+    // 2. Lock the request, recording what was sent.
+    this.update(request, {
+      status: 'Awaiting approval',
+      approvalRounds: round,
+      sentForApprovalOn: prepared.sentOn,
+      boughtBeforeApproval: prepared.boughtBefore,
+      approval: { sent: prepared.sentGroups, approved: [] },
+      returnNote: '',
+      returnStage: '',
+      approvedOn: '',
+      approvedBy: '',
+      approvedByEmail: '',
+      approvalNote: '',
+      lastChanged: prepared.sentOn
+    });
+    this.changed();
+    // 3. Hand it to the flow.
+    submission.packageStatus = 'Ready';
+    this.changed();
+    this.simulateFlow(submission.id);
+    return clone(submission);
+  }
+
+  async submitRequest(requestId: number, certificationText: string): Promise<Submission> {
+    await this.pause();
+    const request = this.requestForEdit(requestId);
+    const lines = this.linesOf(requestId);
+    const number = request.submissionCount + 1;
+    // An earlier attempt that stopped part-way never reached the flow; remove it.
+    for (const stale of staleUploading(this.submissionsOf(requestId), 'package', number)) this.removeSubmission(stale.id);
+    const prepared = prepareSubmission(
+      request,
+      lines,
+      await this.getOwnerOtherLines(requestId),
+      this.now(),
+      previousFolderName(this.submissionsOf(requestId), number),
+      { text: certificationText, email: this.email }
+    );
+
+    // 1. The submission, marked Uploading so the flow ignores it for now, with its files.
+    const submission: Submission = {
+      ...prepared.submission,
+      id: this.store.nextSubmissionId++,
+      packageStatus: 'Uploading',
       folderLink: '',
       packagedAt: '',
       errorMessage: ''
     };
     this.store.submissions.push(submission);
     this.store.csvBySubmission[submission.id] = prepared.csvContent;
-    report.status = 'Submitted';
-    report.submissionCount = submission.submissionNumber;
-    report.submittedOn = submission.submittedOn;
-    report.returnNote = '';
-    report.lastChanged = submission.submittedOn;
-    this.simulatePackaging(submission.id);
+    this.changed();
+    // 2. Lock the request.
+    this.update(request, {
+      status: 'Submitted',
+      submissionCount: number,
+      submittedOn: submission.submittedOn,
+      returnNote: '',
+      returnStage: '',
+      lastChanged: submission.submittedOn
+    });
+    this.changed();
+    // 3. Hand it to the flow.
+    submission.packageStatus = 'Ready';
+    this.changed();
+    this.simulateFlow(submission.id);
     return clone(submission);
   }
 
-  async listSubmissionsForReport(reportId: number): Promise<Submission[]> {
-    this.findReportForRead(reportId);
-    return clone(this.store.submissions.filter((s) => s.reportId === reportId));
+  async listSubmissionsForRequest(requestId: number): Promise<Submission[]> {
+    this.findRequestForRead(requestId);
+    return clone(sortSubmissionsForRequest(this.submissionsOf(requestId)));
   }
 
   async getSubmissionCsv(submissionId: number): Promise<string> {
-    const submission = this.store.submissions.find((s) => s.id === submissionId);
-    if (!submission) throw new Error('Submission not found.');
-    this.findReportForRead(submission.reportId);
-    return this.store.csvBySubmission[submissionId] ?? '';
+    const submission = this.mustFindSubmission(submissionId);
+    this.findRequestForRead(submission.requestId);
+    // SharePoint hands the file back without its byte-order mark.
+    return (this.store.csvBySubmission[submissionId] ?? '').replace(/^\uFEFF/, '');
   }
 
-  // ---- Administrator -----------------------------------------------------
+  // ---- Approver and administrator -----------------------------------------
 
-  async listAllReports(): Promise<TravelReport[]> {
+  async listAllRequests(): Promise<PurchaseRequest[]> {
     this.requireAdmin();
-    await wait(LATENCY_MS);
-    return clone([...this.store.reports].sort(byLastChanged));
+    await this.pause();
+    return clone([...this.store.requests].sort(byLastChanged));
   }
 
   async listSubmissions(): Promise<Submission[]> {
@@ -266,151 +375,255 @@ export class MockDataService implements TravelDataService {
     this.requireAdmin();
     return clone(
       this.store.lines.map((l) => {
-        const r = this.store.reports.find((x) => x.id === l.reportId)!;
-        return { line: l, reportNumber: r.reportNumber, ownerEmail: r.ownerEmail };
+        const r = this.store.requests.find((x) => x.id === l.requestId)!;
+        return { line: l, requestNumber: r.requestNumber, ownerEmail: r.ownerEmail };
       })
     );
   }
 
-  async markProcessed(reportId: number): Promise<TravelReport> {
+  async approveRequest(requestId: number, options: ApproveOptions): Promise<PurchaseRequest> {
     this.requireAdmin();
-    await wait(LATENCY_MS);
-    const report = this.mustFindReport(reportId);
-    if (report.status !== 'Submitted') throw new NotAllowedError('Only submitted reports can be marked processed.');
-    report.status = 'Processed';
-    report.processedOn = toLocalDateTime(new Date());
-    report.processedBy = this.user.displayName;
-    report.lastChanged = report.processedOn;
-    return clone(report);
+    await this.pause();
+    const request = this.mustFindRequest(requestId);
+    if (request.status !== 'Awaiting approval') throw new NotAllowedError(notAllowed.approveWhen);
+    // Approving confirms every row's category as shown, with the changes given.
+    const lines = this.confirmCategoriesOn(requestId, options.categories);
+    const at = toLocalDateTime(this.now());
+    this.update(request, {
+      status: 'Approved',
+      approval: { sent: request.approval.sent, approved: groupsForApproved(lines, request.approval.sent) },
+      approvedOn: at,
+      approvedBy: this.user.displayName,
+      approvedByEmail: this.email,
+      approvalNote: options.note,
+      returnNote: '',
+      returnStage: '',
+      lastChanged: at
+    });
+    this.changed();
+    return clone(request);
   }
 
-  async returnReport(reportId: number, note: string): Promise<TravelReport> {
+  async returnRequest(requestId: number, note: string): Promise<PurchaseRequest> {
     this.requireAdmin();
-    await wait(LATENCY_MS);
-    const report = this.mustFindReport(reportId);
-    if (report.status !== 'Submitted') throw new NotAllowedError('Only submitted reports can be returned.');
-    report.status = 'Returned';
-    report.returnNote = note;
-    report.lastChanged = toLocalDateTime(new Date());
-    return clone(report);
+    await this.pause();
+    const request = this.mustFindRequest(requestId);
+    const stage = returnStageFor(request.status);
+    if (!stage) throw new NotAllowedError(notAllowed.returnWhen);
+    this.update(request, { status: 'Returned', returnNote: note, returnStage: stage, lastChanged: this.stamp() });
+    // A return at the approval step takes the approval back; one at processing keeps it (P-027).
+    if (stage === 'approval') {
+      this.update(request, { approval: { sent: request.approval.sent, approved: [] }, approvedOn: '', approvedBy: '', approvedByEmail: '', approvalNote: '' });
+    }
+    this.changed();
+    return clone(request);
+  }
+
+  async confirmCategories(requestId: number, changes: Record<string, CategoryChoice>): Promise<PurchaseLine[]> {
+    this.requireAdmin();
+    await this.pause();
+    const request = this.mustFindRequest(requestId);
+    if (!canConfirmCategories(request.status)) throw new NotAllowedError(notAllowed.confirmWhen);
+    const lines = this.confirmCategoriesOn(requestId, changes);
+    this.changed();
+    return clone(lines);
+  }
+
+  async markProcessed(requestId: number): Promise<PurchaseRequest> {
+    this.requireAdmin();
+    await this.pause();
+    const request = this.mustFindRequest(requestId);
+    if (request.status !== 'Submitted') throw new NotAllowedError(notAllowed.processWhen);
+    request.status = 'Processed';
+    request.processedOn = this.stamp();
+    request.processedBy = this.user.displayName;
+    request.lastChanged = request.processedOn;
+    this.changed();
+    return clone(request);
   }
 
   async retryPackaging(submissionId: number): Promise<Submission> {
     this.requireAdmin();
-    const submission = this.store.submissions.find((s) => s.id === submissionId);
-    if (!submission) throw new Error('Submission not found.');
+    const submission = this.mustFindSubmission(submissionId);
     submission.packageStatus = 'Ready';
     submission.errorMessage = '';
-    this.simulatePackaging(submission.id);
+    this.changed();
+    this.simulateFlow(submission.id);
     return clone(submission);
   }
 
   // ---- Helpers -------------------------------------------------------------
 
-  private simulatePackaging(submissionId: number): void {
+  private get email(): string {
+    return this.user.email.toLowerCase();
+  }
+
+  /** The time a call takes, which is never more than a packaging step, so 0 makes everything instant. */
+  private pause(times = 1): Promise<void> {
+    return wait(Math.min(LATENCY_MS, this.packagingDelayMs) * times);
+  }
+
+  private changed(): void {
+    this.onChange();
+  }
+
+  private stamp(): string {
+    return toLocalDateTime(this.now());
+  }
+
+  /** Changes a stored request. The fields are checked, which a bare Object.assign would not do. */
+  private update(request: PurchaseRequest, changes: Partial<PurchaseRequest>): void {
+    Object.assign(request, changes);
+  }
+
+  /**
+   * The flow, simulated. An approval request is emailed and marked Packaged; a
+   * package goes Processing, then Packaged with its folder (P-018).
+   */
+  private simulateFlow(submissionId: number): void {
     const step = (status: Submission['packageStatus'], after: number) =>
       setTimeout(() => {
         const s = this.store.submissions.find((x) => x.id === submissionId);
         if (!s) return;
         s.packageStatus = status;
         if (status === 'Packaged') {
-          s.folderLink = `Accounting > Trips > Trips_To_Process > ${s.folderName}`;
-          s.packagedAt = toLocalDateTime(new Date());
+          s.packagedAt = this.stamp();
+          if (s.type === 'package') s.folderLink = packagedFolderLink(s.folderName);
         }
+        this.changed();
       }, after);
-    step('Processing', this.packagingDelayMs);
-    step('Packaged', this.packagingDelayMs * 2);
+    const submission = this.store.submissions.find((x) => x.id === submissionId);
+    if (submission && submission.type === 'approval') {
+      step('Packaged', this.packagingDelayMs);
+    } else {
+      step('Processing', this.packagingDelayMs);
+      step('Packaged', this.packagingDelayMs * 2);
+    }
   }
 
-  private async toReceipt(f: File): Promise<ReceiptFile> {
-    this.idCounter += 1;
+  private async toAttachment(f: File, kind: FileKind, existing: readonly AttachedFile[]): Promise<AttachedFile> {
+    idCounter += 1;
+    const name = uniqueName(cleanFileName(f.name), new Set(existing.map((x) => x.fileName.toLowerCase())));
     return {
-      id: `upload-${Date.now()}-${this.idCounter}`,
-      fileName: f.name,
+      id: `upload-${Date.now()}-${idCounter}`,
+      fileName: name,
       sizeBytes: f.size,
       fingerprint: await fingerprintFile(f),
-      contentType: f.type,
+      contentType: contentTypeFor(name),
+      kind,
       url: URL.createObjectURL(f)
     };
   }
 
-  private newLine(reportId: number, fields: Partial<ExpenseLine>): ExpenseLine {
-    this.idCounter += 1;
-    const existing = this.linesOf(reportId);
-    const rowNumber = existing.length + 1;
+  private newLine(requestId: number, fields: Partial<PurchaseLine>): PurchaseLine {
+    idCounter += 1;
+    const existing = this.linesOf(requestId);
     return {
-      id: `line-${Date.now()}-${this.idCounter}`,
-      reportId,
-      rowNumber,
+      id: `line-${Date.now()}-${idCounter}`,
+      requestId,
+      rowNumber: nextRowNumber(existing),
       date: '',
       vendor: '',
-      category: '',
       description: '',
+      category: '',
+      categoryOther: '',
+      categoryConfirmedBy: '',
       amountCents: null,
-      paymentType: defaultPaymentType(existing),
+      paidBy: defaultPaidBy(existing),
+      noQuoteReason: '',
       noReceiptReason: '',
       sameReceiptAsRow: null,
-      receipts: [],
+      files: [],
       suggested: [],
       ...fields
     };
   }
 
-  private linesOf(reportId: number): ExpenseLine[] {
-    return this.store.lines.filter((l) => l.reportId === reportId).sort((a, b) => a.rowNumber - b.rowNumber);
+  private myRequests(): PurchaseRequest[] {
+    return this.store.requests.filter((r) => r.ownerEmail.toLowerCase() === this.email);
   }
 
-  /** Records a change: the report's totals and last-changed time are kept current. */
-  private touch(reportId: number): void {
-    const report = this.store.reports.find((r) => r.id === reportId);
-    if (!report) return;
-    const totals = computeTotals(this.linesOf(reportId), activeTrips(report));
-    report.totalReimburseCents = totals.reimburseCents;
-    report.totalCompanyCents = totals.companyCents;
-    report.totalTripCents = totals.tripCents;
-    report.lastChanged = toLocalDateTime(new Date());
+  private linesOf(requestId: number): PurchaseLine[] {
+    return this.store.lines.filter((l) => l.requestId === requestId).sort((a, b) => a.rowNumber - b.rowNumber);
   }
 
-  private mustFindReport(reportId: number): TravelReport {
-    const report = this.store.reports.find((r) => r.id === reportId);
-    if (!report) throw new Error('Report not found.');
-    return report;
+  private submissionsOf(requestId: number): Submission[] {
+    return this.store.submissions.filter((s) => s.requestId === requestId);
   }
 
-  private findReportForRead(reportId: number): TravelReport {
-    const report = this.mustFindReport(reportId);
-    if (!this.user.isAdministrator && report.ownerEmail !== this.user.email) throw new NotAllowedError('Not your report.');
-    return report;
+  private removeSubmission(id: number): void {
+    this.store.submissions = this.store.submissions.filter((s) => s.id !== id);
+    delete this.store.csvBySubmission[id];
   }
 
-  private findReportForEdit(reportId: number): TravelReport {
-    const report = this.mustFindReport(reportId);
-    if (report.ownerEmail !== this.user.email) throw new NotAllowedError('Not your report.');
-    if (!isEditable(report.status)) throw new NotAllowedError('This report is locked.');
-    return report;
+  /** Records a change: the request's totals and last-changed time are kept current. */
+  private touch(requestId: number): void {
+    const request = this.store.requests.find((r) => r.id === requestId);
+    if (!request) return;
+    const totals = computeTotals(this.linesOf(requestId));
+    request.totalReimburseCents = totals.reimburseCents;
+    request.totalCompanyCents = totals.companyCents;
+    request.totalRequestCents = totals.requestCents;
+    request.lastChanged = this.stamp();
   }
 
-  private findLineForEdit(lineId: string): ExpenseLine {
+  /** Confirms the categories of a request's rows as the approver or administrator chose (P-024). Every choice is checked first. */
+  private confirmCategoriesOn(requestId: number, choices: Record<string, CategoryChoice>): PurchaseLine[] {
+    const lines = this.linesOf(requestId);
+    for (const [id, update] of categoryUpdates(lines, choices, this.user.displayName)) Object.assign(lines.find((l) => l.id === id)!, update);
+    return lines;
+  }
+
+  /** A missing request and someone else's look the same to an employee, as on SharePoint (travel D-003). */
+  private mustFindRequest(requestId: number): PurchaseRequest {
+    const request = this.store.requests.find((r) => r.id === requestId);
+    if (!request) throw new NotAllowedError(messages.spNotFound);
+    return request;
+  }
+
+  private mustFindSubmission(submissionId: number): Submission {
+    const submission = this.store.submissions.find((s) => s.id === submissionId);
+    if (!submission) throw new NotAllowedError(messages.spNotFound);
+    return submission;
+  }
+
+  private findRequestForRead(requestId: number): PurchaseRequest {
+    const request = this.mustFindRequest(requestId);
+    if (!this.user.isAdministrator && request.ownerEmail.toLowerCase() !== this.email) throw new NotAllowedError(messages.spNotFound);
+    return request;
+  }
+
+  /** A request the signed-in employee may change: their own, and not locked (P-027). */
+  private requestForEdit(requestId: number): PurchaseRequest {
+    const request = this.findRequestForRead(requestId);
+    if (request.ownerEmail.toLowerCase() !== this.email) throw new NotAllowedError(notAllowed.notYours);
+    if (!isEditable(request.status)) throw new NotAllowedError(notAllowed.locked);
+    return request;
+  }
+
+  private lineForEdit(lineId: string): PurchaseLine {
     const line = this.store.lines.find((l) => l.id === lineId);
-    if (!line) throw new Error('Row not found.');
-    this.findReportForEdit(line.reportId);
+    if (!line) throw new NotAllowedError(messages.spNotFound);
+    this.requestForEdit(line.requestId);
     return line;
   }
 
   private requireAdmin(): void {
-    if (!this.user.isAdministrator) throw new NotAllowedError('Administrators only.');
+    if (!this.user.isAdministrator) throw new NotAllowedError(notAllowed.administratorsOnly);
   }
 }
 
-function byLastChanged(a: TravelReport, b: TravelReport): number {
+function byLastChanged(a: PurchaseRequest, b: PurchaseRequest): number {
   return b.lastChanged.localeCompare(a.lastChanged);
 }
 
-const SAMPLE_LISTS: [ListCheck['key'], string, string, string][] = [
-  ['reports', 'Travel Reports', 'Lists/TravelReports', '00000000-0000-0000-0000-000000000001'],
-  ['lines', 'Travel Expense Lines', 'Lists/TravelExpenseLines', '00000000-0000-0000-0000-000000000002'],
-  ['submissions', 'Travel Submissions', 'Lists/TravelSubmissions', '00000000-0000-0000-0000-000000000003']
-];
+/** The sample site's lists, from the same definitions the set-up page uses, with made-up list IDs. */
+const SAMPLE_LISTS: [ListCheck['key'], string, string, string][] = Object.values(LISTS).map((def, i) => [
+  def.key,
+  def.title,
+  `Lists/${def.urlName}`,
+  `00000000-0000-0000-0000-00000000000${i + 1}`
+]);
 
 export function readySetup(): SetupStatus {
   return {
@@ -432,7 +645,7 @@ export function readySetup(): SetupStatus {
   };
 }
 
-/** A new travel site before set-up, for the preview and tests. */
+/** A new site before set-up, for the preview and tests. */
 export function notSetUp(): SetupStatus {
   return {
     ready: false,

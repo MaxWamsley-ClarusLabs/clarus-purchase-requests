@@ -1,57 +1,77 @@
-// The SharePoint implementation of TravelDataService: the three lists on the
-// travel site (docs/DATA_MODEL.md), read and written as the signed-in user.
-// It keeps the same rules as MockDataService. SharePoint itself enforces
-// "own items only" for employees (D-003); the locking rules (D-042) are
-// enforced here, because employees may still edit their own items directly
-// in SharePoint (D-002).
+// The SharePoint implementation of PurchaseDataService: the three lists on the
+// Forms and Apps site (docs/DATA_MODEL.md), read and written as the signed-in
+// user. It keeps the same rules as MockDataService. SharePoint itself enforces
+// "own items only" for employees (travel D-003); the locking rules (P-027) and
+// the approver rules (P-020) are enforced here, because employees may still
+// edit their own items directly in SharePoint (travel D-002).
 
-import { defaultPaymentType } from '../../domain/defaults';
+import { defaultPaidBy, latestDepartment } from '../../domain/defaults';
 import { LineRef } from '../../domain/duplicates';
 import { messages } from '../../domain/messages';
-import { cleanFileName, reportNumber } from '../../domain/naming';
+import { cleanFileName, requestNumber } from '../../domain/naming';
+import { EMPTY_APPROVAL, groupsForApproved } from '../../domain/purchaseRules';
 import { checkReceiptFile } from '../../domain/receipts';
 import { isEditable } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
-import { activeTrips } from '../../domain/mileage';
-import { CurrentUser, ExpenseLine, ReceiptFile, Submission, TravelReport } from '../../domain/types';
-import { prepareSubmission } from '../../export/submission';
-import { fingerprintFile } from '../files';
+import { AttachedFile, CurrentUser, FileKind, PurchaseLine, PurchaseRequest, Submission } from '../../domain/types';
+import { FlowConfig, FlowMode, LIVE_DESTINATION, TEST_FOLDERS } from '../../export/flowPackage';
+import { prepareApprovalRequest, prepareSubmission } from '../../export/submission';
+import { fingerprintFile, uniqueName } from '../files';
+import { ApproveOptions, CategoryChoice, LineChanges, PurchaseDataService, RequestChanges, RequestWithLines } from '../PurchaseDataService';
 import { SetupStatus } from '../setup';
-import { LineChanges, ReportChanges, ReportWithLines, TravelDataService } from '../TravelDataService';
 import { SharePointRequestError, SpClient, odataString } from './http';
 import {
   LineItem,
-  ReportItem,
-  StoredFingerprint,
+  RequestItem,
+  RequestWrite,
   SubmissionItem,
-  centsToDollars,
   lineFields,
   lineFromItem,
-  reportFields,
-  reportFromItem,
+  requestFields,
+  requestFromItem,
+  storedFingerprint,
   submissionFields,
   submissionFromItem
 } from './mapping';
 import { LISTS } from './schema';
+import {
+  NotAllowedError,
+  applyLineChanges,
+  canConfirmCategories,
+  categoryUpdates,
+  changesAfterDelete,
+  nextRowNumber,
+  notAllowed,
+  previousFolderName,
+  returnStageFor,
+  sortSubmissionsForRequest,
+  staleUploading
+} from './serviceRules';
 import { SiteSetup } from './SiteSetup';
-import { FlowConfig, FlowMode, LIVE_DESTINATION, TEST_FOLDERS } from '../../export/flowPackage';
 
-const REPORT_SELECT =
-  '$select=Id,Title,ReportNumber,Destination,BusinessPurpose,TripPurpose,TripStart,TripEnd,HasMileage,MileageTrips,ReportStatus,ReturnNote,TotalReimburse,TotalCompany,TotalTrip,' +
-  'SubmissionCount,SubmittedOn,ProcessedOn,Modified,AuthorId,Author/Title,Author/EMail,ProcessedBy/Title&$expand=Author,ProcessedBy';
+export { NotAllowedError };
+
+const REQUEST_SELECT =
+  '$select=Id,Title,RequestNumber,Department,ProjectCode,RequestStatus,ReturnNote,ReturnStage,TotalReimburse,TotalCompany,TotalRequest,SubmissionCount,ApprovalRounds,' +
+  'SentForApprovalOn,BoughtBeforeApproval,ApprovalRecord,ApprovalNote,ApprovedOn,SubmittedOn,ProcessedOn,Modified,AuthorId,Author/Title,Author/EMail,' +
+  'ApprovedBy/Title,ApprovedBy/EMail,ProcessedBy/Title&$expand=Author,ApprovedBy,ProcessedBy';
 const LINE_FIELDS =
-  'Id,ReportId,RowNumber,ExpenseDate,Vendor,Category,Description,Amount,PaymentType,NoReceiptReason,SameReceiptAsRow,FileFingerprints,SuggestedFields';
+  'Id,RequestId,RowNumber,PurchaseDate,Vendor,Description,Category,CategoryOther,CategoryConfirmedBy,Amount,PaidBy,NoQuoteReason,NoReceiptReason,SameReceiptAsRow,' +
+  'FileFingerprints,SuggestedFields';
 const LINE_SELECT = `$select=${LINE_FIELDS},AttachmentFiles&$expand=AttachmentFiles`;
 const SUBMISSION_SELECT =
-  '$select=Id,ReportId,SubmissionNumber,PackageStatus,FolderName,PreviousFolderName,SubmitterName,SubmitterEmail,CertificationText,TripName,Destination,' +
-  'TripStart,TripEnd,TripPurpose,SuggestedClass,TotalReimburse,TotalCompany,TotalTrip,ReceiptCount,RowsWithoutReceipt,EmailSubject,EmailSummary,FolderLink,' +
-  'PackagedAt,ErrorMessage,Created,AttachmentFiles&$expand=AttachmentFiles';
+  '$select=Id,RequestId,SubmissionType,SubmissionNumber,PackageStatus,FolderName,PreviousFolderName,SubmitterName,SubmitterEmail,CertificationText,BusinessPurpose,' +
+  'Department,ProjectCode,PurchaseDates,TotalReimburse,TotalCompany,TotalRequest,ReceiptCount,QuoteCount,RowsWithoutReceipt,BoughtBeforeApproval,ApprovedBy,ApprovedOn,' +
+  'EmailSubject,EmailSummary,FolderLink,PackagedAt,ErrorMessage,Created,AttachmentFiles&$expand=AttachmentFiles';
 const PAGE = '$top=5000';
+
+/** The site's Owners group: the approvers (P-020). Reading it needs a permission ordinary members may not have. */
+const OWNERS_PATH = 'web/AssociatedOwnerGroup/users?$select=Title,Email,PrincipalType';
+/** SP.PrincipalType.User; the Owners group can also hold security groups. */
+const PRINCIPAL_USER = 1;
 
 /** SharePoint's "Manage web site" permission, held by site Owners (strategy section 9). */
 const MANAGE_WEB = 31;
-
-export class NotAllowedError extends Error {}
 
 /** Whether a SharePoint permission set includes a permission (SP.PermissionKind). */
 export function hasPermission(perms: { High: string | number; Low: string | number }, kind: number): boolean {
@@ -61,8 +81,17 @@ export function hasPermission(perms: { High: string | number; Low: string | numb
   return Math.floor(word / Math.pow(2, position)) % 2 === 1;
 }
 
-export class SharePointDataService implements TravelDataService {
-  private me: (CurrentUser & { id: number }) | undefined;
+/** A person in the Owners group, as far as the app needs to know. */
+interface Owner {
+  title: string;
+  email: string;
+}
+
+type Signed = CurrentUser & { id: number };
+type ListKey = keyof typeof LISTS;
+
+export class SharePointDataService implements PurchaseDataService {
+  private me: Signed | undefined;
   private readonly setup: SiteSetup;
 
   constructor(
@@ -88,11 +117,15 @@ export class SharePointDataService implements TravelDataService {
     return this.setup.run(progress);
   }
 
-  async receiptPreviewUrl(lineId: string, receipt: ReceiptFile): Promise<string> {
-    const blob = await this.sp.getBlob(this.attachmentPath('lines', Number(lineId), receipt.fileName) + '/$value');
+  async filePreviewUrl(lineId: string, file: AttachedFile): Promise<string> {
+    const blob = await this.sp.getBlob(this.attachmentPath('lines', Number(lineId), file.fileName) + '/$value');
     // The stored file may not say what it is; give the browser the right type.
-    const typed = blob.type === receipt.contentType ? blob : new Blob([blob], { type: receipt.contentType });
+    const typed = blob.type === file.contentType ? blob : new Blob([blob], { type: file.contentType });
     return URL.createObjectURL(typed);
+  }
+
+  async listApprovers(): Promise<string[]> {
+    return (await this.readOwners()).map((o) => o.title).filter((title) => title !== '');
   }
 
   async getFlowSettings(mode: FlowMode, appPageUrl: string): Promise<FlowConfig> {
@@ -115,230 +148,323 @@ export class SharePointDataService implements TravelDataService {
       const found = await destination.getJson<{ value: boolean }>(`web/GetFolderByServerRelativeUrl('${odataString(parent)}')/Exists`);
       if (!found.value) throw new Error(messages.flowLibraryMissing(parent));
     }
+    // The approval email goes to the Owners, read now and fixed in the package (P-018).
+    const owners = (await this.readOwners()).map((o) => o.email).filter(isEmailAddress);
+    const approverEmails = owners.filter((email, i) => owners.indexOf(email) === i);
     return {
       mode,
-      travelSiteUrl: this.sp.webUrl,
+      siteUrl: this.sp.webUrl,
       submissionsListId: submissions.listId,
       destinationSiteUrl: destination.webUrl,
       libraryUrlName,
       folders: mode === 'live' ? [...LIVE_DESTINATION.folders] : [...TEST_FOLDERS],
       adminEmail: me.email,
+      approverEmails: approverEmails.length > 0 ? approverEmails : [me.email].filter(isEmailAddress),
       appPageUrl
     };
   }
 
   // ---- Employee ----------------------------------------------------------------
 
-  async listMyReports(): Promise<TravelReport[]> {
+  async listMyRequests(): Promise<PurchaseRequest[]> {
     const me = await this.currentUser();
-    const items = await this.sp.getAll<ReportItem>(`${this.items('reports')}?${REPORT_SELECT}&$filter=AuthorId eq ${me.id}&${PAGE}`);
-    return items.map(reportFromItem).sort(byLastChanged);
+    const items = await this.sp.getAll<RequestItem>(`${this.items('requests')}?${REQUEST_SELECT}&$filter=AuthorId eq ${me.id}&${PAGE}`);
+    return items.map(requestFromItem).sort(byLastChanged);
   }
 
-  async getReport(reportId: number): Promise<ReportWithLines> {
-    const report = await this.readReport(reportId);
-    return { report, lines: await this.readLines(reportId) };
+  async getRequest(requestId: number): Promise<RequestWithLines> {
+    const request = await this.readRequest(requestId);
+    return { request, lines: await this.readLines(requestId) };
   }
 
-  async createReport(): Promise<TravelReport> {
+  async createRequest(): Promise<PurchaseRequest> {
     await this.currentUser();
-    const created = await this.sp.post<{ Id: number }>(this.items('reports'), {
-      Title: '',
-      ReportStatus: 'Draft',
-      SubmissionCount: 0,
-      TotalReimburse: 0,
-      TotalCompany: 0,
-      TotalTrip: 0
-    });
+    const department = latestDepartment(await this.listMyRequests());
+    const created = await this.sp.post<{ Id: number }>(
+      this.items('requests'),
+      requestFields({
+        businessPurpose: '',
+        department,
+        status: 'Draft',
+        submissionCount: 0,
+        approvalRounds: 0,
+        totalReimburseCents: 0,
+        totalCompanyCents: 0,
+        totalRequestCents: 0,
+        boughtBeforeApproval: false,
+        approval: EMPTY_APPROVAL
+      })
+    );
     if (!created) throw new Error(messages.spOther(500));
-    await this.sp.merge(this.item('reports', created.Id), { ReportNumber: reportNumber(created.Id) });
-    return this.readReport(created.Id);
+    await this.sp.merge(this.item('requests', created.Id), { RequestNumber: requestNumber(created.Id) });
+    return this.readRequest(created.Id);
   }
 
-  async updateReport(reportId: number, changes: ReportChanges): Promise<TravelReport> {
-    await this.reportForEdit(reportId);
-    await this.sp.merge(this.item('reports', reportId), reportFields(changes));
-    if (changes.hasMileage !== undefined || changes.mileageTrips !== undefined) await this.updateTotals(reportId);
-    return this.readReport(reportId);
+  async updateRequest(requestId: number, changes: RequestChanges): Promise<PurchaseRequest> {
+    await this.requestForEdit(requestId);
+    // Only the three header fields can be changed here, whatever else is passed.
+    await this.sp.merge(
+      this.item('requests', requestId),
+      requestFields({ businessPurpose: changes.businessPurpose, department: changes.department, projectCode: changes.projectCode })
+    );
+    return this.readRequest(requestId);
   }
 
-  async deleteReport(reportId: number): Promise<void> {
-    const report = await this.reportForEdit(reportId);
-    if (report.status !== 'Draft') throw new NotAllowedError('Only drafts can be deleted.');
-    // Moved to the site's recycle bin, so a mistake can be undone there.
-    for (const line of await this.readLines(reportId)) await this.sp.post(`${this.item('lines', Number(line.id))}/recycle()`);
-    await this.sp.post(`${this.item('reports', reportId)}/recycle()`);
+  async deleteRequest(requestId: number): Promise<void> {
+    const request = await this.requestForEdit(requestId);
+    if (request.status !== 'Draft') throw new NotAllowedError(notAllowed.draftsOnly);
+    // Moved to the site's recycle bin, so a mistake can be undone there. A draft
+    // has no submissions except one that stopped part-way while being sent.
+    for (const line of await this.readLines(requestId)) await this.recycle('lines', Number(line.id));
+    for (const submission of await this.readSubmissions(requestId, request.requestNumber)) await this.recycle('submissions', submission.id);
+    await this.recycle('requests', requestId);
   }
 
-  async addLinesFromFiles(reportId: number, files: File[]): Promise<ExpenseLine[]> {
-    const report = await this.reportForEdit(reportId);
-    const lines = await this.readLines(reportId);
-    const added: ExpenseLine[] = [];
+  async addLinesFromFiles(requestId: number, files: File[], kind: FileKind): Promise<PurchaseLine[]> {
+    const request = await this.requestForEdit(requestId);
+    const lines = await this.readLines(requestId);
+    const added: PurchaseLine[] = [];
     for (const file of files) {
       if (!checkReceiptFile(file.name, file.size).ok) continue; // the screen reports refused files
-      const id = await this.createLine(report, lines.length + added.length + 1, defaultPaymentType([...lines, ...added]));
-      await this.attach(id, [], file);
+      const soFar = [...lines, ...added];
+      const id = await this.createLine(request, nextRowNumber(soFar), defaultPaidBy(soFar));
+      await this.attach(id, [], file, kind);
       added.push(await this.readLine(id));
     }
     return added;
   }
 
-  async addEmptyLine(reportId: number): Promise<ExpenseLine> {
-    const report = await this.reportForEdit(reportId);
-    const lines = await this.readLines(reportId);
-    const id = await this.createLine(report, lines.length + 1, defaultPaymentType(lines));
+  async addEmptyLine(requestId: number): Promise<PurchaseLine> {
+    const request = await this.requestForEdit(requestId);
+    const lines = await this.readLines(requestId);
+    const id = await this.createLine(request, nextRowNumber(lines), defaultPaidBy(lines));
     return this.readLine(id);
   }
 
-  async updateLine(lineId: string, changes: LineChanges): Promise<ExpenseLine> {
-    const line = await this.lineForEdit(lineId);
-    await this.sp.merge(this.item('lines', Number(lineId)), lineFields(changes));
-    const updated: ExpenseLine = { ...line, ...changes };
-    if (changes.amountCents !== undefined || changes.paymentType !== undefined) await this.updateTotals(line.reportId);
-    return updated;
+  async updateLine(lineId: string, changes: LineChanges): Promise<PurchaseLine> {
+    const { line } = await this.lineForEdit(lineId);
+    const applied = applyLineChanges(line, changes);
+    const columns = lineFields(applied.written);
+    if (Object.keys(columns).length > 0) await this.sp.merge(this.item('lines', Number(lineId)), columns);
+    if (applied.written.amountCents !== undefined || applied.written.paidBy !== undefined) await this.updateTotals(line.requestId);
+    return applied.line;
   }
 
   async deleteLine(lineId: string): Promise<void> {
-    const line = await this.lineForEdit(lineId);
-    await this.sp.post(`${this.item('lines', Number(lineId))}/recycle()`);
+    const { line, request } = await this.lineForEdit(lineId);
+    await this.recycle('lines', Number(lineId));
     // Renumber the rows after it, and keep "same receipt as row" pointers correct.
-    for (const l of await this.readLines(line.reportId)) {
-      const changes: Partial<ExpenseLine> = {};
-      if (l.sameReceiptAsRow === line.rowNumber) changes.sameReceiptAsRow = null;
-      else if (l.sameReceiptAsRow !== null && l.sameReceiptAsRow > line.rowNumber) changes.sameReceiptAsRow = l.sameReceiptAsRow - 1;
-      if (l.rowNumber > line.rowNumber) changes.rowNumber = l.rowNumber - 1;
-      if (Object.keys(changes).length > 0) await this.sp.merge(this.item('lines', Number(l.id)), lineFields(changes));
+    for (const [id, change] of changesAfterDelete(await this.readLines(line.requestId), line.rowNumber)) {
+      const columns = lineFields(change);
+      if (change.rowNumber !== undefined) columns.Title = `${request.requestNumber} row ${change.rowNumber}`;
+      await this.sp.merge(this.item('lines', Number(id)), columns);
     }
-    await this.updateTotals(line.reportId);
+    await this.updateTotals(line.requestId);
   }
 
-  async addFileToLine(lineId: string, file: File): Promise<ExpenseLine> {
-    const line = await this.lineForEdit(lineId);
+  async addFileToLine(lineId: string, file: File, kind: FileKind): Promise<PurchaseLine> {
+    const { line } = await this.lineForEdit(lineId);
     if (!checkReceiptFile(file.name, file.size).ok) return line;
-    await this.attach(Number(lineId), line.receipts, file);
-    if (line.sameReceiptAsRow !== null) await this.sp.merge(this.item('lines', Number(lineId)), lineFields({ sameReceiptAsRow: null }));
+    await this.attach(Number(lineId), line.files, file, kind);
+    // A receipt of its own replaces "same receipt as row N"; a quote never does (P-021).
+    if (kind === 'receipt' && line.sameReceiptAsRow !== null) await this.sp.merge(this.item('lines', Number(lineId)), lineFields({ sameReceiptAsRow: null }));
     return this.readLine(Number(lineId));
   }
 
-  async removeFileFromLine(lineId: string, receiptId: string): Promise<ExpenseLine> {
-    const line = await this.lineForEdit(lineId);
-    const receipt = line.receipts.find((r) => r.id === receiptId);
-    if (!receipt) return line;
-    await this.sp.remove(this.attachmentPath('lines', Number(lineId), receipt.fileName));
-    const remaining = line.receipts.filter((r) => r.id !== receiptId);
-    await this.sp.merge(this.item('lines', Number(lineId)), { FileFingerprints: JSON.stringify(remaining.map(storedPrint)) });
+  async removeFileFromLine(lineId: string, fileId: string): Promise<PurchaseLine> {
+    const { line } = await this.lineForEdit(lineId);
+    const file = line.files.find((f) => f.id === fileId);
+    if (!file) return line;
+    await this.sp.remove(this.attachmentPath('lines', Number(lineId), file.fileName));
+    const remaining = line.files.filter((f) => f.id !== fileId);
+    await this.sp.merge(this.item('lines', Number(lineId)), { FileFingerprints: JSON.stringify(remaining.map(storedFingerprint)) });
     return this.readLine(Number(lineId));
   }
 
-  async getOwnerOtherLines(reportId: number): Promise<LineRef[]> {
-    const report = await this.readReport(reportId);
-    const reports = (await this.sp.getAll<ReportItem>(`${this.items('reports')}?${REPORT_SELECT}&${PAGE}`)).map(reportFromItem);
-    const owned = new Map(reports.filter((r) => r.ownerEmail === report.ownerEmail && r.id !== reportId).map((r) => [r.id, r]));
+  async getOwnerOtherLines(requestId: number): Promise<LineRef[]> {
+    const request = await this.readRequest(requestId);
+    const requests = (await this.sp.getAll<RequestItem>(`${this.items('requests')}?${REQUEST_SELECT}&${PAGE}`)).map(requestFromItem);
+    const owned = new Map(requests.filter((r) => r.ownerEmail === request.ownerEmail && r.id !== requestId).map((r) => [r.id, r]));
     const lines = await this.sp.getAll<LineItem>(`${this.items('lines')}?$select=${LINE_FIELDS}&${PAGE}`);
     return lines
       .map(lineFromItem)
-      .filter((l) => owned.has(l.reportId))
-      .map((l) => ({ line: l, reportNumber: owned.get(l.reportId)!.reportNumber, ownerEmail: report.ownerEmail }));
+      .filter((l) => owned.has(l.requestId))
+      .map((l) => ({ line: l, requestNumber: owned.get(l.requestId)!.requestNumber, ownerEmail: request.ownerEmail }));
   }
 
-  async submitReport(reportId: number, certificationText: string): Promise<Submission> {
+  async sendForApproval(requestId: number): Promise<Submission> {
     const me = await this.currentUser();
-    const report = await this.reportForEdit(reportId);
-    const lines = await this.readLines(reportId);
-    const others = await this.getOwnerOtherLines(reportId);
-    const earlier = await this.readSubmissions(reportId, report.reportNumber);
-    const number = report.submissionCount + 1;
+    const request = await this.requestForEdit(requestId);
+    const lines = await this.readLines(requestId);
+    const others = await this.getOwnerOtherLines(requestId);
+    const earlier = await this.readSubmissions(requestId, request.requestNumber);
+    const round = request.approvalRounds + 1;
     // An earlier attempt that stopped part-way never reached the flow; remove it.
-    for (const stale of earlier.filter((s) => s.submissionNumber === number && s.packageStatus === 'Uploading')) {
-      await this.sp.post(`${this.item('submissions', stale.id)}/recycle()`);
-    }
-    const previous = earlier.filter((s) => s.submissionNumber < number).sort((a, b) => b.submissionNumber - a.submissionNumber)[0];
+    for (const stale of staleUploading(earlier, 'approval', round)) await this.recycle('submissions', stale.id);
     const now = this.now();
-    const prepared = prepareSubmission(report, lines, others, now, previous ? previous.folderName : '', { text: certificationText, email: me.email });
+    const prepared = prepareApprovalRequest(request, lines, others, now, { name: me.displayName, email: me.email }, round);
+
+    // 1. The approval request, marked Uploading so the flow ignores it for now. It has no files.
+    const created = await this.sp.post<{ Id: number }>(this.items('submissions'), submissionFields(prepared.submission));
+    if (!created) throw new Error(messages.spOther(500));
+    // 2. Lock the request, recording what was sent. Then 3. hand the approval request to the
+    // flow. If step 3 fails, the administrator sees it under Needs attention and can retry.
+    await this.sp.merge(
+      this.item('requests', requestId),
+      requestFields({
+        status: 'Awaiting approval',
+        approvalRounds: round,
+        sentForApprovalOn: now.toISOString(),
+        boughtBeforeApproval: prepared.boughtBefore,
+        approval: { sent: prepared.sentGroups, approved: [] },
+        returnNote: '',
+        returnStage: '',
+        approvedOn: null,
+        approvedById: null,
+        approvalNote: ''
+      })
+    );
+    await this.sp.merge(this.item('submissions', created.Id), { PackageStatus: 'Ready' });
+    return this.readSubmission(created.Id, request.requestNumber);
+  }
+
+  async submitRequest(requestId: number, certificationText: string): Promise<Submission> {
+    const me = await this.currentUser();
+    const request = await this.requestForEdit(requestId);
+    const lines = await this.readLines(requestId);
+    const others = await this.getOwnerOtherLines(requestId);
+    const earlier = await this.readSubmissions(requestId, request.requestNumber);
+    const number = request.submissionCount + 1;
+    // An earlier attempt that stopped part-way never reached the flow; remove it.
+    for (const stale of staleUploading(earlier, 'package', number)) await this.recycle('submissions', stale.id);
+    const now = this.now();
+    const prepared = prepareSubmission(request, lines, others, now, previousFolderName(earlier, number), { text: certificationText, email: me.email });
 
     // 1. The submission, marked Uploading so the flow ignores it for now.
     const created = await this.sp.post<{ Id: number }>(this.items('submissions'), submissionFields(prepared.submission));
     if (!created) throw new Error(messages.spOther(500));
-    // 2. The package files: the CSV and a copy of each receipt under its package name.
+    // 2. The package files: the CSV, and a copy of each receipt and quote under its package name.
     await this.sp.postBinary(this.addAttachmentPath('submissions', created.Id, prepared.csvName), new Blob([prepared.csvContent], { type: 'text/csv' }));
-    for (const copy of prepared.receiptCopies) {
-      const source = lines.find((l) => l.id === copy.lineId)!.receipts.find((r) => r.id === copy.receiptId)!;
+    for (const copy of prepared.files) {
+      const source = lines.find((l) => l.id === copy.lineId)!.files.find((f) => f.id === copy.fileId)!;
       const content = await this.sp.getBlob(this.attachmentPath('lines', Number(copy.lineId), source.fileName) + '/$value');
       await this.sp.postBinary(this.addAttachmentPath('submissions', created.Id, copy.packageName), content);
     }
-    // 3. Lock the report, then 4. hand the submission to the flow. If step 4
+    // 3. Lock the request, then 4. hand the submission to the flow. If step 4
     // fails, the administrator sees it under Needs attention and can retry.
-    await this.sp.merge(this.item('reports', reportId), {
-      ReportStatus: 'Submitted',
-      SubmissionCount: number,
-      SubmittedOn: now.toISOString(),
-      ReturnNote: ''
-    });
+    await this.sp.merge(
+      this.item('requests', requestId),
+      requestFields({ status: 'Submitted', submissionCount: number, submittedOn: now.toISOString(), returnNote: '', returnStage: '' })
+    );
     await this.sp.merge(this.item('submissions', created.Id), { PackageStatus: 'Ready' });
-    return this.readSubmission(created.Id, report.reportNumber);
+    return this.readSubmission(created.Id, request.requestNumber);
   }
 
-  async listSubmissionsForReport(reportId: number): Promise<Submission[]> {
-    const report = await this.readReport(reportId);
-    return this.readSubmissions(reportId, report.reportNumber);
+  async listSubmissionsForRequest(requestId: number): Promise<Submission[]> {
+    const request = await this.readRequest(requestId);
+    return sortSubmissionsForRequest(await this.readSubmissions(requestId, request.requestNumber));
   }
 
   async getSubmissionCsv(submissionId: number): Promise<string> {
-    const item = await this.sp.getJson<SubmissionItem>(`${this.item('submissions', submissionId)}?${SUBMISSION_SELECT}`);
-    const csv = (item.AttachmentFiles ?? []).find((a) => /_Expenses\.csv$/i.test(a.FileName));
+    const item = await this.readSubmissionItem(submissionId);
+    const csv = (item.AttachmentFiles ?? []).find((a) => /_Purchases\.csv$/i.test(a.FileName));
     return csv ? this.sp.getText(this.attachmentPath('submissions', submissionId, csv.FileName) + '/$value') : '';
   }
 
-  // ---- Administrator ---------------------------------------------------------
+  // ---- Approver and administrator ---------------------------------------------------
 
-  async listAllReports(): Promise<TravelReport[]> {
+  async listAllRequests(): Promise<PurchaseRequest[]> {
     await this.requireAdmin();
-    return (await this.sp.getAll<ReportItem>(`${this.items('reports')}?${REPORT_SELECT}&${PAGE}`)).map(reportFromItem).sort(byLastChanged);
+    return (await this.sp.getAll<RequestItem>(`${this.items('requests')}?${REQUEST_SELECT}&${PAGE}`)).map(requestFromItem).sort(byLastChanged);
   }
 
   async listSubmissions(): Promise<Submission[]> {
     await this.requireAdmin();
-    const numbers = await this.reportNumbers();
+    const numbers = await this.requestNumbers();
     const items = await this.sp.getAll<SubmissionItem>(`${this.items('submissions')}?${SUBMISSION_SELECT}&${PAGE}`);
-    return items.map((i) => submissionFromItem(i, numbers.get(Number(i.ReportId)) ?? ''));
+    return items.map((i) => submissionFromItem(i, numbers.get(Number(i.RequestId)) ?? ''));
   }
 
   async listAllLineRefs(): Promise<LineRef[]> {
     await this.requireAdmin();
-    const reports = new Map((await this.listAllReports()).map((r) => [r.id, r]));
+    const requests = new Map((await this.listAllRequests()).map((r) => [r.id, r]));
     const lines = await this.sp.getAll<LineItem>(`${this.items('lines')}?$select=${LINE_FIELDS}&${PAGE}`);
     return lines
       .map(lineFromItem)
-      .filter((l) => reports.has(l.reportId))
-      .map((l) => ({ line: l, reportNumber: reports.get(l.reportId)!.reportNumber, ownerEmail: reports.get(l.reportId)!.ownerEmail }));
+      .filter((l) => requests.has(l.requestId))
+      .map((l) => ({ line: l, requestNumber: requests.get(l.requestId)!.requestNumber, ownerEmail: requests.get(l.requestId)!.ownerEmail }));
   }
 
-  async markProcessed(reportId: number): Promise<TravelReport> {
+  async approveRequest(requestId: number, options: ApproveOptions): Promise<PurchaseRequest> {
     const me = await this.requireAdmin();
-    const report = await this.readReport(reportId);
-    if (report.status !== 'Submitted') throw new NotAllowedError('Only submitted reports can be marked processed.');
-    await this.sp.merge(this.item('reports', reportId), { ReportStatus: 'Processed', ProcessedOn: this.now().toISOString(), ProcessedById: me.id });
-    return this.readReport(reportId);
+    const request = await this.readRequest(requestId);
+    if (request.status !== 'Awaiting approval') throw new NotAllowedError(notAllowed.approveWhen);
+    // Approving confirms every row's category as shown, with the changes given.
+    const lines = await this.confirmCategoriesOn(requestId, options.categories, me.displayName);
+    const approved = groupsForApproved(lines, request.approval.sent);
+    await this.sp.merge(
+      this.item('requests', requestId),
+      requestFields({
+        status: 'Approved',
+        approval: { sent: request.approval.sent, approved },
+        approvedOn: this.now().toISOString(),
+        approvedById: me.id,
+        approvalNote: options.note,
+        returnNote: '',
+        returnStage: ''
+      })
+    );
+    return this.readRequest(requestId);
   }
 
-  async returnReport(reportId: number, note: string): Promise<TravelReport> {
+  async returnRequest(requestId: number, note: string): Promise<PurchaseRequest> {
     await this.requireAdmin();
-    const report = await this.readReport(reportId);
-    if (report.status !== 'Submitted') throw new NotAllowedError('Only submitted reports can be returned.');
-    await this.sp.merge(this.item('reports', reportId), { ReportStatus: 'Returned', ReturnNote: note });
-    return this.readReport(reportId);
+    const request = await this.readRequest(requestId);
+    const stage = returnStageFor(request.status);
+    if (!stage) throw new NotAllowedError(notAllowed.returnWhen);
+    // A return at the approval step takes the approval back; one at processing keeps it (P-027).
+    const write: RequestWrite =
+      stage === 'approval'
+        ? {
+            status: 'Returned',
+            returnNote: note,
+            returnStage: stage,
+            approval: { sent: request.approval.sent, approved: [] },
+            approvedOn: null,
+            approvedById: null,
+            approvalNote: ''
+          }
+        : { status: 'Returned', returnNote: note, returnStage: stage };
+    await this.sp.merge(this.item('requests', requestId), requestFields(write));
+    return this.readRequest(requestId);
+  }
+
+  async confirmCategories(requestId: number, changes: Record<string, CategoryChoice>): Promise<PurchaseLine[]> {
+    const me = await this.requireAdmin();
+    const request = await this.readRequest(requestId);
+    if (!canConfirmCategories(request.status)) throw new NotAllowedError(notAllowed.confirmWhen);
+    return this.confirmCategoriesOn(requestId, changes, me.displayName);
+  }
+
+  async markProcessed(requestId: number): Promise<PurchaseRequest> {
+    const me = await this.requireAdmin();
+    const request = await this.readRequest(requestId);
+    if (request.status !== 'Submitted') throw new NotAllowedError(notAllowed.processWhen);
+    await this.sp.merge(this.item('requests', requestId), requestFields({ status: 'Processed', processedOn: this.now().toISOString(), processedById: me.id }));
+    return this.readRequest(requestId);
   }
 
   async retryPackaging(submissionId: number): Promise<Submission> {
     await this.requireAdmin();
+    const before = await this.readSubmissionItem(submissionId);
     await this.sp.merge(this.item('submissions', submissionId), { PackageStatus: 'Ready', ErrorMessage: '' });
-    const item = await this.sp.getJson<SubmissionItem>(`${this.item('submissions', submissionId)}?${SUBMISSION_SELECT}`);
-    return submissionFromItem(item, (await this.reportNumbers()).get(Number(item.ReportId)) ?? '');
+    const item = await this.readSubmissionItem(submissionId);
+    return submissionFromItem(item, (await this.requestNumbers()).get(Number(before.RequestId)) ?? '');
   }
 
   // ---- Helpers ---------------------------------------------------------------
 
-  private async currentUser(): Promise<CurrentUser & { id: number }> {
+  private async currentUser(): Promise<Signed> {
     if (this.me) return this.me;
     const user = await this.sp.getJson<{ Id: number; Title: string; Email: string }>('web/currentuser?$select=Id,Title,Email');
     const perms = await this.sp.getJson<{ High: string; Low: string }>('web/effectiveBasePermissions');
@@ -346,124 +472,152 @@ export class SharePointDataService implements TravelDataService {
     return this.me;
   }
 
-  private async requireAdmin(): Promise<CurrentUser & { id: number }> {
+  private async requireAdmin(): Promise<Signed> {
     const me = await this.currentUser();
-    if (!me.isAdministrator) throw new NotAllowedError('Administrators only.');
+    if (!me.isAdministrator) throw new NotAllowedError(notAllowed.administratorsOnly);
     return me;
   }
 
-  private items(list: keyof typeof LISTS): string {
+  /**
+   * The people in the site's Owners group. Empty when it cannot be read, which
+   * is the usual answer for an employee (Unverified, strategy section 17).
+   */
+  private async readOwners(): Promise<Owner[]> {
+    try {
+      const entries = await this.sp.getAll<{ Title?: unknown; Email?: unknown; PrincipalType?: unknown }>(OWNERS_PATH);
+      return entries
+        .filter((e) => e.PrincipalType === PRINCIPAL_USER)
+        .map((e) => ({ title: typeof e.Title === 'string' ? e.Title.trim() : '', email: typeof e.Email === 'string' ? e.Email.trim().toLowerCase() : '' }));
+    } catch {
+      return [];
+    }
+  }
+
+  private items(list: ListKey): string {
     return `${this.sp.listPath(LISTS[list].urlName)}/items`;
   }
 
-  private item(list: keyof typeof LISTS, id: number): string {
+  private item(list: ListKey, id: number): string {
     return `${this.items(list)}(${id})`;
   }
 
-  private attachmentPath(list: keyof typeof LISTS, id: number, fileName: string): string {
+  private attachmentPath(list: ListKey, id: number, fileName: string): string {
     return `${this.item(list, id)}/AttachmentFiles('${odataString(fileName)}')`;
   }
 
-  private addAttachmentPath(list: keyof typeof LISTS, id: number, fileName: string): string {
+  private addAttachmentPath(list: ListKey, id: number, fileName: string): string {
     return `${this.item(list, id)}/AttachmentFiles/add(FileName='${odataString(fileName)}')`;
   }
 
-  private async readReport(reportId: number): Promise<TravelReport> {
+  private async recycle(list: ListKey, id: number): Promise<void> {
+    await this.sp.post(`${this.item(list, id)}/recycle()`);
+  }
+
+  /** Employees cannot see other people's items at all (travel D-003), so a missing item and someone else's look the same. */
+  private async notFoundAsNotAllowed<T>(read: () => Promise<T>): Promise<T> {
     try {
-      return reportFromItem(await this.sp.getJson<ReportItem>(`${this.item('reports', reportId)}?${REPORT_SELECT}`));
+      return await read();
     } catch (e) {
-      // Employees cannot see other people's items at all (D-003).
       if (e instanceof SharePointRequestError && e.status === 404) throw new NotAllowedError(messages.spNotFound);
       throw e;
     }
   }
 
-  private async readLines(reportId: number): Promise<ExpenseLine[]> {
-    const items = await this.sp.getAll<LineItem>(`${this.items('lines')}?${LINE_SELECT}&$filter=ReportId eq ${reportId}&$orderby=RowNumber&${PAGE}`);
+  private readRequest(requestId: number): Promise<PurchaseRequest> {
+    return this.notFoundAsNotAllowed(async () => requestFromItem(await this.sp.getJson<RequestItem>(`${this.item('requests', requestId)}?${REQUEST_SELECT}`)));
+  }
+
+  private async readLines(requestId: number): Promise<PurchaseLine[]> {
+    const items = await this.sp.getAll<LineItem>(`${this.items('lines')}?${LINE_SELECT}&$filter=RequestId eq ${requestId}&$orderby=RowNumber&${PAGE}`);
     return items.map(lineFromItem).sort((a, b) => a.rowNumber - b.rowNumber);
   }
 
-  private async readLine(lineId: number): Promise<ExpenseLine> {
-    return lineFromItem(await this.sp.getJson<LineItem>(`${this.item('lines', lineId)}?${LINE_SELECT}`));
+  private readLine(lineId: number): Promise<PurchaseLine> {
+    return this.notFoundAsNotAllowed(async () => lineFromItem(await this.sp.getJson<LineItem>(`${this.item('lines', lineId)}?${LINE_SELECT}`)));
   }
 
-  private async readSubmission(id: number, reportNo: string): Promise<Submission> {
-    return submissionFromItem(await this.sp.getJson<SubmissionItem>(`${this.item('submissions', id)}?${SUBMISSION_SELECT}`), reportNo);
+  private readSubmissionItem(submissionId: number): Promise<SubmissionItem> {
+    return this.notFoundAsNotAllowed(() => this.sp.getJson<SubmissionItem>(`${this.item('submissions', submissionId)}?${SUBMISSION_SELECT}`));
   }
 
-  private async readSubmissions(reportId: number, reportNo: string): Promise<Submission[]> {
-    const items = await this.sp.getAll<SubmissionItem>(`${this.items('submissions')}?${SUBMISSION_SELECT}&$filter=ReportId eq ${reportId}&${PAGE}`);
-    return items.map((i) => submissionFromItem(i, reportNo));
+  private async readSubmission(id: number, requestNo: string): Promise<Submission> {
+    return submissionFromItem(await this.readSubmissionItem(id), requestNo);
   }
 
-  private async reportNumbers(): Promise<Map<number, string>> {
-    const items = await this.sp.getAll<{ Id: number; ReportNumber: string | null }>(`${this.items('reports')}?$select=Id,ReportNumber&${PAGE}`);
-    return new Map(items.map((i) => [i.Id, i.ReportNumber ?? '']));
+  private async readSubmissions(requestId: number, requestNo: string): Promise<Submission[]> {
+    const items = await this.sp.getAll<SubmissionItem>(`${this.items('submissions')}?${SUBMISSION_SELECT}&$filter=RequestId eq ${requestId}&${PAGE}`);
+    return items.map((i) => submissionFromItem(i, requestNo));
   }
 
-  /** A report the signed-in employee may change: their own, and not locked (D-042). */
-  private async reportForEdit(reportId: number): Promise<TravelReport> {
+  private async requestNumbers(): Promise<Map<number, string>> {
+    const items = await this.sp.getAll<{ Id: number; RequestNumber: string | null }>(`${this.items('requests')}?$select=Id,RequestNumber&${PAGE}`);
+    return new Map(items.map((i) => [i.Id, i.RequestNumber ?? '']));
+  }
+
+  /** A request the signed-in employee may change: their own, and not locked (P-027). */
+  private async requestForEdit(requestId: number): Promise<PurchaseRequest> {
     const me = await this.currentUser();
-    const report = await this.readReport(reportId);
-    if (report.ownerEmail !== me.email) throw new NotAllowedError('Not your report.');
-    if (!isEditable(report.status)) throw new NotAllowedError('This report is locked.');
-    return report;
+    const request = await this.readRequest(requestId);
+    if (request.ownerEmail !== me.email) throw new NotAllowedError(notAllowed.notYours);
+    if (!isEditable(request.status)) throw new NotAllowedError(notAllowed.locked);
+    return request;
   }
 
-  private async lineForEdit(lineId: string): Promise<ExpenseLine> {
+  private async lineForEdit(lineId: string): Promise<{ line: PurchaseLine; request: PurchaseRequest }> {
+    // A row ID is a list item number; anything else is a row that does not exist.
+    if (!/^[1-9]\d*$/.test(lineId)) throw new NotAllowedError(messages.spNotFound);
     const line = await this.readLine(Number(lineId));
-    await this.reportForEdit(line.reportId);
-    return line;
+    return { line, request: await this.requestForEdit(line.requestId) };
   }
 
-  private async createLine(report: TravelReport, rowNumber: number, paymentType: ExpenseLine['paymentType']): Promise<number> {
+  private async createLine(request: PurchaseRequest, rowNumber: number, paidBy: PurchaseLine['paidBy']): Promise<number> {
     const created = await this.sp.post<{ Id: number }>(this.items('lines'), {
-      Title: `${report.reportNumber} row ${rowNumber}`,
-      ReportId: report.id,
+      Title: `${request.requestNumber} row ${rowNumber}`,
+      RequestId: request.id,
       RowNumber: rowNumber,
-      ...lineFields({ paymentType })
+      ...lineFields({ paidBy })
     });
     if (!created) throw new Error(messages.spOther(500));
     return created.Id;
   }
 
-  /** Stores a receipt exactly as uploaded, under a name SharePoint accepts, with its fingerprint. */
-  private async attach(lineId: number, existing: readonly ReceiptFile[], file: File): Promise<void> {
-    const taken = new Set(existing.map((r) => r.fileName.toLowerCase()));
+  /** Stores a file exactly as uploaded, under a name SharePoint accepts, with its fingerprint and kind. */
+  private async attach(lineId: number, existing: readonly AttachedFile[], file: File, kind: FileKind): Promise<void> {
+    const taken = new Set(existing.map((f) => f.fileName.toLowerCase()));
     const name = uniqueName(cleanFileName(file.name), taken);
     await this.sp.postBinary(this.addAttachmentPath('lines', lineId, name), file);
-    const prints = [...existing.map(storedPrint), { fileName: name, sizeBytes: file.size, fingerprint: await fingerprintFile(file) }];
+    const prints = [...existing.map(storedFingerprint), { fileName: name, sizeBytes: file.size, fingerprint: await fingerprintFile(file), kind }];
     await this.sp.merge(this.item('lines', lineId), { FileFingerprints: JSON.stringify(prints) });
   }
 
-  /** Keeps the report's stored totals current, for the report lists (DATA_MODEL.md). */
-  private async updateTotals(reportId: number): Promise<void> {
-    const report = await this.readReport(reportId);
-    const totals = computeTotals(await this.readLines(reportId), activeTrips(report));
-    await this.sp.merge(this.item('reports', reportId), {
-      TotalReimburse: centsToDollars(totals.reimburseCents),
-      TotalCompany: centsToDollars(totals.companyCents),
-      TotalTrip: centsToDollars(totals.tripCents)
-    });
+  /**
+   * Confirms the categories of a request's rows as the approver or administrator
+   * chose (P-024). Every choice is checked before any row is written.
+   */
+  private async confirmCategoriesOn(requestId: number, choices: Record<string, CategoryChoice>, confirmedBy: string): Promise<PurchaseLine[]> {
+    const lines = await this.readLines(requestId);
+    const updates = categoryUpdates(lines, choices, confirmedBy);
+    for (const [id, update] of updates) await this.sp.merge(this.item('lines', Number(id)), lineFields(update));
+    return lines.map((l) => ({ ...l, ...updates.get(l.id) }));
+  }
+
+  /** Keeps the request's stored totals current, for the request lists (docs/DATA_MODEL.md). */
+  private async updateTotals(requestId: number): Promise<void> {
+    // The stored fingerprints are enough for totals; the attachment list is not needed.
+    const items = await this.sp.getAll<LineItem>(`${this.items('lines')}?$select=${LINE_FIELDS}&$filter=RequestId eq ${requestId}&${PAGE}`);
+    const totals = computeTotals(items.map(lineFromItem));
+    await this.sp.merge(
+      this.item('requests', requestId),
+      requestFields({ totalReimburseCents: totals.reimburseCents, totalCompanyCents: totals.companyCents, totalRequestCents: totals.requestCents })
+    );
   }
 }
 
-function storedPrint(r: ReceiptFile): StoredFingerprint {
-  return { fileName: r.fileName, sizeBytes: r.sizeBytes, fingerprint: r.fingerprint };
+/** An address that can go into the flow as one recipient: one "@", and no spaces, commas or semicolons. */
+function isEmailAddress(value: string): boolean {
+  return /^[^\s@,;]+@[^\s@,;]+$/.test(value);
 }
 
-/** receipt.pdf, then receipt (2).pdf and so on, if a row already has that name. */
-export function uniqueName(name: string, taken: ReadonlySet<string>): string {
-  if (!taken.has(name.toLowerCase())) return name;
-  const dot = name.lastIndexOf('.');
-  const base = dot > 0 ? name.slice(0, dot) : name;
-  const ext = dot > 0 ? name.slice(dot) : '';
-  for (let n = 2; ; n++) {
-    const candidate = `${base} (${n})${ext}`;
-    if (!taken.has(candidate.toLowerCase())) return candidate;
-  }
-}
-
-function byLastChanged(a: TravelReport, b: TravelReport): number {
+function byLastChanged(a: PurchaseRequest, b: PurchaseRequest): number {
   return b.lastChanged.localeCompare(a.lastChanged);
 }

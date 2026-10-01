@@ -57,5 +57,12 @@ describe('defaults (travel D-057, P-023)', () => {
     expect(departmentSuggestions(requests)).toEqual(['R&D', 'Operations']);
     expect(latestDepartment(requests)).toBe('Operations');
     expect(latestDepartment([])).toBe('');
+    // Two requests changed in the same minute: the newer one (higher ID) wins.
+    expect(
+      latestDepartment([
+        request({ id: 5, department: 'Older', lastChanged: '2026-10-01 10:00' }),
+        request({ id: 6, department: 'Newer', lastChanged: '2026-10-01 10:00' })
+      ])
+    ).toBe('Newer');
   });
 });

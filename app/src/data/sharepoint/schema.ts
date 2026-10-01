@@ -1,11 +1,12 @@
 // The three SharePoint lists, as data (docs/DATA_MODEL.md). The set-up page
 // creates them from these definitions and checks them after each update
-// (D-063). A column added here is added to the site the next time an
-// administrator opens the set-up page. Every address starts with "Travel" so
-// the lists can share a site with other Clarus forms (D-075, D-077).
+// (travel D-063). A column added here is added to the site the next time an
+// administrator opens the set-up page. Every address starts with "Purchase" so
+// the lists can share a site with other Clarus forms (P-007, travel D-077).
 
-import { CATEGORIES, PAYMENT_TYPES, TEXT_MAX_LENGTH, TRIP_PURPOSES } from '../../domain/lists';
-import { PackageStatus, ReportStatus } from '../../domain/types';
+import { CATEGORIES, PAID_BY_OPTIONS } from '../../domain/purchaseRules';
+import { REQUEST_STATUSES } from '../../domain/statuses';
+import { PackageStatus, ReturnStage, SubmissionType, TEXT_MAX_LENGTH } from '../../domain/types';
 import { SetupListKey } from '../setup';
 
 export type FieldType = 'Text' | 'Note' | 'Number' | 'Currency' | 'DateTime' | 'Choice' | 'User' | 'Boolean';
@@ -31,7 +32,7 @@ export interface ListDef {
   /**
    * Columns only this app's list has. A list at this address without the
    * app's description and without these columns belongs to something else,
-   * and Set-up leaves it alone (D-077).
+   * and Set-up leaves it alone (travel D-077).
    */
   identityFields: readonly string[];
   fields: readonly FieldDef[];
@@ -41,79 +42,99 @@ export interface ListDef {
 
 export type ListKey = SetupListKey;
 
-/** Every list the app creates has a description starting with this (D-077). */
-export const APP_LIST_MARKER = 'Travel Expenses app:';
+/** Every list the app creates has a description starting with this (travel D-077). */
+export const APP_LIST_MARKER = 'Purchase Requests app:';
 
-export const REPORT_STATUSES: readonly ReportStatus[] = ['Draft', 'Submitted', 'Returned', 'Processed'];
 export const PACKAGE_STATUSES: readonly PackageStatus[] = ['Uploading', 'Ready', 'Processing', 'Packaged', 'Failed'];
+
+/** The Type column's choices, by the value the app uses (P-018). */
+export const SUBMISSION_TYPE_LABELS: Record<SubmissionType, string> = { approval: 'Approval request', package: 'Processing package' };
+
+/** The Returned at column's choices, by the value the app uses. The app's '' is an empty column. */
+export const RETURN_STAGE_LABELS: Record<Exclude<ReturnStage, ''>, string> = { approval: 'Approval', processing: 'Processing' };
 
 const text = (name: string, displayName: string, extra: Partial<FieldDef> = {}): FieldDef => ({ name, displayName, type: 'Text', ...extra });
 const note = (name: string, displayName: string): FieldDef => ({ name, displayName, type: 'Note' });
 const num = (name: string, displayName: string, extra: Partial<FieldDef> = {}): FieldDef => ({ name, displayName, type: 'Number', ...extra });
 const money = (name: string, displayName: string): FieldDef => ({ name, displayName, type: 'Currency' });
 const when = (name: string, displayName: string): FieldDef => ({ name, displayName, type: 'DateTime' });
+const person = (name: string, displayName: string): FieldDef => ({ name, displayName, type: 'User' });
+const yesNo = (name: string, displayName: string): FieldDef => ({ name, displayName, type: 'Boolean', defaultValue: '0' });
 
 export const LISTS: Record<ListKey, ListDef> = {
-  reports: {
-    key: 'reports',
-    urlName: 'TravelReports',
-    title: 'Travel Reports',
-    description: 'Travel Expenses app: one item per trip. Created by the app; see docs/DATA_MODEL.md.',
-    titleDisplayName: 'Trip name',
-    identityFields: ['ReportNumber', 'ReportStatus'],
+  requests: {
+    key: 'requests',
+    urlName: 'PurchaseRequests',
+    title: 'Purchase Requests',
+    description: 'Purchase Requests app: one item per purchase request. Created by the app; see docs/DATA_MODEL.md.',
+    titleDisplayName: 'Business purpose',
+    identityFields: ['RequestNumber', 'RequestStatus'],
     indexBuiltIn: ['Author'],
     fields: [
-      text('ReportNumber', 'Report number'),
-      text('Destination', 'Destination'),
-      note('BusinessPurpose', 'Business purpose'),
-      { name: 'TripPurpose', displayName: 'What was this trip for?', type: 'Choice', choices: TRIP_PURPOSES.map((t) => t.label) },
-      text('TripStart', 'Trip start'),
-      text('TripEnd', 'Trip end'),
-      { name: 'HasMileage', displayName: 'I drove my own car', type: 'Boolean', defaultValue: '0' },
-      note('MileageTrips', 'Mileage drives'),
-      { name: 'ReportStatus', displayName: 'Status', type: 'Choice', choices: REPORT_STATUSES, defaultValue: 'Draft', indexed: true },
+      text('RequestNumber', 'Request number'),
+      text('Department', 'Department'),
+      text('ProjectCode', 'Project or grant code'),
+      { name: 'RequestStatus', displayName: 'Status', type: 'Choice', choices: REQUEST_STATUSES, defaultValue: 'Draft', indexed: true },
       note('ReturnNote', 'Return note'),
+      { name: 'ReturnStage', displayName: 'Returned at', type: 'Choice', choices: Object.values(RETURN_STAGE_LABELS) },
       money('TotalReimburse', 'To reimburse'),
-      money('TotalCompany', 'Company-paid'),
-      money('TotalTrip', 'Trip total'),
+      money('TotalCompany', 'Paid by Clarus'),
+      money('TotalRequest', 'Request total'),
       num('SubmissionCount', 'Submissions', { defaultValue: '0' }),
+      num('ApprovalRounds', 'Approval requests', { defaultValue: '0' }),
+      when('SentForApprovalOn', 'Sent for approval'),
+      yesNo('BoughtBeforeApproval', 'Bought before approval'),
+      note('ApprovalRecord', 'Approval record'),
+      note('ApprovalNote', 'Approval note'),
+      when('ApprovedOn', 'Approved'),
+      person('ApprovedBy', 'Approved by'),
       when('SubmittedOn', 'Submitted'),
       when('ProcessedOn', 'Processed'),
-      { name: 'ProcessedBy', displayName: 'Processed by', type: 'User' }
+      person('ProcessedBy', 'Processed by')
     ]
   },
   lines: {
     key: 'lines',
-    urlName: 'TravelExpenseLines',
-    title: 'Travel Expense Lines',
-    description: 'Travel Expenses app: one item per expense row; receipts are attachments. Created by the app.',
+    urlName: 'PurchaseRequestLines',
+    title: 'Purchase Request Lines',
+    description: 'Purchase Requests app: one item per purchase; receipts and quotes are attachments. Created by the app.',
     titleDisplayName: 'Row label',
-    identityFields: ['ReportId', 'RowNumber'],
+    identityFields: ['RequestId', 'RowNumber'],
     fields: [
-      num('ReportId', 'Report', { indexed: true }),
+      num('RequestId', 'Request', { indexed: true }),
       num('RowNumber', 'Row'),
-      text('ExpenseDate', 'Date'),
+      text('PurchaseDate', 'Date'),
       text('Vendor', 'Vendor'),
+      text('Description', 'What was bought and why'),
       { name: 'Category', displayName: 'Category', type: 'Choice', choices: CATEGORIES.map((c) => c.label) },
-      text('Description', 'Description'),
+      text('CategoryOther', 'Other category'),
+      text('CategoryConfirmedBy', 'Category confirmed by'),
       money('Amount', 'Amount'),
-      { name: 'PaymentType', displayName: 'Payment type', type: 'Choice', choices: PAYMENT_TYPES.map((p) => p.label) },
+      { name: 'PaidBy', displayName: 'Who paid', type: 'Choice', choices: PAID_BY_OPTIONS.map((p) => p.label) },
+      text('NoQuoteReason', 'No-quote reason'),
       text('NoReceiptReason', 'No-receipt reason'),
       num('SameReceiptAsRow', 'Same receipt as row'),
       note('FileFingerprints', 'File fingerprints'),
-      // Values the app filled in that the employee has not confirmed (D-078).
+      // Values the app filled in that the employee has not confirmed (travel D-078).
       text('SuggestedFields', 'Suggested, not confirmed')
     ]
   },
   submissions: {
     key: 'submissions',
-    urlName: 'TravelSubmissions',
-    title: 'Travel Submissions',
-    description: 'Travel Expenses app: one item per submission, completed by the flow. Created by the app.',
+    urlName: 'PurchaseSubmissions',
+    title: 'Purchase Submissions',
+    description: 'Purchase Requests app: one item per approval request or submission, completed by the flow. Created by the app.',
     titleDisplayName: 'Label',
-    identityFields: ['ReportId', 'SubmissionNumber'],
+    identityFields: ['RequestId', 'SubmissionNumber'],
     fields: [
-      num('ReportId', 'Report', { indexed: true }),
+      num('RequestId', 'Request', { indexed: true }),
+      {
+        name: 'SubmissionType',
+        displayName: 'Type',
+        type: 'Choice',
+        choices: Object.values(SUBMISSION_TYPE_LABELS),
+        defaultValue: SUBMISSION_TYPE_LABELS.package
+      },
       num('SubmissionNumber', 'Submission'),
       { name: 'PackageStatus', displayName: 'Package status', type: 'Choice', choices: PACKAGE_STATUSES, defaultValue: 'Uploading', indexed: true },
       text('FolderName', 'Folder name'),
@@ -121,17 +142,20 @@ export const LISTS: Record<ListKey, ListDef> = {
       text('SubmitterName', 'Submitted by'),
       text('SubmitterEmail', 'Submitted by (account)'),
       note('CertificationText', 'Certification'),
-      text('TripName', 'Trip name'),
-      text('Destination', 'Destination'),
-      text('TripStart', 'Trip start'),
-      text('TripEnd', 'Trip end'),
-      text('TripPurpose', 'Trip purpose'),
-      text('SuggestedClass', 'Suggested class'),
+      text('BusinessPurpose', 'Business purpose'),
+      text('Department', 'Department'),
+      text('ProjectCode', 'Project or grant code'),
+      text('PurchaseDates', 'Purchase dates'),
       money('TotalReimburse', 'To reimburse'),
-      money('TotalCompany', 'Company-paid'),
-      money('TotalTrip', 'Trip total'),
+      money('TotalCompany', 'Paid by Clarus'),
+      money('TotalRequest', 'Request total'),
       num('ReceiptCount', 'Receipts'),
+      num('QuoteCount', 'Quotes'),
       num('RowsWithoutReceipt', 'Rows without a receipt'),
+      yesNo('BoughtBeforeApproval', 'Bought before approval'),
+      // The approver's name and time as frozen text, not a person or date column (docs/DATA_MODEL.md).
+      text('ApprovedBy', 'Approved by'),
+      text('ApprovedOn', 'Approved'),
       text('EmailSubject', 'Email subject'),
       note('EmailSummary', 'Email summary'),
       note('FolderLink', 'Folder link'),
@@ -140,8 +164,6 @@ export const LISTS: Record<ListKey, ListDef> = {
     ]
   }
 };
-
-export { TEXT_MAX_LENGTH };
 
 function attr(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

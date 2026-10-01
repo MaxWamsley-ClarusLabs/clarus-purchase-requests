@@ -2,8 +2,8 @@
 // uses, for unit tests only. It follows SharePoint's behaviour where the app
 // depends on it: lists found by address, item-level permissions ("own items
 // only" hides other people's items), attachments, recycle, and busy replies.
-// It is not SharePoint: the real behaviour is confirmed on the test site at
-// Stage 8.
+// It is not SharePoint: the real behaviour is confirmed on a test site at the
+// checkpoint (docs/CHECKPOINT.md).
 
 import { SpFetch, SpRequestInit, SpResponse } from '../data/sharepoint/http';
 
@@ -14,12 +14,21 @@ export interface FakeUser {
   admin: boolean;
 }
 
+/** A member of the site's Owners group as SharePoint lists it (PrincipalType: 1 a person, 4 a security group, 8 a SharePoint group). */
+export interface FakeOwner {
+  Title: string;
+  Email: string;
+  PrincipalType: number;
+}
+
 interface FakeField {
   InternalName: string;
   Title: string;
   Indexed: boolean;
   Required: boolean;
   Choices?: string[];
+  /** The column type from its definition, for example "User" for a person column. */
+  Type?: string;
 }
 
 interface FakeAttachment {
@@ -45,6 +54,8 @@ export interface RequestRecord {
   user: string;
   method: string;
   url: string;
+  /** The JSON a change sent, so a test can check what was written and in what order. */
+  body?: string;
 }
 
 const BUILT_IN_FIELDS = ['Title', 'Author', 'Editor', 'Created', 'Modified', 'ID', 'Attachments'];
@@ -71,21 +82,28 @@ export class FakeSharePoint {
   /** Makes list settings like ReadSecurity refuse to change, as a tenant might. */
   refuseItemLevelPermissions = false;
   /** Document libraries and folders that exist, by server-relative address, on any site. */
-  readonly libraries = new Set<string>(['/sites/Travel/Shared Documents']);
+  readonly libraries = new Set<string>(['/sites/FormsAndApps/Shared Documents']);
   readonly folders = new Set<string>();
+  /** The site's Owners group: the people the approval email goes to (P-018). */
+  owners: FakeOwner[] = [];
+  /** Answer a read of the Owners group with this status, for example 403 for a person who may not see it. */
+  ownersStatus = 200;
+  /** Every person who has signed in, by user ID, so a person column written by ID can be read back as the person. */
+  private readonly people = new Map<number, FakeUser>();
   private clock = Date.UTC(2026, 9, 1, 12, 0, 0);
   private listCounter = 0;
 
   constructor(
-    readonly webUrl = 'https://contoso.sharepoint.com/sites/Travel',
-    readonly webPath = '/sites/Travel'
+    readonly webUrl = 'https://contoso.sharepoint.com/sites/FormsAndApps',
+    readonly webPath = '/sites/FormsAndApps'
   ) {}
 
   /** The request function SharePoint would give the app, signed in as `user`. */
   fetchAs(user: FakeUser): SpFetch {
+    this.people.set(user.id, user);
     return async (url: string, init: SpRequestInit) => {
       const method = init.headers['X-HTTP-Method'] ?? init.method;
-      this.log.push({ user: user.email, method, url });
+      this.log.push({ user: user.email, method, url, body: typeof init.body === 'string' ? init.body : undefined });
       if (this.busyReplies > 0) {
         this.busyReplies--;
         return response(429, undefined, { 'Retry-After': '1' });
@@ -134,6 +152,9 @@ export class FakeSharePoint {
     );
 
     if (route === 'web/currentuser') return response(200, { Id: user.id, Title: user.title, Email: user.email });
+    if (route === 'web/AssociatedOwnerGroup/users' && method === 'GET') {
+      return this.ownersStatus === 200 ? response(200, { value: this.owners.map((o) => ({ ...o })) }) : response(this.ownersStatus);
+    }
     if (route === 'web/effectiveBasePermissions')
       return response(200, user.admin ? { High: '2147483647', Low: '4294967295' } : { High: '432', Low: '1011028719' });
     if (route === 'web/lists' && method === 'POST') {
@@ -187,7 +208,8 @@ export class FakeSharePoint {
         Title: name,
         Indexed: /Indexed="TRUE"/.test(xml),
         Required: false,
-        Choices: choices.length ? choices : undefined
+        Choices: choices.length ? choices : undefined,
+        Type: /<Field Type="(\w+)"/.exec(xml)?.[1]
       });
       return response(201, { InternalName: name });
     }
@@ -216,13 +238,15 @@ export class FakeSharePoint {
       if (method === 'POST') {
         const id = list.nextId++;
         const stamp = this.now();
+        const data = JSON.parse(String(body));
         const fields: Record<string, unknown> = {
           ...defaults(list),
-          ...JSON.parse(String(body)),
+          ...data,
           Id: id,
           AuthorId: user.id,
           Author: { Id: user.id, Title: user.title, EMail: user.email }
         };
+        this.resolvePeople(list, fields, data);
         fields.Created = stamp;
         fields.Modified = stamp;
         list.items.set(id, { fields, attachments: [] });
@@ -241,10 +265,8 @@ export class FakeSharePoint {
       if (sub === '' && method === 'MERGE') {
         if (!canWrite) return response(403);
         const data = JSON.parse(String(body));
-        if (data.ProcessedById !== undefined) {
-          data.ProcessedBy = { Id: data.ProcessedById, Title: user.title, EMail: user.email };
-        }
         Object.assign(item.fields, data, { Modified: this.now() });
+        this.resolvePeople(list, item.fields, data);
         return response(204);
       }
       if (sub === '/recycle()' && method === 'POST') {
@@ -288,6 +310,16 @@ export class FakeSharePoint {
     const folder = /^web\/GetFolderByServerRelativeUrl\('(.+?)'\)\/Exists$/.exec(route);
     if (folder) return response(200, { value: this.folders.has(folder[1].replace(/''/g, "'")) });
     return undefined;
+  }
+
+  /** A person column is written by user ID (ApprovedById) and read back as the person (ApprovedBy); null clears it. */
+  private resolvePeople(list: FakeList, fields: Record<string, unknown>, written: Record<string, unknown>): void {
+    for (const column of list.fields.filter((f) => f.Type === 'User')) {
+      const id = written[`${column.InternalName}Id`];
+      if (id === undefined) continue;
+      const person = typeof id === 'number' ? this.people.get(id) : undefined;
+      fields[column.InternalName] = id === null ? null : { Id: id, Title: person ? person.title : '', EMail: person ? person.email : '' };
+    }
   }
 
   private canRead(user: FakeUser, list: FakeList, item: FakeItem): boolean {

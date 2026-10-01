@@ -1,25 +1,25 @@
-// Whether the travel site has its three lists, with every column and setting
-// the app needs (D-063). Shared by the SharePoint and mock data services.
+// Whether the site has its three lists, with every column and setting the app
+// needs (travel D-063). Shared by the SharePoint and mock data services.
 
-export type SetupListKey = 'reports' | 'lines' | 'submissions';
+export type SetupListKey = 'requests' | 'lines' | 'submissions';
 
 export interface ListCheck {
   key: SetupListKey;
   title: string;
   exists: boolean;
-  /** The list's address on the site, for example Lists/TravelReports. */
+  /** The list's address on the site, for example Lists/PurchaseRequests. */
   address: string;
   /**
    * A list exists at this address but was not made by this app. Set-up does
-   * not change it (D-077).
+   * not change it (travel D-077).
    */
   notOurs: boolean;
-  /** The list's ID, used by the flow package (D-047). */
+  /** The list's ID, used by the flow package (travel D-047). */
   listId: string;
   missingFields: string[];
   missingChoices: string[];
   unindexedFields: string[];
-  /** Employees see and edit only their own items (D-003). */
+  /** Employees see and edit only their own items (travel D-003). */
   ownItemsOnly: boolean;
   versioning: boolean;
   attachments: boolean;

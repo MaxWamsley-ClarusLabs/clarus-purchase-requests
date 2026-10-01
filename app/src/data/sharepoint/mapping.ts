@@ -1,12 +1,27 @@
 // Converts between SharePoint list items (docs/DATA_MODEL.md) and the app's
 // own records. Everything stored may have been edited directly in SharePoint
-// (D-002), so every value read here is checked, never trusted.
+// (travel D-002), so every value read here is checked, never trusted.
 
 import { toLocalDateTime } from '../../domain/dates';
-import { CATEGORIES, PAYMENT_TYPES, TEXT_MAX_LENGTH, TRIP_PURPOSES } from '../../domain/lists';
+import { CATEGORIES, PAID_BY_OPTIONS } from '../../domain/purchaseRules';
+import { REQUEST_STATUSES } from '../../domain/statuses';
 import { SUGGESTED_FIELDS } from '../../domain/suggestions';
-import { ExpenseLine, MileageTrip, ReceiptFile, ReportStatus, Submission, TravelReport, PackageStatus, SuggestedField } from '../../domain/types';
-import { PACKAGE_STATUSES, REPORT_STATUSES } from './schema';
+import {
+  ApprovalGroup,
+  ApprovalRecord,
+  AttachedFile,
+  FileKind,
+  PackageStatus,
+  PurchaseLine,
+  PurchaseRequest,
+  RequestStatus,
+  ReturnStage,
+  SuggestedField,
+  Submission,
+  TEXT_MAX_LENGTH
+} from '../../domain/types';
+import { SubmissionFields } from '../../export/submission';
+import { PACKAGE_STATUSES, RETURN_STAGE_LABELS, SUBMISSION_TYPE_LABELS } from './schema';
 
 export interface SpPerson {
   Id?: number;
@@ -19,23 +34,26 @@ export interface SpAttachment {
   ServerRelativeUrl: string;
 }
 
-export interface ReportItem {
+export interface RequestItem {
   Id: number;
   Title: string | null;
-  ReportNumber: string | null;
-  Destination: string | null;
-  BusinessPurpose: string | null;
-  TripPurpose: string | null;
-  TripStart: string | null;
-  TripEnd: string | null;
-  HasMileage?: boolean | null;
-  MileageTrips?: string | null;
-  ReportStatus: string | null;
+  RequestNumber: string | null;
+  Department: string | null;
+  ProjectCode: string | null;
+  RequestStatus: string | null;
   ReturnNote: string | null;
+  ReturnStage: string | null;
   TotalReimburse: number | null;
   TotalCompany: number | null;
-  TotalTrip: number | null;
+  TotalRequest: number | null;
   SubmissionCount: number | null;
+  ApprovalRounds: number | null;
+  SentForApprovalOn: string | null;
+  BoughtBeforeApproval?: boolean | null;
+  ApprovalRecord: string | null;
+  ApprovalNote: string | null;
+  ApprovedOn: string | null;
+  ApprovedBy?: SpPerson | null;
   SubmittedOn: string | null;
   ProcessedOn: string | null;
   ProcessedBy?: SpPerson | null;
@@ -46,14 +64,17 @@ export interface ReportItem {
 
 export interface LineItem {
   Id: number;
-  ReportId: number | null;
+  RequestId: number | null;
   RowNumber: number | null;
-  ExpenseDate: string | null;
+  PurchaseDate: string | null;
   Vendor: string | null;
-  Category: string | null;
   Description: string | null;
+  Category: string | null;
+  CategoryOther: string | null;
+  CategoryConfirmedBy: string | null;
   Amount: number | null;
-  PaymentType: string | null;
+  PaidBy: string | null;
+  NoQuoteReason: string | null;
   NoReceiptReason: string | null;
   SameReceiptAsRow: number | null;
   FileFingerprints: string | null;
@@ -63,7 +84,8 @@ export interface LineItem {
 
 export interface SubmissionItem {
   Id: number;
-  ReportId: number | null;
+  RequestId: number | null;
+  SubmissionType: string | null;
   SubmissionNumber: number | null;
   PackageStatus: string | null;
   FolderName: string | null;
@@ -71,17 +93,19 @@ export interface SubmissionItem {
   SubmitterName: string | null;
   SubmitterEmail: string | null;
   CertificationText: string | null;
-  TripName: string | null;
-  Destination: string | null;
-  TripStart: string | null;
-  TripEnd: string | null;
-  TripPurpose: string | null;
-  SuggestedClass: string | null;
+  BusinessPurpose: string | null;
+  Department: string | null;
+  ProjectCode: string | null;
+  PurchaseDates: string | null;
   TotalReimburse: number | null;
   TotalCompany: number | null;
-  TotalTrip: number | null;
+  TotalRequest: number | null;
   ReceiptCount: number | null;
+  QuoteCount: number | null;
   RowsWithoutReceipt: number | null;
+  BoughtBeforeApproval?: boolean | null;
+  ApprovedBy: string | null;
+  ApprovedOn: string | null;
   EmailSubject: string | null;
   EmailSummary: string | null;
   FolderLink: string | null;
@@ -91,24 +115,28 @@ export interface SubmissionItem {
   AttachmentFiles?: SpAttachment[];
 }
 
-/** What is stored per attached file, for duplicate checks (D-043). */
+/** What is stored per attached file: for duplicate checks (travel D-043) and to tell receipts from quotes (P-021). */
 export interface StoredFingerprint {
   fileName: string;
   sizeBytes: number;
   fingerprint: string;
+  kind: FileKind;
 }
 
 // ---- Small helpers -------------------------------------------------------
 
 /** One-line text columns hold 255 characters; pasted text is cut to fit rather than refused. */
-const line255 = (v: string): string => v.slice(0, TEXT_MAX_LENGTH);
+export const line255 = (v: string): string => v.slice(0, TEXT_MAX_LENGTH);
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : v === null || v === undefined ? '' : String(v));
 const int = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : 0);
+/** A count cannot be negative, even if someone types one into the list. */
+const count = (v: unknown): number => Math.max(0, int(v));
 const cents = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 100) : 0);
 const email = (p: SpPerson | null | undefined): string => str(p && p.EMail).toLowerCase();
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** SharePoint currency columns hold dollars; the app works in whole cents (D-043). */
+/** SharePoint currency columns hold dollars; the app works in whole cents (travel D-043). */
 export function centsToDollars(value: number): number {
   return Math.round(value) / 100;
 }
@@ -137,61 +165,138 @@ export function contentTypeFor(fileName: string): string {
   return 'application/octet-stream';
 }
 
+// ---- Files and their fingerprints ---------------------------------------------
+
+/** A stored file with no kind, or an unknown one, is a receipt (P-021). */
+const kindOf = (value: unknown): FileKind => (value === 'quote' ? 'quote' : 'receipt');
+
 export function parseFingerprints(value: string | null): StoredFingerprint[] {
   if (!value) return [];
   try {
     const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
     return parsed
-      .filter((x): x is StoredFingerprint => !!x && typeof x === 'object' && typeof (x as StoredFingerprint).fileName === 'string')
-      .map((x) => ({ fileName: x.fileName, sizeBytes: int(x.sizeBytes), fingerprint: str(x.fingerprint) }));
+      .filter((x): x is Record<string, unknown> => isRecord(x) && typeof x.fileName === 'string')
+      .map((x) => ({ fileName: x.fileName as string, sizeBytes: int(x.sizeBytes), fingerprint: str(x.fingerprint), kind: kindOf(x.kind) }));
   } catch {
     return [];
   }
 }
 
-/** The drives stored with a report (D-071), read defensively. */
-export function parseTrips(value: string | null | undefined): MileageTrip[] {
-  if (!value) return [];
+/** What is written to FileFingerprints for a row's files, in the order they were added. */
+export function storedFingerprint(file: AttachedFile): StoredFingerprint {
+  return { fileName: file.fileName, sizeBytes: file.sizeBytes, fingerprint: file.fingerprint, kind: file.kind };
+}
+
+function fileFromPrint(print: StoredFingerprint): AttachedFile {
+  return {
+    id: print.fileName,
+    fileName: print.fileName,
+    sizeBytes: print.sizeBytes,
+    fingerprint: print.fingerprint,
+    contentType: contentTypeFor(print.fileName),
+    kind: print.kind
+  };
+}
+
+/**
+ * A row's files from its attachments. The stored fingerprints say what kind
+ * each is and give the order the files were added in, which is the order the
+ * package names follow (R01, R01-2, ...); SharePoint's own listing order is
+ * not relied on. A file with no stored entry (added directly in SharePoint) is
+ * a receipt and comes after the others.
+ */
+function filesFromAttachments(attachments: readonly SpAttachment[], prints: readonly StoredFingerprint[]): AttachedFile[] {
+  const position = (name: string): number => {
+    const at = prints.findIndex((p) => p.fileName === name);
+    return at < 0 ? prints.length : at;
+  };
+  return [...attachments]
+    .sort((a, b) => position(a.FileName) - position(b.FileName))
+    .map((a) => {
+      const print = prints.find((p) => p.fileName === a.FileName);
+      return {
+        id: a.FileName,
+        fileName: a.FileName,
+        sizeBytes: print ? print.sizeBytes : 0,
+        fingerprint: print ? print.fingerprint : '',
+        contentType: contentTypeFor(a.FileName),
+        kind: print ? print.kind : 'receipt',
+        url: a.ServerRelativeUrl
+      };
+    });
+}
+
+// ---- The approval record -----------------------------------------------------
+
+const emptyRecord = (): ApprovalRecord => ({ sent: [], approved: [] });
+
+/** The vendor totals in a record. A group that is not well formed is dropped, which can only ask for more approval, never less. */
+function parseGroups(value: unknown): ApprovalGroup[] {
+  const groups: ApprovalGroup[] = [];
+  if (!Array.isArray(value)) return groups;
+  for (const g of value) {
+    if (!isRecord(g) || typeof g.key !== 'string' || typeof g.vendor !== 'string') continue;
+    if (typeof g.cents !== 'number' || !Number.isFinite(g.cents) || g.cents < 0) continue;
+    groups.push({ key: g.key, vendor: g.vendor, cents: Math.round(g.cents), bought: g.bought === true });
+  }
+  return groups;
+}
+
+/**
+ * The approval record stored on a request as JSON (docs/DATA_MODEL.md),
+ * read defensively: anything that is not the two lists of vendor totals gives
+ * the empty record, which reads as "not approved" (P-029).
+ */
+export function parseApprovalRecord(value: string | null | undefined): ApprovalRecord {
+  if (!value) return emptyRecord();
   try {
     const parsed: unknown = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
-      .map((x, i) => ({
-        id: typeof x.id === 'string' && x.id ? x.id : `trip-${i + 1}`,
-        date: str(x.date),
-        from: str(x.from).slice(0, TEXT_MAX_LENGTH),
-        to: str(x.to).slice(0, TEXT_MAX_LENGTH),
-        miles: typeof x.miles === 'number' && Number.isFinite(x.miles) && x.miles > 0 ? Math.round(x.miles * 10) / 10 : null
-      }));
+    if (!isRecord(parsed)) return emptyRecord();
+    const shape = (v: unknown) => v === undefined || Array.isArray(v);
+    if (!shape(parsed.sent) || !shape(parsed.approved)) return emptyRecord();
+    return { sent: parseGroups(parsed.sent), approved: parseGroups(parsed.approved) };
   } catch {
-    return [];
+    return emptyRecord();
   }
 }
 
-// ---- Travel Reports ----------------------------------------------------
+export function approvalRecordJson(record: ApprovalRecord): string {
+  return JSON.stringify({ sent: record.sent, approved: record.approved });
+}
 
-export function reportFromItem(item: ReportItem): TravelReport {
+// ---- Purchase Requests -----------------------------------------------------
+
+function returnStageFrom(label: unknown): ReturnStage {
+  if (label === RETURN_STAGE_LABELS.approval) return 'approval';
+  if (label === RETURN_STAGE_LABELS.processing) return 'processing';
+  return '';
+}
+
+export function requestFromItem(item: RequestItem): PurchaseRequest {
   return {
     id: item.Id,
-    reportNumber: str(item.ReportNumber),
-    tripName: str(item.Title),
-    destination: str(item.Destination),
-    businessPurpose: str(item.BusinessPurpose),
-    tripPurpose: idForLabel(TRIP_PURPOSES, item.TripPurpose),
-    tripStart: str(item.TripStart),
-    tripEnd: str(item.TripEnd),
-    hasMileage: item.HasMileage === true,
-    mileageTrips: parseTrips(item.MileageTrips),
-    status: oneOf<ReportStatus>(item.ReportStatus, REPORT_STATUSES, 'Draft'),
+    requestNumber: str(item.RequestNumber),
+    businessPurpose: str(item.Title),
+    department: str(item.Department),
+    projectCode: str(item.ProjectCode),
+    status: oneOf<RequestStatus>(item.RequestStatus, REQUEST_STATUSES, 'Draft'),
     returnNote: str(item.ReturnNote),
+    returnStage: returnStageFrom(item.ReturnStage),
     ownerName: str(item.Author && item.Author.Title),
     ownerEmail: email(item.Author),
-    submissionCount: int(item.SubmissionCount),
+    submissionCount: count(item.SubmissionCount),
+    approvalRounds: count(item.ApprovalRounds),
     totalReimburseCents: cents(item.TotalReimburse),
     totalCompanyCents: cents(item.TotalCompany),
-    totalTripCents: cents(item.TotalTrip),
+    totalRequestCents: cents(item.TotalRequest),
+    sentForApprovalOn: localTime(item.SentForApprovalOn),
+    boughtBeforeApproval: item.BoughtBeforeApproval === true,
+    approval: parseApprovalRecord(item.ApprovalRecord),
+    approvalNote: str(item.ApprovalNote),
+    approvedOn: localTime(item.ApprovedOn),
+    approvedBy: str(item.ApprovedBy && item.ApprovedBy.Title),
+    approvedByEmail: email(item.ApprovedBy),
     submittedOn: localTime(item.SubmittedOn),
     processedOn: localTime(item.ProcessedOn),
     processedBy: str(item.ProcessedBy && item.ProcessedBy.Title),
@@ -199,101 +304,127 @@ export function reportFromItem(item: ReportItem): TravelReport {
   };
 }
 
-/** The columns a report change writes. Only fields present in `changes` are sent. */
-export function reportFields(changes: Partial<TravelReport>): Record<string, unknown> {
+/**
+ * What a change to a request writes. The date-and-time columns take an ISO
+ * time (an instant, not the local text the app shows), the person columns take
+ * a SharePoint user ID, and null clears a column.
+ */
+export type RequestWrite = Partial<
+  Pick<
+    PurchaseRequest,
+    | 'businessPurpose'
+    | 'department'
+    | 'projectCode'
+    | 'status'
+    | 'returnNote'
+    | 'returnStage'
+    | 'submissionCount'
+    | 'approvalRounds'
+    | 'totalReimburseCents'
+    | 'totalCompanyCents'
+    | 'totalRequestCents'
+    | 'boughtBeforeApproval'
+    | 'approval'
+    | 'approvalNote'
+  >
+> & {
+  sentForApprovalOn?: string | null;
+  approvedOn?: string | null;
+  approvedById?: number | null;
+  submittedOn?: string | null;
+  processedOn?: string | null;
+  processedById?: number | null;
+};
+
+/** The columns a request change writes. Only fields present in `changes` are sent. */
+export function requestFields(changes: RequestWrite): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  if (changes.tripName !== undefined) out.Title = line255(changes.tripName);
-  if (changes.destination !== undefined) out.Destination = line255(changes.destination);
-  if (changes.businessPurpose !== undefined) out.BusinessPurpose = changes.businessPurpose;
-  if (changes.tripPurpose !== undefined) out.TripPurpose = labelForId(TRIP_PURPOSES, changes.tripPurpose);
-  if (changes.tripStart !== undefined) out.TripStart = changes.tripStart;
-  if (changes.tripEnd !== undefined) out.TripEnd = changes.tripEnd;
-  if (changes.hasMileage !== undefined) out.HasMileage = changes.hasMileage;
-  if (changes.mileageTrips !== undefined) out.MileageTrips = JSON.stringify(changes.mileageTrips);
+  if (changes.businessPurpose !== undefined) out.Title = line255(changes.businessPurpose);
+  if (changes.department !== undefined) out.Department = line255(changes.department);
+  if (changes.projectCode !== undefined) out.ProjectCode = line255(changes.projectCode);
+  if (changes.status !== undefined) out.RequestStatus = changes.status;
+  if (changes.returnNote !== undefined) out.ReturnNote = changes.returnNote;
+  if (changes.returnStage !== undefined) out.ReturnStage = changes.returnStage === '' ? null : RETURN_STAGE_LABELS[changes.returnStage];
+  if (changes.submissionCount !== undefined) out.SubmissionCount = changes.submissionCount;
+  if (changes.approvalRounds !== undefined) out.ApprovalRounds = changes.approvalRounds;
   if (changes.totalReimburseCents !== undefined) out.TotalReimburse = centsToDollars(changes.totalReimburseCents);
   if (changes.totalCompanyCents !== undefined) out.TotalCompany = centsToDollars(changes.totalCompanyCents);
-  if (changes.totalTripCents !== undefined) out.TotalTrip = centsToDollars(changes.totalTripCents);
+  if (changes.totalRequestCents !== undefined) out.TotalRequest = centsToDollars(changes.totalRequestCents);
+  if (changes.sentForApprovalOn !== undefined) out.SentForApprovalOn = changes.sentForApprovalOn;
+  if (changes.boughtBeforeApproval !== undefined) out.BoughtBeforeApproval = changes.boughtBeforeApproval;
+  if (changes.approval !== undefined) out.ApprovalRecord = approvalRecordJson(changes.approval);
+  if (changes.approvalNote !== undefined) out.ApprovalNote = changes.approvalNote;
+  if (changes.approvedOn !== undefined) out.ApprovedOn = changes.approvedOn;
+  if (changes.approvedById !== undefined) out.ApprovedById = changes.approvedById;
+  if (changes.submittedOn !== undefined) out.SubmittedOn = changes.submittedOn;
+  if (changes.processedOn !== undefined) out.ProcessedOn = changes.processedOn;
+  if (changes.processedById !== undefined) out.ProcessedById = changes.processedById;
   return out;
 }
 
-// ---- Expense Lines --------------------------------------------------------
+// ---- Purchase Request Lines -------------------------------------------------
 
-export function lineFromItem(item: LineItem): ExpenseLine {
+export function lineFromItem(item: LineItem): PurchaseLine {
   const prints = parseFingerprints(item.FileFingerprints);
-  // Without the attachment list (a lighter query), the stored fingerprints
-  // still describe the files, which is all the duplicate checks need.
-  if (!item.AttachmentFiles) {
-    return {
-      ...lineFromItem({ ...item, AttachmentFiles: [] }),
-      receipts: prints.map((p) => ({
-        id: p.fileName,
-        fileName: p.fileName,
-        sizeBytes: p.sizeBytes,
-        fingerprint: p.fingerprint,
-        contentType: contentTypeFor(p.fileName)
-      }))
-    };
-  }
-  const receipts: ReceiptFile[] = item.AttachmentFiles.map((a) => {
-    const print = prints.find((p) => p.fileName === a.FileName);
-    return {
-      id: a.FileName,
-      fileName: a.FileName,
-      sizeBytes: print ? print.sizeBytes : 0,
-      fingerprint: print ? print.fingerprint : '',
-      contentType: contentTypeFor(a.FileName),
-      url: a.ServerRelativeUrl
-    };
-  });
   return {
     id: String(item.Id),
-    reportId: int(item.ReportId),
-    rowNumber: int(item.RowNumber),
-    date: str(item.ExpenseDate),
+    requestId: int(item.RequestId),
+    rowNumber: count(item.RowNumber),
+    date: str(item.PurchaseDate),
     vendor: str(item.Vendor),
-    category: idForLabel(CATEGORIES, item.Category),
     description: str(item.Description),
+    category: idForLabel(CATEGORIES, item.Category),
+    categoryOther: str(item.CategoryOther),
+    categoryConfirmedBy: str(item.CategoryConfirmedBy),
     amountCents: typeof item.Amount === 'number' && Number.isFinite(item.Amount) ? Math.round(item.Amount * 100) : null,
-    paymentType: idForLabel(PAYMENT_TYPES, item.PaymentType),
+    paidBy: idForLabel(PAID_BY_OPTIONS, item.PaidBy),
+    noQuoteReason: str(item.NoQuoteReason),
     noReceiptReason: str(item.NoReceiptReason),
     sameReceiptAsRow: typeof item.SameReceiptAsRow === 'number' && item.SameReceiptAsRow > 0 ? Math.round(item.SameReceiptAsRow) : null,
-    receipts,
+    // Without the attachment list (a lighter query), the stored fingerprints
+    // still describe the files, which is all the duplicate checks need.
+    files: item.AttachmentFiles ? filesFromAttachments(item.AttachmentFiles, prints) : prints.map(fileFromPrint),
     suggested: parseSuggested(item.SuggestedFields)
   };
 }
 
 /**
- * The row's unconfirmed suggestions (D-078), stored as "date,amount,vendor".
- * Read defensively (D-002): unknown names are dropped.
+ * The row's unconfirmed suggestions (travel D-078), stored as "date,amount,vendor".
+ * Read defensively (travel D-002): unknown names are dropped.
  */
 export function parseSuggested(value: string | null | undefined): SuggestedField[] {
   const names = typeof value === 'string' ? value.split(',').map((v) => v.trim()) : [];
   return SUGGESTED_FIELDS.filter((f) => names.includes(f));
 }
 
-export function lineFields(changes: Partial<ExpenseLine>): Record<string, unknown> {
+/** The columns a row change writes. Only fields present in `changes` are sent. */
+export function lineFields(changes: Partial<PurchaseLine>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (changes.rowNumber !== undefined) out.RowNumber = changes.rowNumber;
-  if (changes.date !== undefined) out.ExpenseDate = changes.date;
+  if (changes.date !== undefined) out.PurchaseDate = changes.date;
   if (changes.vendor !== undefined) out.Vendor = line255(changes.vendor);
-  if (changes.category !== undefined) out.Category = labelForId(CATEGORIES, changes.category);
   if (changes.description !== undefined) out.Description = line255(changes.description);
+  if (changes.category !== undefined) out.Category = labelForId(CATEGORIES, changes.category);
+  if (changes.categoryOther !== undefined) out.CategoryOther = line255(changes.categoryOther);
+  if (changes.categoryConfirmedBy !== undefined) out.CategoryConfirmedBy = line255(changes.categoryConfirmedBy);
   if (changes.amountCents !== undefined) out.Amount = changes.amountCents === null ? null : centsToDollars(changes.amountCents);
-  if (changes.paymentType !== undefined) out.PaymentType = labelForId(PAYMENT_TYPES, changes.paymentType);
+  if (changes.paidBy !== undefined) out.PaidBy = labelForId(PAID_BY_OPTIONS, changes.paidBy);
+  if (changes.noQuoteReason !== undefined) out.NoQuoteReason = line255(changes.noQuoteReason);
   if (changes.noReceiptReason !== undefined) out.NoReceiptReason = line255(changes.noReceiptReason);
   if (changes.sameReceiptAsRow !== undefined) out.SameReceiptAsRow = changes.sameReceiptAsRow;
   if (changes.suggested !== undefined) out.SuggestedFields = parseSuggested(changes.suggested.join(',')).join(',');
   return out;
 }
 
-// ---- Submissions ------------------------------------------------------------
+// ---- Purchase Submissions --------------------------------------------------
 
-export function submissionFromItem(item: SubmissionItem, reportNumber: string): Submission {
+export function submissionFromItem(item: SubmissionItem, requestNumber: string): Submission {
   return {
     id: item.Id,
-    reportId: int(item.ReportId),
-    reportNumber,
-    submissionNumber: int(item.SubmissionNumber),
+    requestId: int(item.RequestId),
+    requestNumber,
+    type: item.SubmissionType === SUBMISSION_TYPE_LABELS.approval ? 'approval' : 'package',
+    submissionNumber: count(item.SubmissionNumber),
     packageStatus: oneOf<PackageStatus>(item.PackageStatus, PACKAGE_STATUSES, 'Uploading'),
     folderName: str(item.FolderName),
     previousFolderName: str(item.PreviousFolderName),
@@ -301,17 +432,19 @@ export function submissionFromItem(item: SubmissionItem, reportNumber: string): 
     submitterEmail: str(item.SubmitterEmail).toLowerCase(),
     submittedOn: localTime(item.Created),
     certificationText: str(item.CertificationText),
-    tripName: str(item.TripName),
-    destination: str(item.Destination),
-    tripStart: str(item.TripStart),
-    tripEnd: str(item.TripEnd),
-    tripPurpose: str(item.TripPurpose),
-    suggestedClass: str(item.SuggestedClass),
+    businessPurpose: str(item.BusinessPurpose),
+    department: str(item.Department),
+    projectCode: str(item.ProjectCode),
+    purchaseDates: str(item.PurchaseDates),
     totalReimburseCents: cents(item.TotalReimburse),
     totalCompanyCents: cents(item.TotalCompany),
-    totalTripCents: cents(item.TotalTrip),
-    receiptCount: int(item.ReceiptCount),
-    rowsWithoutReceipt: int(item.RowsWithoutReceipt),
+    totalRequestCents: cents(item.TotalRequest),
+    receiptCount: count(item.ReceiptCount),
+    quoteCount: count(item.QuoteCount),
+    rowsWithoutReceipt: count(item.RowsWithoutReceipt),
+    boughtBeforeApproval: item.BoughtBeforeApproval === true,
+    approvedBy: str(item.ApprovedBy),
+    approvedOn: str(item.ApprovedOn),
     emailSubject: str(item.EmailSubject),
     emailSummary: str(item.EmailSummary),
     folderLink: str(item.FolderLink),
@@ -322,29 +455,32 @@ export function submissionFromItem(item: SubmissionItem, reportNumber: string): 
 }
 
 /** The columns written when a submission is created (the flow fills in the rest). */
-export function submissionFields(s: Omit<Submission, 'id' | 'packageStatus' | 'folderLink' | 'packagedAt' | 'errorMessage'>): Record<string, unknown> {
+export function submissionFields(s: SubmissionFields): Record<string, unknown> {
   return {
-    Title: `${s.reportNumber} submission ${s.submissionNumber}`,
-    ReportId: s.reportId,
+    Title: line255(`${s.requestNumber} ${s.type === 'approval' ? 'approval' : 'submission'} ${s.submissionNumber}`),
+    RequestId: s.requestId,
+    SubmissionType: SUBMISSION_TYPE_LABELS[s.type],
     SubmissionNumber: s.submissionNumber,
     PackageStatus: 'Uploading',
-    FolderName: s.folderName,
-    PreviousFolderName: s.previousFolderName,
-    SubmitterName: s.submitterName,
-    SubmitterEmail: s.submitterEmail,
+    FolderName: line255(s.folderName),
+    PreviousFolderName: line255(s.previousFolderName),
+    SubmitterName: line255(s.submitterName),
+    SubmitterEmail: line255(s.submitterEmail),
     CertificationText: s.certificationText,
-    TripName: s.tripName,
-    Destination: s.destination,
-    TripStart: s.tripStart,
-    TripEnd: s.tripEnd,
-    TripPurpose: s.tripPurpose,
-    SuggestedClass: s.suggestedClass,
+    BusinessPurpose: line255(s.businessPurpose),
+    Department: line255(s.department),
+    ProjectCode: line255(s.projectCode),
+    PurchaseDates: line255(s.purchaseDates),
     TotalReimburse: centsToDollars(s.totalReimburseCents),
     TotalCompany: centsToDollars(s.totalCompanyCents),
-    TotalTrip: centsToDollars(s.totalTripCents),
+    TotalRequest: centsToDollars(s.totalRequestCents),
     ReceiptCount: s.receiptCount,
+    QuoteCount: s.quoteCount,
     RowsWithoutReceipt: s.rowsWithoutReceipt,
-    EmailSubject: s.emailSubject,
+    BoughtBeforeApproval: s.boughtBeforeApproval,
+    ApprovedBy: line255(s.approvedBy),
+    ApprovedOn: line255(s.approvedOn),
+    EmailSubject: line255(s.emailSubject),
     EmailSummary: s.emailSummary
   };
 }

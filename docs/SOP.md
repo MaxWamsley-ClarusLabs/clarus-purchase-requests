@@ -6,6 +6,8 @@
 
 **Scope:** non-travel purchase requests only. Travel goes to the Travel app. This SOP does not change `Clarus_Accounting_SOP.md`, which governs processing in QuickBooks, and it does not replace a purchasing policy: Max will write a new one with Claude after the app is complete (strategy, last stage).
 
+**Training:** every employee who can submit a request takes the SOP quiz (15 questions, 14 correct to pass) and can retake it. Quiz link: [INSERT QUIZ LINK.]
+
 ## Rules confirmed by Max
 
 These are decided, not provisional. The new purchasing policy (the last stage) must keep them.
@@ -243,3 +245,4 @@ To be completed from the test-site runs at the checkpoint. These messages are wr
 | 2026-09-30 | 1 | Started. Part B drafted from decisions P-001 to P-031; Part A is generated from the in-app Instructions at Stage 7 |
 | 2026-10-01 | 10a | The approver-buys build: "Rules confirmed by Max" now holds who buys, the item link and the QuickBooks categories; Part A regenerated from the new Instructions; Part B gained B2a (buying a request you approved) and changed B1 to B6; Part C gained four refusals |
 | 2026-10-01 | 5 to 9 | Part A generated from the Instructions (Stage 5). Part B brought up to date with the built screens and the review fixes (opening quotes, approving what was sent, Retry rules); Part C started from the app's own messages |
+| 2026-10-01 | 15 | Added the training quiz line (the link is a placeholder until the Form exists), P-045 |

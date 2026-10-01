@@ -11,12 +11,13 @@
 // content/instructions.ts.
 //
 // Status of each rule: docs/DECISIONS.md and docs/QUESTIONS_FOR_MAX.md.
-// Decided by Max: the $500 approval threshold (P-005), the certification
-// sentence (P-010), the categories and their QuickBooks accounts (P-012,
-// P-038), the who-paid choices (P-003), that the approver buys most purchases
-// and so is the default buyer (P-037), the item link (P-039) and what the
-// approver may change when buying (P-040). Everything else here is
-// Provisional (Claude, awaiting Max).
+// Decided by Max: the $500 approval threshold (P-005), the $500 quote rule
+// (P-015), the 10% rule (P-019), the Owners as approvers and self-approval
+// (P-020), the certification sentence (P-010) and when it is ticked (P-041),
+// the categories and their QuickBooks accounts (P-038), the who-paid choices
+// (P-003), that the approver buys most purchases and so is the default buyer
+// (P-037), the item link (P-039) and what the approver may change when buying
+// (P-040). Everything else here is Provisional (Claude, awaiting Max).
 
 import { isValidIsoDate } from './dates';
 import { formatDollars } from './money';
@@ -28,24 +29,24 @@ import { ApprovalGroup, ApprovalRecord, BuyerId, CategoryId, FileKind, IsoDate, 
  * For a request the employee buys: a vendor total of this much or more, within
  * one request, needs the approver's approval in the app before the purchase.
  * Under it, no approval is needed, but the request is still submitted with
- * receipts. Decided by Max (P-005). The attached F2 form's $100 is the old P4
- * wording and is not used. A request the approver buys always goes to the
+ * receipts. Decided by Max (P-005). The old form's approval wording is retired
+ * and is not used. A request the approver buys always goes to the
  * approver, whatever the amount (P-037, `approvalThresholdCents`).
  */
 export const APPROVAL_THRESHOLD_CENTS = 50000;
 
 /**
  * A vendor total of this much or more also needs a quote, or a written
- * no-quote reason, attached to the approval request. Provisional (P-015): the
- * F2 form says "over $500"; this is "$500 or more", the same number as the
- * approval threshold.
+ * no-quote reason, attached to the approval request. Decided by Max
+ * (P-015): "$500 or more", for both ways of buying. The old form's quote
+ * wording is retired.
  */
 export const QUOTE_THRESHOLD_CENTS = 50000;
 
 /**
  * After approval, a vendor total may rise this much above the approved amount
- * (taxes, shipping) before it needs approval again. Provisional (P-019); the
- * number is a guess. 0 means any increase needs approval again.
+ * (taxes, shipping) before it needs approval again. Decided by Max (P-019,
+ * 2026-10-01: keep the 10% rule). 0 means any increase needs approval again.
  */
 export const OVERRUN_TOLERANCE_PERCENT = 10;
 
@@ -91,7 +92,7 @@ export const BUYER_OPTIONS: readonly Buyer[] = [
   {
     id: 'self',
     label: 'I will buy it myself',
-    help: 'You buy it and submit your receipts. A vendor total of $500 or more needs the approver first. If you pay, Clarus reimburses you.'
+    help: `You buy it and submit your receipts. A vendor total of ${APPROVAL_THRESHOLD_TEXT} or more needs the approver first. If you pay, Clarus reimburses you.`
   }
 ];
 

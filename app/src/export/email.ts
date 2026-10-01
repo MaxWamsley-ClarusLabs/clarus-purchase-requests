@@ -10,7 +10,7 @@ import { dateRangeText } from '../domain/dates';
 import { formatCents } from '../domain/money';
 import { hasReceipt, hasQuote } from '../domain/receipts';
 import { ApprovalGroup, BuyerId, PurchaseLine, PurchaseRequest } from '../domain/types';
-import { APPROVAL_THRESHOLD_TEXT, categoryNeedsReview, categoryText, findPaidBy, isSelfApproved, vendorGroups } from '../domain/purchaseRules';
+import { APPROVAL_THRESHOLD_TEXT, categoryNeedsReview, categoryText, findPaidBy, isSelfApproved, sameAsSent, vendorGroups } from '../domain/purchaseRules';
 import { Totals } from '../domain/totals';
 import { Issue, issuePrefix } from '../domain/validation';
 
@@ -64,10 +64,44 @@ function rowsText(rowNumbers: readonly number[]): string {
   return rowNumbers.length === 1 ? `row ${rowNumbers[0]}` : `rows ${rowNumbers.join(', ')}`;
 }
 
+/**
+ * One line of text: line breaks and runs of spaces become one space. The app
+ * keeps these fields on one line, but an employee can edit their own items
+ * directly (travel D-002), and a line break in an email line could start a
+ * line that looks like the app wrote it, such as the approval or the
+ * certification.
+ */
+export function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** The request and rows with every one-line text field made one line, for the email text. */
+function plain(request: PurchaseRequest, lines: readonly PurchaseLine[]): { request: PurchaseRequest; lines: PurchaseLine[] } {
+  return {
+    request: {
+      ...request,
+      businessPurpose: oneLine(request.businessPurpose),
+      department: oneLine(request.department),
+      projectCode: oneLine(request.projectCode),
+      ownerName: oneLine(request.ownerName),
+      approvedBy: oneLine(request.approvedBy),
+      approvalNote: oneLine(request.approvalNote)
+    },
+    lines: lines.map((l) => ({
+      ...l,
+      vendor: oneLine(l.vendor),
+      description: oneLine(l.description),
+      categoryOther: oneLine(l.categoryOther),
+      noQuoteReason: oneLine(l.noQuoteReason),
+      noReceiptReason: oneLine(l.noReceiptReason)
+    }))
+  };
+}
+
 function boughtBeforeText(groups: readonly ApprovalGroup[]): string {
   return groups
     .filter((g) => g.bought)
-    .map((g) => `${g.vendor || 'a purchase with no vendor'} (${formatCents(g.cents)})`)
+    .map((g) => `${oneLine(g.vendor) || 'a purchase with no vendor'} (${formatCents(g.cents)})`)
     .join(', ');
 }
 
@@ -94,12 +128,12 @@ export interface ApprovalEmailInput {
  * list, which employees can edit directly (travel D-002), is ever sent as HTML.
  */
 export function buildApprovalEmailSummary(input: ApprovalEmailInput): string {
-  const { request, lines } = input;
+  const { request, lines } = plain(input.request, input.lines);
   const buyer = input.buyer ?? 'self';
   const totals = input.totals;
   const byKey = new Map(vendorGroups(lines, buyer).map((g) => [g.key, g]));
   const out: string[] = [];
-  out.push(`Requested by: ${input.submitterName} (${input.submitterEmail})`);
+  out.push(`Requested by: ${oneLine(input.submitterName)} (${oneLine(input.submitterEmail)})`);
   header(out, request, lines);
   out.push(`Sent for approval: ${input.sentOn}${input.round > 1 ? ` (round ${input.round}, sent again)` : ''}`);
   out.push('');
@@ -121,7 +155,7 @@ export function buildApprovalEmailSummary(input: ApprovalEmailInput): string {
         : reasons.length > 0
           ? ` (no quote: ${reasons[0]})`
           : ' (no quote)';
-    out.push(`- ${group.vendor || 'A purchase with no vendor'}: ${formatCents(group.cents)}${quote}`);
+    out.push(`- ${oneLine(group.vendor) || 'A purchase with no vendor'}: ${formatCents(group.cents)}${quote}`);
   }
   if (input.groups.some((g) => g.bought)) {
     out.push(
@@ -140,7 +174,11 @@ export function buildApprovalEmailSummary(input: ApprovalEmailInput): string {
     out.push(`${l.rowNumber}. ${l.date}, ${l.vendor}, ${l.description}, ${amount}${paid}, ${category}`);
   }
   if (input.certification) {
-    out.push('', `Certified by ${input.certification.name} (${input.certification.email}) when sent, ${input.sentOn}:`, `"${input.certification.text}"`);
+    out.push(
+      '',
+      `Certified by ${oneLine(input.certification.name)} (${oneLine(input.certification.email)}) when sent, ${input.sentOn}:`,
+      `"${oneLine(input.certification.text)}"`
+    );
   }
   return out.join('\n');
 }
@@ -173,15 +211,16 @@ export interface SubmissionEmailInput {
  * administrator sees it (P-017).
  */
 export function buildSubmissionEmailSummary(input: SubmissionEmailInput): string {
-  const { request, lines, totals } = input;
+  const { request, lines } = plain(input.request, input.lines);
+  const { totals } = input;
   const approverBought = input.buyer === 'approver';
   const noReceipt = lines.filter((l) => !hasReceipt(l, lines));
   const out: string[] = [];
   if (approverBought) {
-    out.push(`Bought by the approver: ${input.submitterName} (${input.submitterEmail ?? input.certification.email})`);
-    out.push(`Requested by: ${request.ownerName} (${request.ownerEmail})`);
+    out.push(`Bought by the approver: ${oneLine(input.submitterName)} (${oneLine(input.submitterEmail ?? input.certification.email)})`);
+    out.push(`Requested by: ${request.ownerName} (${oneLine(request.ownerEmail)})`);
   } else {
-    out.push(`Submitted by: ${input.submitterName} (${input.certification.email})`);
+    out.push(`Submitted by: ${oneLine(input.submitterName)} (${oneLine(input.certification.email)})`);
   }
   header(out, request, lines);
   out.push('');
@@ -195,6 +234,11 @@ export function buildSubmissionEmailSummary(input: SubmissionEmailInput): string
     );
   } else {
     out.push(`Approval: not needed, every vendor total is under ${APPROVAL_THRESHOLD_TEXT}.`);
+  }
+  // The rows the employee sent are kept with the approval (P-040); the administrator should know the approver changed them.
+  const sentRows = request.approval.rows ?? [];
+  if (approverBought && sentRows.length > 0 && !sameAsSent(input.lines, sentRows)) {
+    out.push('The approver changed the rows after the employee sent the request. The request page in Purchase Requests shows the rows as sent and as bought.');
   }
   const bought = request.approval.approved.some((g) => g.bought) ? request.approval.approved : request.approval.sent;
   if (!approverBought && bought.some((g) => g.bought)) {
@@ -221,16 +265,16 @@ export function buildSubmissionEmailSummary(input: SubmissionEmailInput): string
   }
   if (input.warnings.length > 0) {
     out.push('', approverBought ? 'Warnings:' : 'Warnings the employee submitted with:');
-    for (const w of input.warnings) out.push(`- ${issuePrefix(w)}${w.message}`);
+    for (const w of input.warnings) out.push(`- ${issuePrefix(w)}${oneLine(w.message)}`);
   }
-  const certifier = input.certification.name ?? input.submitterName;
+  const certifier = oneLine(input.certification.name ?? input.submitterName);
   out.push(
     '',
     approverBought
-      ? `Certified by ${certifier} (${input.certification.email}) when the request was sent, ${input.certification.submittedOn}:`
+      ? `Certified by ${certifier} (${oneLine(input.certification.email)}) when the request was sent, ${input.certification.submittedOn}:`
       : `Certified by ${certifier} at submission, ${input.certification.submittedOn}:`,
-    `"${input.certification.text}"`
+    `"${oneLine(input.certification.text)}"`
   );
-  if (input.previousFolderName) out.push('', `This replaces the earlier folder: ${input.previousFolderName}`);
+  if (input.previousFolderName) out.push('', `This replaces the earlier folder: ${oneLine(input.previousFolderName)}`);
   return out.join('\n');
 }

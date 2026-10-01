@@ -6,6 +6,8 @@ import { fileExtension, receiptFiles, receiptSourceRow } from './receipts';
 import { FileKind, PurchaseLine } from './types';
 
 export const PURPOSE_NAME_MAX = 40;
+/** A long display name is cut too, so the request number and the _R2 suffix always survive the flow's 120-character limit on a folder name. */
+export const OWNER_NAME_MAX = 40;
 
 export function requestNumber(itemId: number): string {
   return `PR-${String(itemId).padStart(4, '0')}`;
@@ -48,7 +50,8 @@ export interface FolderNameInput {
 /** YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042, plus _R2 and up for resubmissions. */
 export function folderName(input: FolderNameInput): string {
   const purpose = cleanNamePart(input.businessPurpose).slice(0, PURPOSE_NAME_MAX).replace(/-+$/g, '');
-  const parts = [input.firstPurchaseDate, cleanNamePart(input.ownerName), purpose, input.requestNumber].filter((p) => p.length > 0);
+  const owner = cleanNamePart(input.ownerName).slice(0, OWNER_NAME_MAX).replace(/-+$/g, '');
+  const parts = [input.firstPurchaseDate, owner, purpose, input.requestNumber].filter((p) => p.length > 0);
   const suffix = input.submissionNumber > 1 ? `_R${input.submissionNumber}` : '';
   return parts.join('_') + suffix;
 }

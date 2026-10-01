@@ -5,6 +5,7 @@ import { formatCents } from '../../../domain/money';
 import {
   APPROVAL_THRESHOLD_TEXT,
   CATEGORIES,
+  QUICKBOOKS_MAPPING_STATUS,
   anyBoughtBefore,
   categoryNeedsDescription,
   categoryNeedsReview,
@@ -484,7 +485,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                           {l.itemLink.trim() ? (
                             <ItemLinkText value={l.itemLink} maxChars={26} />
                           ) : l.noLinkReason.trim() ? (
-                            <span className="ctx-muted">{l.noLinkReason}</span>
+                            <span className="ctx-muted">No web page: {l.noLinkReason}</span>
                           ) : null}
                         </td>
                         <td className="category-cell">
@@ -598,7 +599,9 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                 <span className="ctx-hint">
                   {request.status === 'Awaiting approval'
                     ? 'The employee suggested these categories. Change one here if it is wrong. Approving confirms the categories shown.'
-                    : 'Confirming records that you checked the categories. The CSV already in the folder keeps the category as submitted.'}
+                    : request.status === 'Approved'
+                      ? 'Confirming records that you checked the categories. No folder or CSV has been made yet, so a change here goes into it.'
+                      : 'Confirming records that you checked the categories. The CSV already in the folder keeps the category as submitted.'}
                 </span>
               </div>
             ) : null}
@@ -670,7 +673,8 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                 </tbody>
               </table>
               <div className="ctx-hint" style={{ marginTop: 8 }}>
-                {CSV_COLUMNS.length} columns. Opens directly in Excel.
+                {CSV_COLUMNS.length} columns. Opens directly in Excel. The QuickBooks accounts are {QUICKBOOKS_MAPPING_STATUS}; you decide the account for
+                Equipment and Other.
               </div>
             </div>
           ) : (

@@ -334,7 +334,13 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
   // A request already sent is checked as of the day it was sent (it is the day the "bought before approval" test used).
   const asOf =
     request && !editable ? (request.status === 'Awaiting approval' ? request.sentForApprovalOn : request.submittedOn).slice(0, 10) || todayIso() : todayIso();
-  const issues: Issue[] = React.useMemo(() => (request ? validateRequest(request, lines, others, asOf) : []), [request, lines, others, asOf]);
+  // The receipts are the buyer's to attach (P-040): nobody else is asked for one on an approved request the approver buys.
+  const receiptsNotAskedHere = !!request && approverBuys && request.status === 'Approved' && !buying;
+  const issues: Issue[] = React.useMemo(() => {
+    if (!request) return [];
+    const all = validateRequest(request, lines, others, asOf);
+    return receiptsNotAskedHere ? all.filter((i) => i.field !== 'receipt') : all;
+  }, [request, lines, others, asOf, receiptsNotAskedHere]);
   const blocking = blockingIssues(issues);
   const warnings = issues.filter((i) => i.severity === 'warning');
   const totals = computeTotals(lines, request?.buyer);
@@ -1190,6 +1196,8 @@ function DetailsStep(props: {
     </div>
   );
   const dates = dateRangeText(props.lines.map((l) => l.date));
+  // Who buys is chosen while the request is made or corrected, not after it has been approved (P-037).
+  const canChooseBuyer = request.status === 'Draft' || request.status === 'Returned';
   return (
     <div className="ctx-two-col">
       <Card title="Request details">
@@ -1263,7 +1271,7 @@ function DetailsStep(props: {
                     name="request-buyer"
                     value={b.id}
                     checked={request.buyer === b.id}
-                    disabled={!editable}
+                    disabled={!editable || !canChooseBuyer}
                     onChange={() => onChange({ buyer: b.id })}
                   />
                   <span>
@@ -1273,6 +1281,7 @@ function DetailsStep(props: {
                 </label>
               ))}
             </div>
+            {editable && !canChooseBuyer ? <div className="ctx-hint">Who buys this cannot be changed once the request has been approved.</div> : null}
           </div>
           {fixed('approver', 'Approver', approverLabel(props.approvers))}
           {fixed(
@@ -1635,7 +1644,7 @@ function ReviewStep(props: {
                         {l.itemLink.trim() ? (
                           <ItemLinkText value={l.itemLink} maxChars={30} />
                         ) : l.noLinkReason.trim() ? (
-                          <span className="ctx-muted">{l.noLinkReason}</span>
+                          <span className="ctx-muted">No web page: {l.noLinkReason}</span>
                         ) : (
                           <span className="ctx-muted">None</span>
                         )}

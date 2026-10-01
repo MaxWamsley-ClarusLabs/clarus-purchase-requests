@@ -48,6 +48,8 @@ import {
   applyLineChanges,
   approvalWhenApproved,
   approvalWhenReturned,
+  buyerChangeEffects,
+  buyerChangeRefusal,
   approvalWhenSent,
   buyRefusal,
   canConfirmCategories,
@@ -262,20 +264,22 @@ export class SharePointDataService implements PurchaseDataService {
   async updateRequest(requestId: number, changes: RequestChanges): Promise<PurchaseRequest> {
     const stored = await this.requestForEdit(requestId);
     const buyer = changes.buyer !== undefined && findBuyer(changes.buyer) && changes.buyer !== stored.request.buyer ? changes.buyer : undefined;
-    // Only the header fields and who buys can be changed here, whatever else is passed.
-    await this.sp.merge(
-      this.item('requests', requestId),
-      requestFields({ businessPurpose: changes.businessPurpose, department: changes.department, projectCode: changes.projectCode, buyer })
-    );
     if (buyer) {
-      // The company pays for everything the approver buys (P-037), so every row says so, and the totals follow.
-      if (buyer === 'approver') {
-        for (const line of await this.readLines(requestId, stored)) {
-          if (line.paidBy !== 'company') await this.sp.merge(this.item('lines', Number(line.id)), lineFields({ paidBy: 'company' }));
-        }
-      }
-      await this.updateTotals(requestId, { ...stored, request: { ...stored.request, buyer } });
+      const refusal = buyerChangeRefusal(stored.request.status);
+      if (refusal) throw new NotAllowedError(refusal);
     }
+    // Only the header fields and who buys can be changed here, whatever else is passed.
+    const write: RequestWrite = { businessPurpose: changes.businessPurpose, department: changes.department, projectCode: changes.projectCode, buyer };
+    if (buyer) {
+      // An approval given for the other way of buying is taken back, and the request goes through approval again (P-037).
+      const effects = buyerChangeEffects(stored.request, buyer);
+      if (effects.approval) write.approval = effects.approval;
+      if (effects.clearApprover) Object.assign(write, { approvedOn: null, approvedById: null, approvalNote: '' });
+      if (effects.clearBoughtBefore) write.boughtBeforeApproval = false;
+    }
+    await this.sp.merge(this.item('requests', requestId), requestFields(write));
+    // The company pays for everything the approver buys (P-037), so the totals follow the buyer; the rows keep what the employee chose.
+    if (buyer) await this.updateTotals(requestId, { ...stored, request: { ...stored.request, buyer } });
     return this.readRequest(requestId);
   }
 

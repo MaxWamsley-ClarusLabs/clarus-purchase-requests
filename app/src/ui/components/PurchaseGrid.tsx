@@ -20,7 +20,7 @@ import { suggestedFieldsText, visibleSuggestions } from '../../domain/suggestion
 import { BuyerId, FileKind, PurchaseLine, SuggestedField, TEXT_MAX_LENGTH } from '../../domain/types';
 import { Issue, LineField, ValidationStage, issueForCell, issuesForLine } from '../../domain/validation';
 import { LineChanges } from '../../data/PurchaseDataService';
-import { PASTE_COLUMNS, PasteColumn, parseClipboardTable, pasteWarning, planPaste } from '../pasteParse';
+import { PASTE_COLUMNS, PASTE_COLUMNS_APPROVER_BUYS, PasteColumn, parseClipboardTable, pasteWarning, planPaste } from '../pasteParse';
 import { GRID_LINK_COLUMN_PX, gridMinWidth } from '../theme';
 import { Icon } from './Icon';
 import { Badge, FileChip, FullTextSelect, IssueLine, Tag } from './common';
@@ -112,7 +112,6 @@ function inView(button: HTMLElement): boolean {
 // Columns that take typed or chosen values, in grid order. Used for Enter,
 // Ctrl+D and pasting from a spreadsheet (pasteParse.ts).
 type EditableColumn = PasteColumn;
-const EDITABLE = PASTE_COLUMNS;
 
 /** The change that copies a cell from the row above (Ctrl+D), or null when there is nothing to copy. */
 function copyFromAbove(column: EditableColumn, above: PurchaseLine): LineChanges | null {
@@ -274,11 +273,13 @@ export function PurchaseGrid(props: Props): React.ReactElement {
     const plainOneCell = table.length === 1 && table[0].length === 1 && !/[\t\n\r]/.test(text.replace(/\r?\n$/, ''));
     if (typedBox && plainOneCell) return;
     e.preventDefault();
+    const pasteColumns = approverBuys ? PASTE_COLUMNS_APPROVER_BUYS : PASTE_COLUMNS;
     const plan = planPaste(
       table,
       lines.map((l) => l.id),
       rowIndex,
-      EDITABLE.indexOf(column)
+      pasteColumns.indexOf(column),
+      pasteColumns
     );
     for (const row of plan.rows) {
       if (row.amountText !== undefined) {
@@ -289,7 +290,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
       if (row.changes.date !== undefined) setDateText((t) => without(t, row.lineId));
       props.onChange(row.lineId, row.changes);
     }
-    const warning = pasteWarning(plan);
+    const warning = pasteWarning(plan, pasteColumns);
     if (warning) props.onWarning(warning);
   };
 

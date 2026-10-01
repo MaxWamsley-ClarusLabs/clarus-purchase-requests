@@ -373,6 +373,10 @@ try {
   check(await p.getByText('You have nothing to do.').first().isVisible(), 'Jane is told she has nothing to do: the approver buys it');
   check(await p.getByLabel('Row 1 vendor', exact).isDisabled(), 'Jane cannot change the rows of a request the approver buys');
   check((await p.getByRole('button', { name: 'Submit request', exact: true }).count()) === 0, 'Jane has nothing to submit');
+  check(
+    (await p.getByText('Attach a receipt or invoice, or give a reason there is none.').count()) === 0,
+    'Jane is not asked for a receipt on a request the approver buys: it is the approver to attach'
+  );
   await shot(p, '15-approved-request');
 
   // Max buys it: he opens it from the approvals page, changes it to what he bought, and attaches the receipts.
@@ -455,6 +459,12 @@ try {
     'Sam, who buys it himself, is told to buy, attach and submit'
   );
   check((await p.getByLabel('Row 1 who paid', exact).count()) === 1, 'Sam is asked who paid');
+  await goTo(p, 'sam', '#/request/32/details');
+  check(
+    (await p.getByRole('radio', { name: /The approver buys it/ }).isDisabled()) && (await p.getByRole('radio', { name: /I will buy it myself/ }).isDisabled()),
+    'Who buys this is locked once the request has been approved'
+  );
+  await goTo(p, 'sam', '#/request/32/purchases');
   await p.getByLabel('Row 1 menu', exact).click();
   await p.locator('.ctx-menu input[type=file]').first().setInputFiles(fixture('northwind-office-receipt.png'));
   await p.getByRole('button', { name: /northwind-office-receipt/ }).waitFor();
@@ -596,9 +606,9 @@ try {
   p = await openLive('jane', '#/request/41/purchases');
   await paste(
     p.getByLabel('Row 1 date', exact),
-    '10/15/2026\tAcme Lab Supply\t"Tips,\r\n""sterile"" pack"\tR&D Materials & Supplies\t$1,234.5\tCompany\r\n' +
-      '14/10/2026\tNorthwind Office Supply\tLabels\tStationery\t12,50\tEmployee\r\n' +
-      '2026-10-17\tQuickShip Postage\tPostage\tShipping/Postage\t24.60\tCompany\r\n'
+    '10/15/2026\tAcme Lab Supply\t"Tips,\r\n""sterile"" pack"\tR&D Materials & Supplies\t$1,234.5\r\n' +
+      '14/10/2026\tNorthwind Office Supply\tLabels\tStationery\t12,50\r\n' +
+      '2026-10-17\tQuickShip Postage\tPostage\tShipping/Postage\t24.60\r\n'
   );
   await p.waitForTimeout(1500);
   const pasted = await storedLines(p, 41);

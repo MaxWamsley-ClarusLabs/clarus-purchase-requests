@@ -1,4 +1,4 @@
-import { parseClipboardTable, parsePastedDate, pasteCell, pasteWarning, planPaste } from './pasteParse';
+import { PASTE_COLUMNS_APPROVER_BUYS, parseClipboardTable, parsePastedDate, pasteCell, pasteWarning, planPaste } from './pasteParse';
 
 describe('reading text copied from a spreadsheet', () => {
   it('splits rows at line breaks and cells at tabs, and ignores the line break Excel adds at the end', () => {
@@ -169,5 +169,21 @@ describe('a whole paste', () => {
     const plan = planPaste([['x'.repeat(256), 'y']], ids, 0, 1);
     expect(plan.cut).toBe(1);
     expect(pasteWarning(plan)).toBe('1 cell was cut to 255 characters, the most a box holds.');
+  });
+});
+
+describe('pasting when the approver buys (P-037)', () => {
+  const ids = ['a', 'b'];
+  it('has no Who paid column, so a sixth cell does not fit and the warning says so', () => {
+    const plan = planPaste([['2026-10-14', 'Acme', 'Tips', 'Office Supplies', '45.10', 'https://www.example.com/x']], ids, 0, 0, PASTE_COLUMNS_APPROVER_BUYS);
+    expect(plan.rows[0].changes).toMatchObject({ vendor: 'Acme', amountCents: 4510 });
+    expect(plan.rows[0].changes).not.toHaveProperty('paidBy');
+    expect(pasteWarning(plan, PASTE_COLUMNS_APPROVER_BUYS)).toBe('1 cell was not pasted: cells to the right of Amount do not fit.');
+  });
+
+  it('still has Who paid as the last column when the employee buys', () => {
+    const plan = planPaste([['2026-10-14', 'Acme', 'Tips', 'Office Supplies', '45.10', 'Company', 'extra']], ids, 0, 0);
+    expect(plan.rows[0].changes).toMatchObject({ paidBy: 'company' });
+    expect(pasteWarning(plan)).toBe('1 cell was not pasted: cells to the right of Who paid do not fit.');
   });
 });

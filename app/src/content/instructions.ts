@@ -87,7 +87,7 @@ export const INSTRUCTIONS: InstructionSection[] = [
   {
     heading: 'Categories',
     paragraphs: [
-      'Each category is a QuickBooks account, named exactly as it is in QuickBooks, so your choice is the account. You suggest a category for each row. The approver, when approving, or the administrator can confirm or change it. Equipment and Other have no fixed account: the administrator decides, and confirms them before the request is processed. Choose Other only when nothing fits, and describe the category in the box that appears.'
+      'Each category is a QuickBooks account, named exactly as it is in QuickBooks, so your choice is the account. You suggest a category for each row. The approver, when approving, or the administrator can confirm or change it. Equipment is account 6175, or 1415 Fixed Assets:Equipment if it is capitalized, and Other has no account: the administrator decides both, and confirms them before the request is processed. Choose Other only when nothing fits, and describe the category in the box that appears.'
     ],
     bullets: CATEGORIES.map((c) => `${c.label}: ${c.covers}.`)
   },
@@ -121,7 +121,7 @@ export const INSTRUCTIONS: InstructionSection[] = [
   {
     heading: 'For the approver: approving and buying',
     bullets: [
-      'Under Approvals, "Waiting for approval" lists the requests sent to you, and "To buy" lists the requests you approved that you have not yet marked purchased. You also get an email for each request sent for approval.',
+      'Under Approvals, "Waiting for approval" lists the requests sent to you, and "To buy" lists the approved requests that are waiting to be bought, with "You" beside the ones you approved (only the Owner who approved a request can buy it). You also get an email for each request sent for approval.',
       'Open a request to read it. Item links open the item in a new tab; only a web address that starts with https:// or http:// is a link. Approve confirms the categories shown (change one first if it is wrong) and records every vendor total as approved. Or return it with a note.',
       'To buy it, open the approved request and choose Open to buy. Change each row to what you bought: the vendor, the amount, the date, and extra rows for shipping or tax. The rows as the employee sent them stay on the page. You may spend more than was approved.',
       'Attach the receipt or invoice to each row (row menu, "Attach a receipt or invoice"), or point rows that share one at it ("Same receipt as row"). On Review and mark purchased, choose Mark purchased. A folder with the receipts, the quotes and a spreadsheet is made for the administrator, who is emailed.',

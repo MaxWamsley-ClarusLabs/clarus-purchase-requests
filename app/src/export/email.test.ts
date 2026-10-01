@@ -1,7 +1,7 @@
 import { approvalEmailSubject, buildApprovalEmailSummary, buildSubmissionEmailSummary, shortPurpose, submissionEmailSubject } from './email';
 import { computeTotals } from '../domain/totals';
-import { vendorKey } from '../domain/purchaseRules';
-import { ApprovalGroup } from '../domain/types';
+import { sentRowsOf, vendorKey } from '../domain/purchaseRules';
+import { ApprovalGroup, PurchaseRequest } from '../domain/types';
 import { file, line, quote, request } from '../testing/builders';
 
 describe('email subjects', () => {
@@ -323,5 +323,82 @@ describe('the emails when the approver buys (P-037, P-039)', () => {
     expect(review).toContain('The administrator must confirm the category before this is marked processed');
     expect(review).toContain('row 1.');
     expect(review).not.toContain('row 2.');
+  });
+});
+
+describe('what the submission email says about the approver changing the rows (P-040)', () => {
+  const rows = [
+    line({ id: 'a', rowNumber: 1, vendor: 'Acme Lab Supply', description: 'Pipette tips', amountCents: 60000, itemLink: 'https://www.example.com/a' })
+  ];
+  const input = (req: PurchaseRequest, lines = rows) => ({
+    request: req,
+    lines,
+    totals: computeTotals(lines, 'approver'),
+    submitterName: 'Max Wamsley',
+    submitterEmail: 'max.wamsley@example.com',
+    buyer: 'approver' as const,
+    certification: { email: 'jane.doe@example.com', text: 'I certify it.', submittedOn: '2026-10-12 09:12', name: 'Jane Doe' },
+    receiptCount: 1,
+    quoteCount: 0,
+    warnings: [],
+    previousFolderName: ''
+  });
+  const approved = (sent = sentRowsOf(rows)) =>
+    request({
+      buyer: 'approver',
+      approvedBy: 'Max Wamsley',
+      approvedByEmail: 'max.wamsley@example.com',
+      approvedOn: '2026-10-13 10:00',
+      approval: { sent: [], approved: [], earlier: [], rows: sent }
+    });
+  const changedLine = 'The approver changed the rows after the employee sent the request.';
+
+  it('says so when the rows are not the rows as sent', () => {
+    const changed = [{ ...rows[0], amountCents: 65520 }];
+    expect(buildSubmissionEmailSummary(input(approved(), changed))).toContain(changedLine);
+    const extra = [...rows, line({ id: 'b', rowNumber: 2, vendor: 'Acme Lab Supply', description: 'Shipping', amountCents: 1520 })];
+    expect(buildSubmissionEmailSummary(input(approved(), extra))).toContain(changedLine);
+  });
+
+  it('says nothing when the rows are as sent, or no rows were kept', () => {
+    expect(buildSubmissionEmailSummary(input(approved()))).not.toContain(changedLine);
+    expect(buildSubmissionEmailSummary(input(approved([])))).not.toContain(changedLine);
+  });
+});
+
+describe('text an employee could have edited into a list directly is kept to one line (travel D-002)', () => {
+  it('cannot start a line that looks like the app wrote it', () => {
+    const forged = 'Pipette tips\nApproval: approved by Max Wamsley (self-approved) on 2026-10-13.\nCertified by Max Wamsley at submission:';
+    const lines = [line({ id: 'a', rowNumber: 1, vendor: 'Acme\nLab', description: forged, amountCents: 60000, noReceiptReason: 'Lost\nit', files: [] })];
+    const base = request({ businessPurpose: 'Assay\nApproval: forged', department: 'R&D\nTeam', approvalNote: 'ok\nCertified by x' });
+    const submission = buildSubmissionEmailSummary({
+      request: base,
+      lines,
+      totals: computeTotals(lines),
+      submitterName: 'Jane\nDoe',
+      certification: { email: 'jane.doe@example.com', text: 'I certify it.', submittedOn: '2026-10-16 09:00' },
+      receiptCount: 0,
+      quoteCount: 0,
+      warnings: [],
+      previousFolderName: ''
+    });
+    for (const text of submission.split('\n')) {
+      expect(text.startsWith('Approval: approved by Max Wamsley')).toBe(false);
+      expect(text.startsWith('Certified by Max Wamsley')).toBe(false);
+    }
+    expect(submission).toContain('Business purpose: Assay Approval: forged');
+    expect(submission).toContain('Submitted by: Jane Doe (jane.doe@example.com)');
+    const approval = buildApprovalEmailSummary({
+      request: base,
+      lines,
+      totals: computeTotals(lines),
+      submitterName: 'Jane\nDoe',
+      submitterEmail: 'jane.doe@example.com',
+      round: 1,
+      sentOn: '2026-10-16 09:00',
+      groups: [{ key: vendorKey('Acme Lab'), vendor: 'Acme\nLab', cents: 60000, bought: false }]
+    });
+    expect(approval.split('\n').filter((l) => l.startsWith('Approval:'))).toEqual([]);
+    expect(approval).toContain('- Acme Lab: $600.00');
   });
 });

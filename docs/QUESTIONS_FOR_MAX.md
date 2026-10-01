@@ -179,7 +179,7 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ## 20. Integrity checks the app makes (P-034)
 
-- **Built:** Approve is refused if the vendor totals no longer match what was sent; a row or submission counts for a request only if the request's owner created it; Retry is limited; a row holds its own receipt or points at another row's, not both; a file with no recorded kind counts as a quote; the request number comes from the item's ID. Employees can still edit their own items directly in SharePoint, so these catch mistakes and make dishonest edits harder, not impossible.
+- **Built:** Approve is refused if the vendor totals no longer match what was sent; a row or submission counts for a request only if the request's owner created it (or, for a request the approver buys, the approver who approved it, P-042); Retry is limited; a row holds its own receipt or points at another row's, not both; a file with no recorded kind counts as a quote; the request number comes from the item's ID. Employees can still edit their own items directly in SharePoint, so these catch mistakes and make dishonest edits harder, not impossible.
 - **Options:** A. As built. B. Add a second list employees cannot write to for approvals (P-029's option B).
 - **Recommendation:** A for the pilot; look at B at the security review.
 - **If you choose differently:** `serviceRules.ts`, `SharePointDataService.ts`, `MockDataService.ts`.
@@ -254,15 +254,15 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ## 30. The employee will not see the rows or receipts the approver adds (new, 2026-10-01)
 
-- **What happens:** SharePoint shows each person only the items they created. When the approver adds a row or attaches a receipt to an employee's request, the employee does not see it. They see the request's status (Purchased) and its totals, which include the added row. I expect this, but it is **Unverified** until the test-site checkpoint (step 33, Check 8).
+- **What happens:** SharePoint shows each person only the items they created. When the approver adds a row to an employee's request, the employee does not see that row; receipts the approver attaches to a row the employee made stay visible to them. The employee's list shows the stored request total, which includes the added row, and the request page adds up only the rows they can see, so the two can differ. I expect this, but it is **Unverified** until the test-site checkpoint (step 33, Checks 7 and 8).
 - **Options:** A. Accept it: the employee sees the status and totals, and the folder and CSV are the record (recommended: nothing to build, and the employee has no part in what the approver buys). B. Copy the rows as bought onto the request so the employee can read them (a second copy to keep true). C. Give the employee read access to the approver's rows (a second permission model).
 - **Recommendation:** A. Tell me if employees need to see what was bought.
 - **If you choose differently:** the data layer and `docs/DATA_MODEL.md`.
 
 ## 31. Only the Owner who approved a request can buy it (new)
 
-- **What happens:** the Owner who approved the request is the one who can change its rows and mark it purchased. Another Owner can view it. Today you are the only Owner, so nothing changes for you.
-- **Options:** A. As built (recommended: the record says who bought it). B. Any Owner can buy any approved request (then "approved by" no longer says who bought). C. Hand a request to another Owner.
+- **What happens:** the Owner who approved the request is the one who can change its rows, return it to the employee and mark it purchased. Another Owner can view it and confirm categories, but not return or buy it. If the recorded approver is blank or can no longer act, nobody else can return or buy the request. Today you are the only Owner, so nothing changes for you.
+- **Options:** A. As built (recommended: the record says who bought it). B. Any Owner can buy any approved request (then "approved by" no longer says who bought). C. Hand a request to another Owner. D. Any Owner can return an approved request, only the approver buys (so a request is never stuck).
 - **Recommendation:** A until there is a second Owner; then decide whether C is needed.
 - **If you choose differently:** `mayBuy` in `statuses.ts` and `buyRefusal` in `serviceRules.ts`.
 

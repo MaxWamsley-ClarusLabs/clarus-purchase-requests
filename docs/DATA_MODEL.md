@@ -14,10 +14,10 @@ Three new lists. The travel app's lists and the current Power Apps apps' lists a
 
 | Setting | Value | Why |
 |---|---|---|
-| Item-level permissions | Read items created by the user; create and edit items created by the user | Employees see only their own records (travel D-003). Site Owners (approvers and administrators) see everything |
+| Item-level permissions | Read items created by the user; create and edit items created by the user | Employees see only their own records (travel D-003; Unverified: the travel app's colleague test was still open, so this has not been checked on a real site, and this project's step 33 is the first check). Site Owners (approvers and administrators) see everything |
 | Version history | On, "create a version each time you edit" | The audit trail for direct edits (travel D-002) and automatic saving. It is also the check on an approval edited outside the app (P-029) |
 | Title column | Not required at list level; filled in automatically by the app | The app checks required fields itself, so a half-finished draft can be saved |
-| Attachments | On | Receipts, quotes and package files are stored as list attachments, so they follow the item's permissions |
+| Attachments | On | Receipts, quotes and package files are stored as list attachments, so they follow the item's permissions (Unverified for the approver reading an employee's attachment and for an Owner attaching to an employee's row; checked at the test-site checkpoint) |
 | Whose rows | A row or a submission belongs to a request only if the request's owner created it. For a request the approver buys, the approver recorded in ApprovedBy also counts (P-042) | A row or submission that names someone else's request by number (anyone can type a number) is ignored everywhere in the app, so nobody can add a purchase to another person's request. The approver adds rows and submissions to the request they approved while buying, so theirs count on that request only |
 
 **Dates** are stored as text in the form `YYYY-MM-DD`, not as SharePoint date columns, which shift by a day through time zones (travel D-043). **Amounts** are stored in currency columns with two decimals; all totals are calculated in whole cents in the app.
@@ -32,7 +32,7 @@ Three new lists. The travel app's lists and the current Power Apps apps' lists a
 | RequestNumber | Request number | Single line of text | Set by app | | `PR-` plus the item ID padded to four digits, for example `PR-0042`. Written by the app right after the request is created, for people viewing the list. The app itself shows the number made from the item ID, so an edited or empty column changes nothing |
 | Department | Department | Single line of text | Yes | | Filled in from the employee's latest request when a request is created (P-022) |
 | ProjectCode | Project or grant code | Single line of text | No | | For example "NSF SBIR Phase 1 (Award # 2528301)", offered as a quick pick, never filled in by default |
-| Buyer | Who buys this | Choice: The approver buys it, I will buy it myself | Set by app | | Default "The approver buys it" (P-037). The employee chooses while the request is a Draft or Returned. A value that is not one of the two is read as the default, so a bad edit cannot turn the approval rule off |
+| Buyer | Who buys | Choice: The approver buys it, I will buy it myself | Set by app | | Default "The approver buys it" (P-037). The employee chooses while the request is a Draft or Returned; the services refuse a change at any other status, and a change on a returned request takes back any approval it held. A value that is not one of the two is read as the default, so a bad edit cannot turn the approval rule off |
 | RequestStatus | Status | Choice: Draft, Awaiting approval, Approved, Submitted, Returned, Processed | Set by app | Yes | Default Draft |
 | ReturnNote | Return note | Multiple lines of plain text | | | Written by the approver or the administrator when returning |
 | ReturnStage | Returned at | Choice: Approval, Processing | | | Whether the return came at the approval step or at processing; wording only |

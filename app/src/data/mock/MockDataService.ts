@@ -14,7 +14,7 @@ import { DEFAULT_BUYER, EMPTY_APPROVAL, findBuyer, groupsForApproved, matchesWha
 import { checkReceiptFile } from '../../domain/receipts';
 import { isEditable, mayBuy } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
-import { AttachedFile, CurrentUser, FileKind, PurchaseLine, PurchaseRequest, Submission } from '../../domain/types';
+import { AttachedFile, BuyerId, CurrentUser, FileKind, PurchaseLine, PurchaseRequest, Submission } from '../../domain/types';
 import { FlowConfig, FlowMode, LIVE_DESTINATION, TEST_FOLDERS } from '../../export/flowPackage';
 import { PreparedSubmission, prepareApprovalRequest, prepareSubmission } from '../../export/submission';
 import { fingerprintFile, uniqueName } from '../files';
@@ -29,6 +29,8 @@ import {
   applyRequestChanges,
   approvalWhenApproved,
   approvalWhenReturned,
+  buyerChangeEffects,
+  buyerChangeRefusal,
   approvalWhenSent,
   buyRefusal,
   canConfirmCategories,
@@ -192,10 +194,18 @@ export class MockDataService implements PurchaseDataService {
     await this.pause();
     const request = this.requestForEdit(requestId);
     const buyerChanged = changes.buyer !== undefined && !!findBuyer(changes.buyer) && changes.buyer !== request.buyer;
-    Object.assign(request, applyRequestChanges(request, changes), { lastChanged: this.stamp() });
     if (buyerChanged) {
-      // The company pays for everything the approver buys (P-037), so every row says so, and the totals follow.
-      if (request.buyer === 'approver') for (const line of this.linesOf(requestId)) line.paidBy = 'company';
+      const refusal = buyerChangeRefusal(request.status);
+      if (refusal) throw new NotAllowedError(refusal);
+    }
+    const effects = buyerChanged ? buyerChangeEffects(request, changes.buyer as BuyerId) : undefined;
+    Object.assign(request, applyRequestChanges(request, changes), { lastChanged: this.stamp() });
+    if (effects) {
+      // An approval given for the other way of buying is taken back, and the request goes through approval again (P-037).
+      if (effects.approval) request.approval = effects.approval;
+      if (effects.clearApprover) Object.assign(request, { approvedOn: '', approvedBy: '', approvedByEmail: '', approvalNote: '' });
+      if (effects.clearBoughtBefore) request.boughtBeforeApproval = false;
+      // The company pays for everything the approver buys (P-037), so the totals follow the buyer; the rows keep what the employee chose.
       this.touch(requestId);
     }
     this.changed();
@@ -734,6 +744,8 @@ export class MockDataService implements PurchaseDataService {
   /** Remembers that the approver added this row, because it is not the employee's (P-037). */
   private markAddedBy(line: PurchaseLine, editor: LineEditor): void {
     if (!editor.approverName) return;
+    // A row the owner adds is theirs even when the owner is also the approver (self-approved), as on SharePoint.
+    if (this.mustFindRequest(line.requestId).ownerEmail.toLowerCase() === this.email) return;
     this.store.approverLineIds = [...(this.store.approverLineIds ?? []), line.id];
   }
 

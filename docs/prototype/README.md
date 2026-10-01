@@ -85,7 +85,7 @@ All at 1440 pixels wide (a typical laptop) unless noted.
 | `25-admin-csv.png` | The CSV file's contents (31 columns, one row per purchase) |
 | `26-admin-folder-contents.png` | The files that go in the request folder |
 | `37-admin-request-purchased.png` | PR-0039, which Max bought: the rows as the employee sent them, then what was bought, with the buyer named |
-| `38-admin-approvals-to-buy.png` | The Approvals page with the To buy list: approved requests the signed-in approver still has to buy |
+| `38-admin-approvals-to-buy.png` | The Approvals page with the To buy list: the approved requests waiting to be bought, with "You" beside the ones the signed-in approver approved |
 | `27-admin-needs-attention.png` | An approval email that was not sent, a package that was not created, and a possible duplicate between two employees |
 | `28-admin-failed-package.png` | A failed package, with Retry packaging. The red banner says what to do first |
 | `29-admin-all-requests.png` | Every employee's requests, with a filter for each status |
@@ -99,6 +99,7 @@ All at 1440 pixels wide (a typical laptop) unless noted.
 `npm run screenshots` also checks these in a real browser, and fails if any is wrong or if the browser reports an error:
 
 - The usual path above: Jane sends PR-0041 and ticks the certification (Send stays disabled until she does; nothing is flagged as bought before approval), Max approves it with a changed category, Jane sees who approved it and is told she has nothing to do and cannot change the rows, Max opens it to buy, changes an amount, attaches receipts, adds a row that shares a receipt, and marks it purchased (the dialog says Jane certified it; he ticks nothing). The CSV names the QuickBooks account on each row. Max marks it processed.
+- A request the approver buys: Jane is not asked for a receipt (it is the approver's to attach), and who buys cannot be changed once the request is approved.
 - The other path: Max approves PR-0032, Sam is told to buy, attach and submit, is asked who paid, and cannot submit until the certification is ticked.
 - The quote rule: a $640 vendor total with no quote shows the message and the "No quote: say why" box, and an item link or a reason is asked for when the approver buys. A quote dropped with the switch on Quotes is attached as a quote and is not read.
 - The receipt reader fills in the Northwind, QuickShip and Summit files (date, vendor and amount) and marks them as suggested.
@@ -118,7 +119,7 @@ Claude reviewed every screen before sending them. Changes made:
 
 1. **The grid has fixed column widths**, so a long file name cannot widen the Files column and squeeze the vendor and description. The whole grid needs about 1090 pixels. The files panel sits beside it only when the page has room for the whole grid (about 1790 pixels wide with the full sidebar), and is a slide-over otherwise. On a screen too narrow for the grid it scrolls sideways, and the row menu column stays at the right edge so it can always be reached.
 2. **The row menu is fixed to the window**, so the grid's own scrolling cannot cut it off. It opens upward near the bottom of the screen and follows its button when the page scrolls.
-3. **The administrator's purchases table is compact** (eight columns: one Files column replaces Receipt and Quote, and Who paid sits under the amount) so it fits from 1024 wide up without scrolling.
+3. **The administrator's purchases table is compact** (nine columns since the item link was added: one Files column replaces Receipt and Quote, and Who paid sits under the amount) so it fits from 1024 wide up without scrolling.
 4. **Header buttons sit on the right** when a long title pushes them to a second line, and request numbers never wrap.
 5. **Receipt suggestions apply to receipts only.** A quote dropped on the box is attached as a quote and typed by hand.
 6. **The "No quote" and "No receipt" boxes appear when they matter**: the quote reason on the first row of a vendor total of $500 or more while the request is waiting to be sent, the receipt reason once approval is done.
@@ -148,6 +149,7 @@ A second round (a browser test of the fixes, a review of the fixes, and a check 
 ## Known limits of the preview
 
 - **PDF files** show in the browser's own PDF viewer. The headless browser used for screenshots has no PDF viewer, so the screenshots of the slide-over use an image receipt. In SharePoint the app loads each PDF itself before showing it, so SharePoint's download settings cannot block the preview.
+- **The employee sees every row**, including rows the approver added. On SharePoint the employee will not see rows the approver added (P-042), so the preview cannot show that effect.
 - **Packaging and email** are simulated: a submission becomes "Packaged" after about three seconds and an approval email after about a second and a half.
 - **Set-up** creates the lists instantly in the preview, and the flow package it downloads uses made-up site addresses and IDs.
 - **Files you attach in the preview** are held in the browser's memory. They are not kept when you switch between people, so the preview of a file attached before a switch can no longer be shown.

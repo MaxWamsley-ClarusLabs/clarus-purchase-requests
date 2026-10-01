@@ -15,7 +15,7 @@ These are decided, not provisional. The new purchasing policy (the last stage) m
 - **Approval threshold: $500, for a request the employee buys.** A vendor total of $500 or more within one request needs the approver's approval before the purchase. Under $500 needs no approval, but the request is still submitted with its receipts (confirmed 2026-10-01).
 - **Item link.** Each row has the web page of the item, or says why there is none. The approver needs it to buy (2026-10-01).
 - **Categories are the QuickBooks accounts.** Thirteen categories, each a QuickBooks account number and name, supplied by Max on 2026-10-01 from the May 1, 2026 account list. Equipment and Other: the administrator decides the account.
-- **The old form's wording is retired.** The attached F2 form's $100 supervisor approval and its "over $500" quote wording are not used and must not appear in this SOP or the purchasing policy (2026-10-01).
+- **The old form's wording is retired.** The attached F2 form's approval and quote wording is not used, and the thresholds above replace it. It must not appear in this SOP or the purchasing policy (2026-10-01).
 - **Who approves.** The site Owners approve. An Owner may approve their own request; it is recorded as self-approved (2026-10-01).
 - **After approval, when the employee buys.** A vendor total that rises more than 10% above the approved amount, or a new vendor total of $500 or more, needs approval again (2026-10-01).
 - **A purchase the employee already made.** It can still be sent for approval first and submitted afterwards, flagged "Bought before approval". Max left the detail to Claude (2026-10-01).
@@ -81,7 +81,7 @@ This app replaces the Word purchase request form and posting it in the Purchasin
 
 ### Categories
 
-Each category is a QuickBooks account, named exactly as it is in QuickBooks, so your choice is the account. You suggest a category for each row. The approver, when approving, or the administrator can confirm or change it. Equipment and Other have no fixed account: the administrator decides, and confirms them before the request is processed. Choose Other only when nothing fits, and describe the category in the box that appears.
+Each category is a QuickBooks account, named exactly as it is in QuickBooks, so your choice is the account. You suggest a category for each row. The approver, when approving, or the administrator can confirm or change it. Equipment is account 6175, or 1415 Fixed Assets:Equipment if it is capitalized, and Other has no account: the administrator decides both, and confirms them before the request is processed. Choose Other only when nothing fits, and describe the category in the box that appears.
 
 - R&D Materials & Supplies: Materials and supplies for research and development work.
 - Equipment: Equipment. The administrator decides whether it is expensed or capitalized.
@@ -122,7 +122,7 @@ You certify the request with this sentence: "I certify that the listed purchases
 
 ### For the approver: approving and buying
 
-- Under Approvals, "Waiting for approval" lists the requests sent to you, and "To buy" lists the requests you approved that you have not yet marked purchased. You also get an email for each request sent for approval.
+- Under Approvals, "Waiting for approval" lists the requests sent to you, and "To buy" lists the approved requests that are waiting to be bought, with "You" beside the ones you approved (only the Owner who approved a request can buy it). You also get an email for each request sent for approval.
 - Open a request to read it. Item links open the item in a new tab; only a web address that starts with https:// or http:// is a link. Approve confirms the categories shown (change one first if it is wrong) and records every vendor total as approved. Or return it with a note.
 - To buy it, open the approved request and choose Open to buy. Change each row to what you bought: the vendor, the amount, the date, and extra rows for shipping or tax. The rows as the employee sent them stay on the page. You may spend more than was approved.
 - Attach the receipt or invoice to each row (row menu, "Attach a receipt or invoice"), or point rows that share one at it ("Same receipt as row"). On Review and mark purchased, choose Mark purchased. A folder with the receipts, the quotes and a spreadsheet is made for the administrator, who is emailed.
@@ -161,12 +161,12 @@ Both roles are held today by the site Owners (people with SharePoint's "Manage w
 
 ### B2a. Buying a request you approved (the usual case)
 
-1. After you approve, the request is under **To buy** on the **Approvals** page. Open it and choose **Open to buy**. Only the Owner who approved the request can change it, attach files to it or mark it purchased; another Owner can view it.
+1. After you approve, the request is under **To buy** on the **Approvals** page (the list shows every approved request waiting to be bought, with **You** beside the ones you approved; the sidebar count is yours only). Open it and choose **Open to buy**. Only the Owner who approved the request can change it, attach files to it or mark it purchased; another Owner can view it.
 2. Open each **Item link** (it opens in a new tab) and buy the item. Back in the app, change each row to what you actually bought: the vendor, the description, the amount, the date. Add a row for anything the employee did not ask for, such as shipping or tax. Attach the receipt or invoice to each row with the row menu; one receipt can cover several rows ("Same receipt as row"). The rows as the employee sent them stay on the page under **As sent for approval**, so you and the administrator can see what changed.
 3. Choose **Next: Review**, then **Mark purchased**. The dialog says the employee certified the request when they sent it, so you tick nothing. The app builds the folder and CSV and emails the administrator (B3). The status shows as **Purchased**.
 4. If you cannot buy it, choose **Return to the employee** with a note. This takes the approval back. It is refused while rows you added are on the request; delete them first.
 5. If **Mark purchased** says the employee's certification is missing, return the request to the employee: they send it again with the certification ticked.
-6. The employee does not see the rows you add or the receipts you attach (SharePoint shows people only their own items; Unverified, checked at the test-site checkpoint). They see the request's status and totals.
+6. The employee does not see the rows you add (SharePoint shows people only the items they created; Unverified, checked at the test-site checkpoint). Receipts you attach to a row the employee made stay visible to them. The employee's list shows the request's stored total, which includes your rows; the request page adds up only the rows they can see.
 
 ### B3. When a request is submitted
 
@@ -226,7 +226,7 @@ To be completed from the test-site runs at the checkpoint. These messages are wr
 | "Only an approval email or a package that failed, or that has not finished after 30 minutes, can be tried again." (administrator) | The page was out of date: the submission had been retried or finished since it was loaded | Reload the page |
 | "The request has moved on since this was sent, so it cannot be tried again." (administrator) | The request was approved, returned or processed since the page was loaded | Nothing to retry |
 | "This request needs approval first." (employee) | The request changed while the page was open, so a vendor total is now over what was approved | Reload the page; the Review step then says what changed, and the button reads Send for approval |
-| "Only the approver who approved this request can change it, attach files to it or mark it purchased." (administrator) | Another Owner approved it | Ask the Owner who approved it, or return it to the employee and approve it yourself |
+| "Only the approver who approved this request can change it, attach files to it or mark it purchased." (administrator) | Another Owner approved it | Ask the Owner who approved it. Handing a request to another Owner is not built (`docs/QUESTIONS_FOR_MAX.md` question 31) |
 | "The employee's certification is missing from this request." (approver) | The employee's approval request does not hold the exact certification sentence | Return the request to the employee; they send it again with the certification ticked |
 | "You added row N to this request, so it cannot be returned yet." (approver) | Returning an approved request takes the approval back, and rows you added would then stop counting | Delete the rows you added, then return it |
 | "Confirm the category of row N first: the account depends on a decision." (administrator) | The row is Equipment or Other and nobody has confirmed its category | Use Confirm categories, then Mark processed |

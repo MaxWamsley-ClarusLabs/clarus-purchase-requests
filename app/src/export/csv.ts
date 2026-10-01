@@ -9,12 +9,12 @@ import { dateRangeText } from '../domain/dates';
 import { centsToPlain } from '../domain/money';
 import { fileNamesForRow } from '../domain/naming';
 import { LINE_APPROVAL_DISPLAY } from '../domain/statuses';
-import { QUICKBOOKS_MAPPING_STATUS, categoryText, findCategory, findPaidBy, isSelfApproved, lineApprovals } from '../domain/purchaseRules';
+import { categoryText, findCategory, findPaidBy, isSelfApproved, lineApprovals } from '../domain/purchaseRules';
 import { Issue } from '../domain/validation';
 import { PurchaseLine, PurchaseRequest } from '../domain/types';
 
-/** "QuickBooks account (from the May 1, 2026 account list)": where the mapping is from is part of the header wherever the CSV is opened. */
-export const ACCOUNT_COLUMN = `QuickBooks account (${QUICKBOOKS_MAPPING_STATUS})` as const;
+/** The account number and exact name from the category (P-038). Where the mapping comes from is QUICKBOOKS_MAPPING_STATUS, shown on the administrator's CSV tab. */
+export const ACCOUNT_COLUMN = 'QuickBooks account' as const;
 
 // Purchase columns come first so the useful part is visible when the file is
 // opened in Excel; the request columns repeat on every row after them (travel D-048).

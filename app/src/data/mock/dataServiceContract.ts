@@ -4,7 +4,10 @@
 // makes a new site and signs people in; what only one of them can show (the
 // stored columns, the REST calls, the simulated flow) is tested in its own file.
 // Tests use global describe, it and expect only, so they also run under Jest.
+//
+// One file on purpose: both services run the same tests, so there is one place to read what "the same" means. It is longer than the lint rule's 2000 lines.
 
+/* eslint-disable max-lines */
 import { messages } from '../../domain/messages';
 import { CERTIFICATION, isSelfApproved, vendorKey } from '../../domain/purchaseRules';
 import { ApprovalGroup, CategoryId, PackageStatus, PaidById, PurchaseLine, RequestStatus, SubmissionType } from '../../domain/types';
@@ -1685,7 +1688,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect((await jane.getRequest(created.id)).request).toMatchObject({ totalReimburseCents: 0, totalCompanyCents: 2500, totalRequestCents: 2500 });
     });
 
-    it('lets the employee choose to buy it themselves, and who paid, and take every row back to the company when the approver buys again', async () => {
+    it('lets the employee choose to buy it themselves and who paid; while the approver buys, the company pays and the choice comes back with the buyer', async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);
       const { id } = await jane.createRequest();
@@ -1696,10 +1699,75 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       await jane.updateLine(row.id, { paidBy: 'employee' });
       expect((await jane.getRequest(id)).request).toMatchObject({ totalReimburseCents: 2500, totalCompanyCents: 0 });
       expect((await jane.updateRequest(id, { buyer: 'approver' })).buyer).toBe('approver');
-      expect((await jane.getRequest(id)).lines.map((l) => l.paidBy)).toEqual(['company', 'company']);
+      // The company pays for what the approver buys, so the totals say so; the row keeps what the employee chose.
       expect((await jane.getRequest(id)).request).toMatchObject({ totalReimburseCents: 0, totalCompanyCents: 2500 });
+      expect((await jane.getRequest(id)).lines[0].paidBy).toBe('employee');
+      // Back to buying it themselves: the reimbursement is back, nothing was lost.
+      expect((await jane.updateRequest(id, { buyer: 'self' })).buyer).toBe('self');
+      expect((await jane.getRequest(id)).request).toMatchObject({ totalReimburseCents: 2500, totalCompanyCents: 0 });
       // A buyer that is not one of the two changes nothing.
-      expect((await jane.updateRequest(id, { buyer: 'someone' as never })).buyer).toBe('approver');
+      expect((await jane.updateRequest(id, { buyer: 'someone' as never })).buyer).toBe('self');
+    });
+
+    it('does not let the buyer change once the request has been approved or submitted (P-037)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id } = await approvedAndReady(h);
+      const refusal = await jane.updateRequest(id, { buyer: 'approver' }).then(
+        () => undefined,
+        (e: unknown) => e
+      );
+      expect(refusal).toBeInstanceOf(NotAllowedError);
+      expect((refusal as Error).message).toBe(notAllowed.buyerLocked);
+      expect((await jane.getRequest(id)).request).toMatchObject({ buyer: 'self', status: 'Approved' });
+      // The same buyer is not a change.
+      expect((await jane.updateRequest(id, { buyer: 'self', department: 'Testing' })).department).toBe('Testing');
+      await jane.submitRequest(id, CERTIFICATION);
+      await expect(jane.updateRequest(id, { buyer: 'approver' })).rejects.toBeInstanceOf(NotAllowedError);
+    });
+
+    it('takes an approval back when the buyer changes on a request returned at processing, so it can be sent to the approver (P-037)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const max = h.as(MAX, APPROVED_AT);
+      const { id } = await approvedAndReady(h);
+      await h.as(JANE, SUBMITTED_AT).submitRequest(id, CERTIFICATION);
+      await max.returnRequest(id, 'Please add the invoice.');
+      expect((await jane.getRequest(id)).request).toMatchObject({ status: 'Returned', returnStage: 'processing', approvedBy: 'Max Wamsley' });
+      await jane.updateRequest(id, { buyer: 'approver' });
+      const { request } = await jane.getRequest(id);
+      expect(request).toMatchObject({
+        buyer: 'approver',
+        status: 'Returned',
+        approvedBy: '',
+        approvedByEmail: '',
+        approvedOn: '',
+        approvalNote: '',
+        boughtBeforeApproval: false
+      });
+      expect(request.approval.approved).toEqual([]);
+      // It now needs approval, and can be sent with the certification (it was a dead end: it read as approved).
+      // The approver needs the web address of each item, or a reason, so the employee adds them first.
+      const rows = (await jane.getRequest(id)).lines;
+      await expect(jane.sendForApproval(id, CERTIFICATION)).rejects.toBeInstanceOf(SubmissionBlockedError);
+      for (const row of rows) await jane.updateLine(row.id, { itemLink: `https://www.example.com/item-${row.rowNumber}` });
+      const sent = await jane.sendForApproval(id, CERTIFICATION);
+      expect(sent).toMatchObject({ type: 'approval', certificationText: CERTIFICATION });
+      expect((await jane.getRequest(id)).request.status).toBe('Awaiting approval');
+    });
+
+    it('lets an approver who is also the requester return the request after adding a row of their own, as the owner (P-042)', async () => {
+      const h = await makeHarness();
+      const max = h.as(MAX, NOW);
+      const made = await fill(max, [NORTHWIND], { ...HEADER, buyer: 'approver' });
+      await max.sendForApproval(made.id, CERTIFICATION);
+      const approver = h.as(MAX, APPROVED_AT);
+      await approver.approveRequest(made.id, { note: '', categories: {} });
+      await approver.addEmptyLine(made.id);
+      // The row is the owner's own, so it does not stop the return (the approver is the owner).
+      await approver.returnRequest(made.id, 'I cannot buy it today.');
+      expect((await max.getRequest(made.id)).request.status).toBe('Returned');
+      expect((await max.getRequest(made.id)).lines).toHaveLength(2);
     });
 
     it('sends every request to the approver, however small, and asks for the web address of each item or a reason (P-039)', async () => {
@@ -1876,6 +1944,8 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect(submission.emailSubject).toBe('Purchase request bought: Jane Doe, Lab supplies for the Phase 1 assay (PR-0001)');
       expect(submission.emailSummary).toContain('Bought by the approver: Max Wamsley (max.wamsley@example.com)');
       expect(submission.emailSummary).toContain('Certified by Jane Doe (jane.doe@example.com) when the request was sent, ');
+      // The administrator is told the approver changed the rows the employee sent.
+      expect(submission.emailSummary).toContain('The approver changed the rows after the employee sent the request.');
       const request = (await max.getRequest(id)).request;
       expect(request).toMatchObject({ status: 'Submitted', submissionCount: 1 });
       // What Jane sent is kept as it was.

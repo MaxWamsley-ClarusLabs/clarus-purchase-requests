@@ -1,5 +1,5 @@
 import { ACCOUNT_COLUMN, CSV_COLUMNS, approverText, buildPurchasesCsv, csvCell } from './csv';
-import { QUICKBOOKS_MAPPING_STATUS, vendorKey } from '../domain/purchaseRules';
+import { vendorKey } from '../domain/purchaseRules';
 import { ApprovalRecord } from '../domain/types';
 import { file, line, quote, request } from '../testing/builders';
 
@@ -133,11 +133,10 @@ describe('buildPurchasesCsv', () => {
     expect(rows.every((r) => r.length === CSV_COLUMNS.length)).toBe(true);
   });
 
-  it('says in the header where the QuickBooks account is from (P-038), in the ninth column', () => {
-    expect(ACCOUNT_COLUMN).toBe(`QuickBooks account (${QUICKBOOKS_MAPPING_STATUS})`);
-    expect(rows[0][8]).toBe('QuickBooks account (from the May 1, 2026 account list)');
-    // The header has a comma, so it is quoted.
-    expect(csv.slice(1).split('\r\n')[0]).toContain(',"QuickBooks account (from the May 1, 2026 account list)",Amount,');
+  it('names the QuickBooks account column exactly (P-038), in the ninth column', () => {
+    expect(ACCOUNT_COLUMN).toBe('QuickBooks account');
+    expect(rows[0][8]).toBe('QuickBooks account');
+    expect(csv.slice(1).split('\r\n')[0]).toContain(',QuickBooks account,Amount,');
     expect(rows[0].slice(0, 10)).toEqual([
       'Request',
       'Row',

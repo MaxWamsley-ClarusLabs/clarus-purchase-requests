@@ -113,3 +113,28 @@ describe('file copies', () => {
     expect(fileNamesForRow(broken, [lines[0], broken], 'receipt')).toEqual(['R02_own-slip.pdf']);
   });
 });
+
+describe('a long employee name (flow limit of 120 characters on a folder name)', () => {
+  it('is cut, so the request number and the resubmission suffix are never lost', () => {
+    const name = 'Maximiliana Alexandra Wilhelmina von Hohenzollern-Sigmaringen the Third';
+    const first = folderName({
+      firstPurchaseDate: '2026-10-12',
+      ownerName: name,
+      businessPurpose: 'Lab supplies for the Phase 1 assay of the new compound',
+      requestNumber: 'PR-0042',
+      submissionNumber: 1
+    });
+    const second = folderName({
+      firstPurchaseDate: '2026-10-12',
+      ownerName: name,
+      businessPurpose: 'Lab supplies for the Phase 1 assay of the new compound',
+      requestNumber: 'PR-0042',
+      submissionNumber: 2
+    });
+    expect(first.length).toBeLessThanOrEqual(120);
+    expect(second.length).toBeLessThanOrEqual(120);
+    expect(first.endsWith('_PR-0042')).toBe(true);
+    expect(second.endsWith('_PR-0042_R2')).toBe(true);
+    expect(first).not.toBe(second);
+  });
+});

@@ -11,6 +11,8 @@ import { LineChanges } from '../data/PurchaseDataService';
 /** The grid's columns that take a typed or chosen value, in grid order. Pasted columns fill these from left to right. */
 export type PasteColumn = 'date' | 'vendor' | 'description' | 'category' | 'amount' | 'paidBy';
 export const PASTE_COLUMNS: readonly PasteColumn[] = ['date', 'vendor', 'description', 'category', 'amount', 'paidBy'];
+/** When the approver buys, nobody is asked who paid, so the grid has no such column (P-037). */
+export const PASTE_COLUMNS_APPROVER_BUYS: readonly PasteColumn[] = PASTE_COLUMNS.filter((c) => c !== 'paidBy');
 
 /** Why a pasted cell that held something was not used. */
 export type PasteProblem = 'date' | 'category' | 'amount' | 'paidBy' | 'outside';
@@ -184,7 +186,13 @@ const filled = (cell: string): boolean => cell.trim() !== '';
  * into (row `startRow` of `lineIds`, column `startColumn` of PASTE_COLUMNS),
  * and the rest fill the cells below and to the right.
  */
-export function planPaste(table: readonly (readonly string[])[], lineIds: readonly string[], startRow: number, startColumn: number): PastePlan {
+export function planPaste(
+  table: readonly (readonly string[])[],
+  lineIds: readonly string[],
+  startRow: number,
+  startColumn: number,
+  columns: readonly PasteColumn[] = PASTE_COLUMNS
+): PastePlan {
   const plan: PastePlan = { rows: [], rowsLeftOver: 0, skipped: {}, cut: 0 };
   const skip = (problem: PasteProblem) => (plan.skipped[problem] = (plan.skipped[problem] ?? 0) + 1);
   table.forEach((cells, r) => {
@@ -196,7 +204,7 @@ export function planPaste(table: readonly (readonly string[])[], lineIds: readon
     let changes: LineChanges = {};
     let amountText: string | undefined;
     cells.forEach((cell, c) => {
-      const column = PASTE_COLUMNS[startColumn + c];
+      const column = columns[startColumn + c];
       if (!column) {
         if (filled(cell)) skip('outside');
         return;
@@ -213,18 +221,18 @@ export function planPaste(table: readonly (readonly string[])[], lineIds: readon
 }
 
 /** Why a cell was not pasted. An amount that is not a number is not skipped: it empties the amount, and is counted on its own. */
-const REASONS: Record<Exclude<PasteProblem, 'amount'>, string> = {
+const REASONS = {
   date: 'dates must look like 2026-10-14, 10/14/2026 or Oct 14, 2026',
   category: 'categories must match a category name',
   paidBy: `who paid must be ${PAID_BY_OPTIONS.map((p) => p.label).join(' or ')}`,
   outside: 'cells to the right of Who paid do not fit'
-};
+} satisfies Record<Exclude<PasteProblem, 'amount'>, string>;
 const ORDER: readonly Exclude<PasteProblem, 'amount'>[] = ['date', 'category', 'paidBy', 'outside'];
 
 const count = (n: number, one: string, many: string): string => (n === 1 ? `1 ${one}` : `${n} ${many}`);
 
 /** The warning to show after a paste, or '' when everything pasted went in as it was. */
-export function pasteWarning(plan: PastePlan): string {
+export function pasteWarning(plan: PastePlan, columns: readonly PasteColumn[] = PASTE_COLUMNS): string {
   const parts: string[] = [];
   if (plan.rowsLeftOver > 0) {
     const n = plan.rowsLeftOver;
@@ -235,7 +243,10 @@ export function pasteWarning(plan: PastePlan): string {
   }
   const problems = ORDER.filter((p) => (plan.skipped[p] ?? 0) > 0);
   const skipped = problems.reduce((sum, p) => sum + (plan.skipped[p] ?? 0), 0);
-  if (skipped > 0) parts.push(`${count(skipped, 'cell was', 'cells were')} not pasted: ${problems.map((p) => REASONS[p]).join('; ')}.`);
+  // The last column the grid has to paste into: when the approver buys, that is Amount (the item link is typed or pasted into its own box).
+  const lastColumn = columns[columns.length - 1] === 'paidBy' ? 'Who paid' : 'Amount';
+  const reason = (p: Exclude<PasteProblem, 'amount'>) => (p === 'outside' ? `cells to the right of ${lastColumn} do not fit` : REASONS[p]);
+  if (skipped > 0) parts.push(`${count(skipped, 'cell was', 'cells were')} not pasted: ${problems.map(reason).join('; ')}.`);
   const amounts = plan.skipped.amount ?? 0;
   if (amounts > 0)
     parts.push(`${count(amounts, 'amount was not a number and was', 'amounts were not numbers and were')} left empty: amounts must be numbers like 45.10.`);

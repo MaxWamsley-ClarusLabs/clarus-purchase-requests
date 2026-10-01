@@ -44,7 +44,7 @@ export function SentRowsCard(props: { request: PurchaseRequest; lines: PurchaseL
                   {r.itemLink.trim() ? (
                     <ItemLinkText value={r.itemLink} maxChars={30} />
                   ) : r.noLinkReason.trim() ? (
-                    <span className="ctx-muted">{r.noLinkReason}</span>
+                    <span className="ctx-muted">No web page: {r.noLinkReason}</span>
                   ) : null}
                 </td>
                 <td className="num">{r.amountCents === null ? '' : formatCents(r.amountCents)}</td>

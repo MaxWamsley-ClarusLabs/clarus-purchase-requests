@@ -52,6 +52,8 @@ export const notAllowed = {
   buyerOnly: 'Only the approver who approved this request can change it, attach files to it or mark it purchased.',
   buyWhen: 'Only an approved request that the approver buys can be marked purchased.',
   employeeBuys: 'The employee buys this request, so it is submitted by the employee.',
+  /** Who buys is chosen while the request is being made or corrected, not after it has been sent or approved (P-037). */
+  buyerLocked: 'Who buys this can be changed only while the request is a draft or has been returned to you.',
   certificationMissing: "The employee's certification is missing from this request. Return it to the employee, who can send it again with the certification.",
   addedRowsFirst: (rows: string) =>
     `You added ${rows} to this request, so it cannot be returned yet. Delete ${rows.startsWith('rows ') ? 'them' : 'it'}, then return it.`,
@@ -323,6 +325,34 @@ export function categoryUpdates(lines: readonly PurchaseLine[], choices: Record<
  */
 export function holdsApproval(request: Pick<PurchaseRequest, 'approvedOn' | 'approvedBy' | 'approvedByEmail' | 'approvalNote'>): boolean {
   return request.approvedOn !== '' || request.approvedBy !== '' || request.approvedByEmail !== '' || request.approvalNote !== '';
+}
+
+// ---- Changing who buys (P-037) ------------------------------------------------
+
+/** Why the buyer cannot be changed now, or '' when it can: only while the request is a draft or has been returned. */
+export function buyerChangeRefusal(status: RequestStatus): string {
+  return status === 'Draft' || status === 'Returned' ? '' : notAllowed.buyerLocked;
+}
+
+/**
+ * What changing the buyer of a draft or returned request takes back. An
+ * approval was given for the other way of buying (a request returned at
+ * processing keeps it), so the approval is taken back as a return at the
+ * approval step does, keeping the earlier ones; the request goes through
+ * approval again. A bought-before-approval flag belongs to a request the
+ * employee buys, so it goes when the approver will buy. Rows keep what the
+ * employee chose for "who paid"; the totals and the CSV count the company as
+ * the payer while the approver buys.
+ */
+export function buyerChangeEffects(
+  request: Pick<PurchaseRequest, 'approval' | 'approvedOn' | 'approvedBy' | 'approvedByEmail' | 'approvalNote' | 'boughtBeforeApproval'>,
+  buyer: BuyerId
+): { approval?: ApprovalRecord; clearApprover: boolean; clearBoughtBefore: boolean } {
+  return {
+    approval: request.approval.approved.length > 0 ? approvalWhenReturned(request.approval) : undefined,
+    clearApprover: holdsApproval(request),
+    clearBoughtBefore: buyer === 'approver' && request.boughtBeforeApproval
+  };
 }
 
 // ---- The approval record at each step (P-017, P-019, P-027) -------------------

@@ -33,7 +33,7 @@
 | 12. Security review and SOP proof pass | Not started | Includes the accepted risks P-029 and P-033 and the gap in question 22 |
 | 13. Pilot | Not started | |
 | 14. Production | Not started | |
-| 15. New purchasing policy (last stage) | Not started | Max writes the policy with Claude; `purchaseRules.ts`, the Instructions, the SOP and the form text follow. The old P4 policy was not used or looked for |
+| 15. New purchasing policy (last stage) | Draft R0 written 2026-10-01 (`docs/POLICY.md`, P-044); waiting for Max's review, two placeholders (effective date, retention) | Max writes the policy with Claude; `purchaseRules.ts`, the Instructions, the SOP and the form text follow. The old P4 policy was not used or looked for |
 
 ## Pending items
 

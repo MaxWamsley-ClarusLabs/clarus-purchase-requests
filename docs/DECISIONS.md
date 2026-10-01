@@ -365,6 +365,15 @@ Max said that about 95% of purchases are bought by the person who approves them,
 - **Provisional (Claude):** the flow imported first is still the **Test** package (folders go to the site's own Documents library, P-008), so nothing is written to the Accounting folder until the checkpoint passes. Part 8 of the checkpoint then turns the Test flow off, deletes the test items and the `Purchases_Test` folder, makes and imports the **Live** package, and watches one request arrive. Two flows must never be on together, because both watch the same Purchase Submissions list. Test requests use up request numbers on the real lists, so the first real request is not PR-0001. The approvers are the Owners at the time the package is made (P-018), so the Owners are set before the packages are made.
 - **Where a change goes:** `docs/CHECKPOINT.md`, `docs/SOP.md` B8 and B9.
 
+## P-044. The purchasing policy: scope and the new rules (draft R0)
+
+- **Date:** 2026-10-01
+- **Status:** Decided (Max, 2026-10-01, in the policy workshop). The draft is `docs/POLICY.md`; it is not adopted. Details marked Provisional (Claude) are Claude's drafting choices.
+- **Decision:** (1) Claude drafts the policy in Max's style without reading the existing company policies (Max: "I want you to draft it yourself"). (2) A short section on grant-funded purchases: the project or grant code is required, the approver checks the purchase is allowable under the award, and the award terms rule. (3) One approval tier: $500 (P-005); no second approver and no extra quote tier. (4) **Equipment over $5,000 per item bought with grant funds needs prior written approval from the NSF program officer.** The $5,000 is only a grant rule. Equipment in QuickBooks has no minimum cost (Max: "equipment on Intuit can be any cost"), so there is no capitalization threshold in the policy; the administrator still decides how it is booked. This closes question 32. (5) Employee-paid purchases: the company card or an invoice is the default; an employee may buy and be reimbursed, with approval as in P-005, receipts, and submission within 30 days of the purchase date (the 30 days is Claude's recommendation, accepted by Max's "agree with 5").
+- **Provisional (Claude):** the policy applies to employees and anyone who buys for Clarus; prohibited purchases are personal items, anything reimbursed elsewhere, gifts and entertainment without the CEO's written approval, and splitting a purchase to avoid a threshold; the CEO may approve exceptions in writing and only the CEO changes the policy. Two placeholders remain: the effective date and the record retention period.
+- **Not yet in the app:** the $5,000 grant rule and the 30-day deadline are in the policy only. The app does not check them (the approver is the control). A warning for Equipment rows of $5,000 or more on a request with a grant code, and a late-submission warning, are possible later changes to `purchaseRules.ts` and need Max's yes.
+- **Where a change goes:** `docs/POLICY.md`, the Word copy in `Purchase Requests / SOP and Policy`, and `purchaseRules.ts` if the app is to enforce more.
+
 ---
 
 ## Status of strategy items

@@ -3,6 +3,7 @@
 // from purchaseRules.ts; the certification sentence is CERTIFICATION there.
 
 import { FIRST_YEAR, LAST_YEAR } from './dates';
+import { MAX_AMOUNT_CENTS, formatCents } from './money';
 import { APPROVAL_THRESHOLD_TEXT, OVERRUN_TOLERANCE_PERCENT, QUOTE_THRESHOLD_TEXT } from './purchaseRules';
 
 const thisVendor = (vendor: string): string => (vendor.trim() ? vendor.trim() : 'A purchase with no vendor yet');
@@ -18,8 +19,8 @@ export const messages = {
   descriptionRequired: 'Say what was bought and why.',
   categoryRequired: 'Choose a category.',
   categoryOtherRequired: 'Describe the category, for "Other".',
-  /** For an amount that is empty, or typed in a way that is not an amount (a decimal comma, three decimals). */
-  amountRequired: 'Enter an amount like 45.10: digits, and at most two decimals.',
+  /** For an amount that is empty, or typed in a way that is not an amount (a decimal comma, three decimals, too large: P-035). */
+  amountRequired: `Enter an amount like 45.10: digits, at most two decimals, up to ${formatCents(MAX_AMOUNT_CENTS)}.`,
   amountNotPositive: 'Enter an amount greater than zero, like 45.10.',
   paidByRequired: 'Choose who paid.',
   receiptOrReason: 'Attach a receipt or invoice, or give a reason there is none.',
@@ -31,6 +32,9 @@ export const messages = {
     `${thisVendor(vendor)} totals ${total}, which is ${QUOTE_THRESHOLD_TEXT} or more. Attach a quote, or say why there is none.`,
   boughtBeforeWarning: (vendor: string, total: string) =>
     `${thisVendor(vendor)} totals ${total} and looks already bought (dated before today, or a receipt is attached). It can still be sent for approval, flagged Bought before approval.`,
+  /** For a vendor total flagged in an earlier round when nothing in it looks bought now: the flag stays (P-017). */
+  boughtBeforeEarlierWarning: (vendor: string, total: string) =>
+    `${thisVendor(vendor)} totals ${total} and was flagged as bought before approval when it was sent before. It can still be sent for approval.`,
   vendorNeedsApproval: (vendor: string, total: string) =>
     `${thisVendor(vendor)} totals ${total}, which is ${APPROVAL_THRESHOLD_TEXT} or more, so it needs approval before you buy.`,
   changedSinceApproval: (vendor: string, total: string, approved: string) =>

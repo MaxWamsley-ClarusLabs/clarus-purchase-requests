@@ -11,6 +11,7 @@ import { hasReceipt } from '../../domain/receipts';
 import { computeTotals } from '../../domain/totals';
 import {
   ApprovalGroup,
+  ApprovalRecord,
   AttachedFile,
   CurrentUser,
   FileKind,
@@ -67,7 +68,7 @@ function request(r: Partial<PurchaseRequest> & Pick<PurchaseRequest, 'id' | 'bus
     totalRequestCents: 0,
     sentForApprovalOn: '',
     boughtBeforeApproval: false,
-    approval: { sent: [], approved: [] },
+    approval: { sent: [], approved: [], earlier: [] },
     approvalNote: '',
     approvedOn: '',
     approvedBy: '',
@@ -355,7 +356,7 @@ export function createSampleStore(): SampleStore {
       status: 'Awaiting approval',
       approvalRounds: 1,
       sentForApprovalOn: '2026-09-29 09:12',
-      approval: { sent: sent40, approved: [] },
+      approval: { sent: sent40, approved: [], earlier: [] },
       ownerName: jane.displayName,
       ownerEmail: jane.email,
       lastChanged: '2026-09-29 09:12'
@@ -368,7 +369,7 @@ export function createSampleStore(): SampleStore {
       status: 'Approved',
       approvalRounds: 1,
       sentForApprovalOn: '2026-09-24 15:40',
-      approval: { sent: sent38, approved: groupsForApproved(of(38), sent38) },
+      approval: { sent: sent38, approved: groupsForApproved(of(38), sent38), earlier: [] },
       approvalNote: 'OK, use the company card.',
       approvedOn: '2026-09-25 10:05',
       approvedBy: max.displayName,
@@ -387,7 +388,7 @@ export function createSampleStore(): SampleStore {
       approvalRounds: 1,
       sentForApprovalOn: '2026-09-21 11:05',
       boughtBeforeApproval: anyBoughtBefore(sent37),
-      approval: { sent: sent37, approved: groupsForApproved(of(37), sent37) },
+      approval: { sent: sent37, approved: groupsForApproved(of(37), sent37), earlier: [] },
       approvedOn: '2026-09-22 14:30',
       approvedBy: max.displayName,
       approvedByEmail: max.email,
@@ -443,7 +444,7 @@ export function createSampleStore(): SampleStore {
       returnNote: 'Please add a quote for the second vendor, or say why there is none.',
       approvalRounds: 1,
       sentForApprovalOn: '2026-10-01 10:20',
-      approval: { sent: sent33, approved: [] },
+      approval: { sent: sent33, approved: [], earlier: [] },
       ownerName: sam.displayName,
       ownerEmail: sam.email,
       lastChanged: '2026-10-02 09:40'
@@ -455,7 +456,7 @@ export function createSampleStore(): SampleStore {
       status: 'Awaiting approval',
       approvalRounds: 1,
       sentForApprovalOn: '2026-10-02 16:45',
-      approval: { sent: sent32, approved: [] },
+      approval: { sent: sent32, approved: [], earlier: [] },
       ownerName: sam.displayName,
       ownerEmail: sam.email,
       lastChanged: '2026-10-02 16:45'
@@ -597,9 +598,15 @@ function completeSampleOutputs(store: SampleStore): void {
  * Finishes what the simulated flow had still to do. The preview keeps the store
  * as plain data when it switches between people, and the timers that would have
  * finished the work die with the page, so a restored store has every
- * submission that was Uploading, Ready or Processing marked Packaged.
+ * submission that was Uploading, Ready or Processing marked Packaged. A store
+ * kept before approval records held earlier approvals is given empty ones, as
+ * the SharePoint service reads such a record (mapping.ts).
  */
 export function finishPendingWork(store: SampleStore, now: Date = new Date()): void {
+  for (const r of store.requests) {
+    const kept: Partial<ApprovalRecord> = r.approval ?? {};
+    r.approval = { sent: kept.sent ?? [], approved: kept.approved ?? [], earlier: kept.earlier ?? [] };
+  }
   for (const s of store.submissions) {
     if (s.packageStatus !== 'Uploading' && s.packageStatus !== 'Ready' && s.packageStatus !== 'Processing') continue;
     s.packageStatus = 'Packaged';

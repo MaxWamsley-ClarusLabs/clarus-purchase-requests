@@ -91,15 +91,17 @@ All at 1440 pixels wide (a typical laptop) unless noted.
 - An amount typed just after a row is added shows on screen and is saved, and the request total on screen matches what is saved. Typing 30 characters saves at most twice.
 - A pasted row with a US date, a quoted cell with a line break and an amount is read; a pasted date that cannot be read is not used, a bad amount empties the amount, and one warning says what was skipped. A date with a year like 0026 is not saved.
 - A dialog takes the focus and keeps Tab inside; Escape closes it (and the row menu) and the focus returns; a row of the Approvals list opens with Enter.
-- The approver opens the Harbor quote of PR-0040 in the preview.
-- At 1024 and 375 wide, key pages fit their cards.
+- The approver opens the Harbor quote of PR-0040 in the preview, and Tab reaches the PDF inside the preview.
+- At 1024 and 375 wide, key pages fit their cards. The row menu button is inside the visible grid at 1280, 1366, 1600 and 1920 wide.
+- Send for approval waits for a slow save and records the amount typed just before; the row menu is switched off while a file is being attached; an Other description matches what is saved after the category changes and changes back.
+- PR-0032 and PR-0035 offer Retry, and PR-0032's Retry and banner go once it is approved; a package stuck for 45 minutes (`&flow=off`) offers Retry and says so.
 
 ## What the review changed
 
 Claude reviewed every screen before sending them. Changes made:
 
-1. **The grid has fixed column widths**, so a long file name cannot widen the Files column and squeeze the vendor and description. On a screen too narrow for its columns the grid scrolls sideways.
-2. **The row menu is fixed to the window**, so the grid's own scrolling cannot cut it off. It opens upward near the bottom of the screen.
+1. **The grid has fixed column widths**, so a long file name cannot widen the Files column and squeeze the vendor and description. The whole grid needs about 1090 pixels. The files panel sits beside it only when the page has room for the whole grid (about 1790 pixels wide with the full sidebar), and is a slide-over otherwise. On a screen too narrow for the grid it scrolls sideways, and the row menu column stays at the right edge so it can always be reached.
+2. **The row menu is fixed to the window**, so the grid's own scrolling cannot cut it off. It opens upward near the bottom of the screen and follows its button when the page scrolls.
 3. **The administrator's purchases table is compact** (eight columns: one Files column replaces Receipt and Quote, and Who paid sits under the amount) so it fits from 1024 wide up without scrolling.
 4. **Header buttons sit on the right** when a long title pushes them to a second line, and request numbers never wrap.
 5. **Receipt suggestions apply to receipts only.** A quote dropped on the box is attached as a quote and typed by hand.
@@ -118,13 +120,22 @@ Four independent reviews (a requirements audit, a code review of the rules and d
 6. **The approver can read the quote.** Each attached file name on the administrator's request page opens a preview.
 7. **Layout.** Tables scroll inside their cards instead of poking out, from 1024 wide down to a phone. The product is for laptop screens; smaller sizes are usable, not polished.
 
+A second round (a browser test of the fixes, a review of the fixes, and a check of the records against the code) found and fixed these:
+
+8. **The row menu and the Amount, Who paid and Approval columns were out of sight at common laptop widths** (1280, 1366 and 1600 to 1900 pixels). The grid is narrower, the menu column is pinned, and the files panel only sits beside the grid when there is room.
+9. **Saves run in order**, and Send for approval and Submit wait for every save to finish (and stop if one failed), so a quick Send cannot record an amount typed a moment before.
+10. **Changing a category from Other** clears the description on screen as well as in the record.
+11. **Retry** appears on the request page whenever the app's rule allows it, including a submission that is stuck but not marked failed, and not on a request that has moved on.
+12. **The send dialog names the vendors** that look already bought, and a flag kept from an earlier round has its own wording.
+13. **Long words** break at the edge of their box instead of widening the page.
+
 ## Known limits of the preview
 
 - **PDF files** show in the browser's own PDF viewer. The headless browser used for screenshots has no PDF viewer, so the screenshots of the slide-over use an image receipt. In SharePoint the app loads each PDF itself before showing it, so SharePoint's download settings cannot block the preview.
 - **Packaging and email** are simulated: a submission becomes "Packaged" after about three seconds and an approval email after about a second and a half.
 - **Set-up** creates the lists instantly in the preview, and the flow package it downloads uses made-up site addresses and IDs.
 - **Files you attach in the preview** are held in the browser's memory. They are not kept when you switch between people, so the preview of a file attached before a switch can no longer be shown.
-- The preview can show a site before set-up: add `&setup=new` to the address. Add `&reader=off` to turn receipt suggestions off, and `&reset=1` to start again from the sample data.
+- The preview can show a site before set-up: add `&setup=new` to the address. Add `&reader=off` to turn receipt suggestions off, `&flow=off` to keep a submission waiting for the flow (so a stuck one can be shown), and `&reset=1` to start again from the sample data. Do not put `reset=1` in an address you reload: it wipes the data each time.
 
 ## Running it yourself (optional)
 

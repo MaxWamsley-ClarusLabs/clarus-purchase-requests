@@ -9,7 +9,7 @@ import { findCrossEmployeeDuplicates, findDuplicates } from '../../domain/duplic
 import { CERTIFICATION, approvalCoverage, groupsForApproval, vendorGroups } from '../../domain/purchaseRules';
 import { submissionStatusDisplay } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
-import { CurrentUser, PackageStatus, Submission } from '../../domain/types';
+import { ApprovalRecord, CurrentUser, PackageStatus, Submission } from '../../domain/types';
 import { approvalStateOf } from '../../domain/validation';
 import { checkFlowConfig } from '../../export/flowPackage';
 import { LISTS } from '../sharepoint/schema';
@@ -74,7 +74,10 @@ async function harness(): Promise<Harness & { store: SampleStore }> {
       const submission = store.submissions.find((s) => s.id === id)!;
       submission.packageStatus = status;
       submission.errorMessage = errorMessage;
-      if (madeAt) submission.submittedOn = toLocalDateTime(madeAt);
+      if (madeAt) {
+        submission.submittedOn = toLocalDateTime(madeAt);
+        submission.lastChanged = toLocalDateTime(madeAt);
+      }
     },
     editLineDirectly: (lineId, edit) => {
       const line = store.lines.find((l) => l.id === lineId)!;
@@ -91,7 +94,7 @@ async function harness(): Promise<Harness & { store: SampleStore }> {
     },
     leaveApproval: (requestId, approver, approved) => {
       const request = store.requests.find((r) => r.id === requestId)!;
-      request.approval = { sent: request.approval.sent, approved };
+      request.approval = { ...request.approval, approved };
       request.approvedOn = '2026-10-14 10:05';
       request.approvedBy = approver.name;
       request.approvedByEmail = approver.email;
@@ -297,13 +300,21 @@ describe('the sample data (P-031)', () => {
     expect(request(40).approval.sent).toEqual([{ key: 'harborsoftware', vendor: 'Harbor Software', cents: 87000, bought: false }]);
     expect(request(38).approval).toEqual({
       sent: [{ key: 'kestrelinstruments', vendor: 'Kestrel Instruments', cents: 115000, bought: false }],
-      approved: [{ key: 'kestrelinstruments', vendor: 'Kestrel Instruments', cents: 115000, bought: false }]
+      approved: [{ key: 'kestrelinstruments', vendor: 'Kestrel Instruments', cents: 115000, bought: false }],
+      earlier: []
     });
     expect(request(37).approval).toEqual({
       sent: [{ key: 'bluefernwebco', vendor: 'Blue Fern Web Co.', cents: 114000, bought: true }],
-      approved: [{ key: 'bluefernwebco', vendor: 'Blue Fern Web Co.', cents: 114000, bought: true }]
+      approved: [{ key: 'bluefernwebco', vendor: 'Blue Fern Web Co.', cents: 114000, bought: true }],
+      earlier: []
     });
-    expect(request(33).approval).toEqual({ sent: [{ key: 'redwoodfabrication', vendor: 'Redwood Fabrication', cents: 90000, bought: false }], approved: [] });
+    expect(request(33).approval).toEqual({
+      sent: [{ key: 'redwoodfabrication', vendor: 'Redwood Fabrication', cents: 90000, bought: false }],
+      approved: [],
+      earlier: []
+    });
+    // Every sample request has been sent for approval once at most, so none has an earlier approval.
+    expect(store.requests.every((r) => r.approval.earlier.length === 0)).toBe(true);
     expect(request(32).approval.sent.map((g) => g.cents)).toEqual([130000]);
     expect(store.requests.filter((r) => r.approval.sent.length === 0).map((r) => r.requestNumber)).toEqual(['PR-0041', 'PR-0036', 'PR-0035', 'PR-0034']);
   });
@@ -697,6 +708,22 @@ describe('saving after every change (onChange)', () => {
   });
 });
 
+describe('retrying a stuck submission', () => {
+  it('starts the 30 minutes again, so a second Retry is not offered at once', async () => {
+    const store = createSampleStore();
+    const stuck = store.submissions.find((s) => s.id === 9)!; // PR-0035's package, failed
+    const at = (h: number, m: number) => new MockDataService(store, SAMPLE_USERS.admin, 0, undefined, () => new Date(2026, 9, 12, h, m));
+    expect(stuck.packageStatus).toBe('Failed');
+    await at(10, 0).retryPackaging(9);
+    expect(stuck.lastChanged).toBe('2026-10-12 10:00');
+    await tick(10);
+    stuck.packageStatus = 'Ready'; // the flow has not picked it up
+    await expect(at(10, 5).retryPackaging(9)).rejects.toThrow('Only an approval email or a package that failed');
+    await expect(at(10, 30).retryPackaging(9)).rejects.toThrow('Only an approval email or a package that failed');
+    await expect(at(10, 31).retryPackaging(9)).resolves.toMatchObject({ packageStatus: 'Ready' });
+  });
+});
+
 describe('the simulated flow', () => {
   /** Records each status a submission goes through, and waits until it is Packaged. */
   function watch(store: SampleStore, id: number) {
@@ -772,6 +799,18 @@ describe('the simulated flow', () => {
     );
     // Nothing else in the store changes.
     expect({ ...restored, submissions: [] }).toEqual({ ...JSON.parse(JSON.stringify(store)), submissions: [] });
+  });
+
+  it('fills in the earlier approvals of a store kept by the preview before they were recorded, so it still works', async () => {
+    const old = JSON.parse(JSON.stringify(createSampleStore())) as SampleStore;
+    for (const r of old.requests) delete (r.approval as Partial<ApprovalRecord>).earlier;
+    finishPendingWork(old);
+    expect(old.requests.map((r) => r.approval.earlier)).toEqual(old.requests.map(() => []));
+    expect(old.requests.find((r) => r.id === 38)!.approval.approved).toHaveLength(1);
+    // Sam's request returned at the approval step can be sent again from it.
+    const sam = asSam(old);
+    await sam.updateLine((await sam.getRequest(33)).lines[1].id, { noQuoteReason: 'Only one supplier makes it' });
+    expect((await sam.sendForApproval(33)).submissionNumber).toBe(2);
   });
 
   it('finishes unfinished work at the time given', () => {

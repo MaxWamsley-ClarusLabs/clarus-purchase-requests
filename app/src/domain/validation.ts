@@ -11,7 +11,17 @@ import { LineRef, findDuplicates } from './duplicates';
 import { messages } from './messages';
 import { formatCents } from './money';
 import { hasReceipt, receiptSourceRow } from './receipts';
-import { ApprovalState, approvalState, categoryNeedsDescription, groupsForApproval, mustSendForApproval, quoteGaps, vendorGroups } from './purchaseRules';
+import {
+  ApprovalState,
+  approvalState,
+  categoryNeedsDescription,
+  groupsForApproval,
+  isAlreadyBought,
+  mustSendForApproval,
+  quoteGaps,
+  vendorGroups,
+  vendorKey
+} from './purchaseRules';
 import { suggestedFieldsText } from './suggestions';
 import { ApprovalGroup, IsoDate, PurchaseLine, PurchaseRequest } from './types';
 
@@ -66,6 +76,18 @@ export function approvalGroupsToSend(request: Pick<PurchaseRequest, 'approval'>,
 }
 
 /**
+ * Whether the vendor total with this matching key looks bought on `today`:
+ * one of its rows is dated before it, or has a receipt (its own, or another
+ * row's). A vendor total can be flagged bought before approval without this,
+ * when an earlier round flagged it (P-017); the wording then differs.
+ */
+export function looksBoughtNow(lines: readonly PurchaseLine[], key: string, today: IsoDate): boolean {
+  const group = vendorGroups(lines).find((g) => g.key === key);
+  if (!group) return false;
+  return lines.filter((l) => group.lineIds.includes(l.id)).some((l) => isAlreadyBought({ date: l.date, hasReceipt: hasReceipt(l, lines) }, today));
+}
+
+/**
  * Checks a request. `today` is the day it is being checked, which is also the
  * day it would be sent for approval (the bought-before-approval test, P-017).
  */
@@ -85,7 +107,8 @@ export function validateRequest(request: RequestFields, lines: readonly Purchase
 
     if (!line.date.trim()) row('blocking', 'date', messages.dateRequired);
     else if (!isValidIsoDate(line.date)) row('blocking', 'date', messages.dateInvalid);
-    if (!line.vendor.trim()) row('blocking', 'vendor', messages.vendorRequired);
+    // A name made only of characters that show nothing is no name (P-016): such a row would count on its own.
+    if (vendorKey(line.vendor) === '') row('blocking', 'vendor', messages.vendorRequired);
     if (!line.description.trim()) row('blocking', 'description', messages.descriptionRequired);
     if (!line.category) row('blocking', 'category', messages.categoryRequired);
     else if (categoryNeedsDescription(line.category) && !line.categoryOther.trim()) row('blocking', 'categoryOther', messages.categoryOtherRequired);
@@ -114,19 +137,23 @@ export function validateRequest(request: RequestFields, lines: readonly Purchase
         message: messages.quoteOrReason(gap.group.vendor, formatCents(gap.group.totalCents))
       });
     }
-    // A purchase that looks already made can still be sent, flagged (P-017).
+    // A purchase that looks already made can still be sent, flagged (P-017). So can one an earlier round flagged,
+    // which stays flagged even if nothing in it looks bought now.
     const groups = vendorGroups(ordered);
     const flagged = approvalGroupsToSend(request, ordered, today).filter((g) => g.bought);
     for (const group of flagged) {
       const first = ordered.find((l) => l.id === groups.find((g) => g.key === group.key)?.lineIds[0]);
       if (!first) continue;
+      const total = formatCents(group.cents);
       issues.push({
         severity: 'warning',
         scope: 'row',
         field: 'date',
         lineId: first.id,
         rowNumber: first.rowNumber,
-        message: messages.boughtBeforeWarning(group.vendor, formatCents(group.cents))
+        message: looksBoughtNow(ordered, group.key, today)
+          ? messages.boughtBeforeWarning(group.vendor, total)
+          : messages.boughtBeforeEarlierWarning(group.vendor, total)
       });
     }
   }

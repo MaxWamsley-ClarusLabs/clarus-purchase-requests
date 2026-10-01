@@ -42,6 +42,9 @@ import { LISTS } from './schema';
 import {
   NotAllowedError,
   applyLineChanges,
+  approvalWhenApproved,
+  approvalWhenReturned,
+  approvalWhenSent,
   canConfirmCategories,
   categoryUpdates,
   changesAfterDelete,
@@ -69,7 +72,7 @@ const LINE_SELECT = `$select=${LINE_FIELDS},AttachmentFiles&$expand=AttachmentFi
 const SUBMISSION_SELECT =
   '$select=Id,AuthorId,RequestId,SubmissionType,SubmissionNumber,PackageStatus,FolderName,PreviousFolderName,SubmitterName,SubmitterEmail,CertificationText,' +
   'BusinessPurpose,Department,ProjectCode,PurchaseDates,TotalReimburse,TotalCompany,TotalRequest,ReceiptCount,QuoteCount,RowsWithoutReceipt,BoughtBeforeApproval,' +
-  'ApprovedBy,ApprovedOn,EmailSubject,EmailSummary,FolderLink,PackagedAt,ErrorMessage,Created,AttachmentFiles&$expand=AttachmentFiles';
+  'ApprovedBy,ApprovedOn,EmailSubject,EmailSummary,FolderLink,PackagedAt,ErrorMessage,Created,Modified,AttachmentFiles&$expand=AttachmentFiles';
 const PAGE = '$top=5000';
 
 /** The site's Owners group: the approvers (P-020). Reading it needs a permission ordinary members may not have. */
@@ -347,14 +350,15 @@ export class SharePointDataService implements PurchaseDataService {
     // 1. The approval request, marked Uploading so the flow ignores it for now. It has no files.
     const created = await this.sp.post<{ Id: number }>(this.items('submissions'), submissionFields(prepared.submission));
     if (!created) throw new Error(messages.spOther(500));
-    // 2. Lock the request, recording what was sent. Then 3. hand the approval request to the
-    // flow. If step 3 fails, the administrator sees it under Needs attention and can retry.
+    // 2. Lock the request, recording what was sent, and keeping every approval so far as earlier
+    // (P-017). Then 3. hand the approval request to the flow. If step 3 fails, the administrator
+    // sees it under Needs attention and can retry.
     const write: RequestWrite = {
       status: 'Awaiting approval',
       approvalRounds: round,
       sentForApprovalOn: now.toISOString(),
       boughtBeforeApproval: prepared.boughtBefore,
-      approval: { sent: prepared.sentGroups, approved: [] },
+      approval: approvalWhenSent(request.approval, prepared.sentGroups),
       returnNote: ''
     };
     // An earlier approval or return is cleared only if there is one, so a first send never
@@ -454,18 +458,17 @@ export class SharePointDataService implements PurchaseDataService {
     // Approving confirms every row's category as shown, with the changes given.
     const confirmed = await this.confirmCategoriesOn(lines, options.categories, me.displayName);
     const approved = groupsForApproved(confirmed, request.approval.sent);
-    await this.sp.merge(
-      this.item('requests', requestId),
-      requestFields({
-        status: 'Approved',
-        approval: { sent: request.approval.sent, approved },
-        approvedOn: this.now().toISOString(),
-        approvedById: me.id,
-        approvalNote: options.note,
-        returnNote: '',
-        returnStage: ''
-      })
-    );
+    const write: RequestWrite = {
+      status: 'Approved',
+      approval: approvalWhenApproved(request.approval, approved),
+      approvedOn: this.now().toISOString(),
+      approvedById: me.id,
+      approvalNote: options.note,
+      returnNote: ''
+    };
+    // A return stage is cleared only if there is one, as on a first send.
+    if (request.returnStage !== '') write.returnStage = '';
+    await this.sp.merge(this.item('requests', requestId), requestFields(write));
     return this.readRequest(requestId);
   }
 
@@ -474,19 +477,13 @@ export class SharePointDataService implements PurchaseDataService {
     const request = await this.readRequest(requestId);
     const stage = returnStageFor(request.status);
     if (!stage) throw new NotAllowedError(notAllowed.returnWhen);
-    // A return at the approval step takes the approval back; one at processing keeps it (P-027).
-    const write: RequestWrite =
-      stage === 'approval'
-        ? {
-            status: 'Returned',
-            returnNote: note,
-            returnStage: stage,
-            approval: { sent: request.approval.sent, approved: [] },
-            approvedOn: null,
-            approvedById: null,
-            approvalNote: ''
-          }
-        : { status: 'Returned', returnNote: note, returnStage: stage };
+    const write: RequestWrite = { status: 'Returned', returnNote: note, returnStage: stage };
+    // A return at the approval step takes the approval back, keeping the earlier ones; one at processing
+    // keeps it (P-027). The approver, time and note are cleared only if the request holds an approval.
+    if (stage === 'approval') {
+      write.approval = approvalWhenReturned(request.approval);
+      if (holdsApproval(request)) Object.assign(write, { approvedOn: null, approvedById: null, approvalNote: '' });
+    }
     await this.sp.merge(this.item('requests', requestId), requestFields(write));
     return this.readRequest(requestId);
   }

@@ -288,15 +288,18 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
       expect(body).toContain(`<a href="${live.appPageUrl}#/admin/attention">Open Needs attention</a>`);
     });
 
-    it('stores the error from wherever the failed step put it, or a fixed sentence', () => {
-      // A connector failure may carry its message in the step's outputs rather than in its error.
+    it("stores the failed step's error message, or a fixed sentence, by the one path the packaging branch also uses", () => {
       expect(approvalError).toBe(
-        "coalesce(first(body('Failed_approval_steps'))?['error']?['message'], " +
-          "first(body('Failed_approval_steps'))?['outputs']?['body']?['error']?['message'], " +
-          "first(body('Failed_approval_steps'))?['outputs']?['body']?['message'], " +
-          "'Sending the approval email, or recording that it was sent, failed. See the flow run.')"
+        "coalesce(first(body('Failed_approval_steps'))?['error']?['message'], 'Sending the approval email, or recording that it was sent, failed. See the flow run.')"
       );
       expect(balanceProblem(approvalError)).toBe('');
+      // Nothing in the branch selects a property of a step's outputs: an output body can be text, and selecting a property
+      // of text fails the expression itself, which would leave the item Processing with no email (Unverified, Claude's
+      // knowledge of the expression language).
+      expect(JSON.stringify(approvalBranch)).not.toContain("['outputs']");
+      // The same text is stored in the item and quoted, escaped, in the email.
+      const mail = param(inside(failure).Send_approval_failure_email, 'emailMessage/Body');
+      expect(mail).toContain(`@{${htmlTextExpression(approvalError)}}`);
     });
 
     it('leaves the packaging failure scope exactly as in the travel flow', () => {

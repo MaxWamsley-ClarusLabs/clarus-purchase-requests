@@ -42,7 +42,7 @@ Three new lists. The travel app's lists and the current Power Apps apps' lists a
 | ApprovalRounds | Approval requests | Number | Set by app | | How many times the request has been sent for approval |
 | SentForApprovalOn | Sent for approval | Date and time | Set by app | | Last time it was sent |
 | BoughtBeforeApproval | Bought before approval | Yes/No | Set by app | | Default No. Set when the request is sent for approval and a vendor total of $500 or more was already bought (P-017) |
-| ApprovalRecord | Approval record | Multiple lines of plain text | Set by app | | JSON: the vendor totals when sent (with the bought-before flag for each) and the totals approved. Read back defensively (an employee may edit their own item, travel D-002) |
+| ApprovalRecord | Approval record | Multiple lines of plain text | Set by app | | JSON: the vendor totals when last sent (with the bought-before flag for each), the totals approved now, and the newest approval of each vendor from earlier rounds (`earlier`: kept through a return at the approval step, used only for the bought-before-approval test). A record without `earlier` reads as having none; each key is recomputed from its vendor when read. Read back defensively (an employee may edit their own item, travel D-002) |
 | ApprovalNote | Approval note | Multiple lines of plain text | | | The approver's optional note |
 | ApprovedOn | Approved | Date and time | Set by app | | |
 | ApprovedBy | Approved by | Person | Set by app | | The approver. If the approver is the requester, the app shows "self-approved" (P-020) |
@@ -94,7 +94,7 @@ There is no separate requester field (travel D-039). The purchase dates are not 
 | RequestId | Request | Number | App | Yes | |
 | SubmissionType | Type | Choice: Approval request, Processing package | App | | Default Processing package. The flow branches on this (P-018) |
 | SubmissionNumber | Submission | Number | App | | For a package: 1 for the first, 2 after a return. For an approval request: the round, 1, 2 |
-| PackageStatus | Package status | Choice: Uploading, Ready, Processing, Packaged, Failed | App, then flow | Yes | The flow starts only on Ready. For an approval request, Packaged means the approvers were emailed |
+| PackageStatus | Package status | Choice: Uploading, Ready, Processing, Packaged, Failed | App, then flow | Yes | The flow starts only on Ready. For an approval request, Packaged means the approvers were emailed. The app counts "not finished within 30 minutes" from the item's Modified time (built in), so a retry starts the time again |
 | FolderName | Folder name | Single line of text | App | | Packages only. Built by the app's naming rule. The flow removes unsafe characters again |
 | PreviousFolderName | Replaces folder | Single line of text | App | | For resubmissions, the earlier folder name |
 | SubmitterName | Submitted by | Single line of text | App | | Display name, frozen |

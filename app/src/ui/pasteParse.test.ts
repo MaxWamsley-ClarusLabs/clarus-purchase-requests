@@ -151,9 +151,18 @@ describe('a whole paste', () => {
     expect(plan.skipped).toEqual({ date: 1, category: 1, amount: 1, outside: 1 });
     expect(plan.rows[0]).toEqual({ lineId: 'a', changes: { vendor: 'Acme', description: 'Tips', amountCents: null, paidBy: 'company' }, amountText: '12,50' });
     expect(plan.rows[1].amountText).toBe('3.00');
+    // An amount that is not a number empties the amount, so it is counted on its own rather than as not pasted.
     expect(pasteWarning(plan)).toBe(
-      '4 cells were not pasted: dates must look like 2026-10-14, 10/14/2026 or Oct 14, 2026; categories must match a category name; amounts must be numbers like 45.10; cells to the right of Who paid do not fit.'
+      '3 cells were not pasted: dates must look like 2026-10-14, 10/14/2026 or Oct 14, 2026; categories must match a category name; cells to the right of Who paid do not fit. ' +
+        '1 amount was not a number and was left empty: amounts must be numbers like 45.10.'
     );
+  });
+
+  it('says how many amounts were left empty when they were not numbers, and nothing else when that is all', () => {
+    expect(pasteWarning(planPaste([['12,50'], ['abc']], ids, 0, 4))).toBe(
+      '2 amounts were not numbers and were left empty: amounts must be numbers like 45.10.'
+    );
+    expect(pasteWarning(planPaste([['12,50']], ids, 0, 4))).toBe('1 amount was not a number and was left empty: amounts must be numbers like 45.10.');
   });
 
   it('counts text that was cut', () => {

@@ -84,7 +84,7 @@ Decided: there is no architecture debate for this project. The answer is the sam
 
 ## 4. Rules (all in one domain file)
 
-Decided by Max: the certification sentence, the $500 approval threshold, and that thresholds exist at all. Recommended by Claude and built, each listed in `docs/QUESTIONS_FOR_MAX.md`: everything else in this table.
+Decided by Max: the certification sentence, the $500 approval threshold, who paid and the categories. Carried over from travel: the receipt rule. Recommended by Claude and built, each listed in `docs/QUESTIONS_FOR_MAX.md`: everything else in this table.
 
 Every number and every piece of policy wording lives in `app/src/domain/purchaseRules.ts`, so the new purchasing policy can change them in one place. Tests in `purchaseRules.test.ts` cover each rule.
 
@@ -333,7 +333,7 @@ Microsoft's documentation sites are blocked in this environment. Claims below ma
 | Everything in section 16 of the travel strategy (licensing, SPFx, SharePoint limits, flow limits, import format, action formats) applies here | Travel repository, commit b1af343, dated 2026-09-24 to 2026-09-29 | Carried over; each row keeps its own label there. Not re-checked |
 | The travel packaging flow imported and ran on a real test site, including the `_R2` resubmission | Max's Stage 8 checkpoint, 2026-09-28 and 2026-09-29, recorded in the travel `docs/STATUS.md` | Confirmed for travel. Not yet for this project |
 | The site Owners group's members can be read with `web/AssociatedOwnerGroup/users` by an administrator | Claude's knowledge of the SharePoint REST interface; not checked | Unverified. The Set-up page falls back to the administrator's own address, and the employee screens show the generic label "Site Owners" instead of "Site Owners (names)" |
-| A nested scope with its own failure scope inside a condition branch works in a legacy import package | Standard Power Automate and Logic Apps structure; not checked against a package | Unverified. Tested at the checkpoint |
+| A nested scope with its own failure scope inside a condition branch works in a legacy import package | Standard Power Automate and Logic Apps structure; not checked against a package | Unverified. The import and the branch are tested at the checkpoint; the failure scope is not (`docs/CHECKPOINT.md` step 34) |
 | The F2 form's wording ($100 approval, "over $500" quote) is old policy and is not used | The attached form itself, read 2026-09-30 | Confirmed (what the form says). Which thresholds Max wants is decided in his prompt and recorded as P-005 |
 | QuickBooks account names suggested per category | Claude's suggestion only | **Unverified, to confirm with Max** |
 

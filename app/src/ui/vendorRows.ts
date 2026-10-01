@@ -7,6 +7,7 @@ import { formatCents } from '../domain/money';
 import { LineApprovalStatus, VendorGroup, lineApprovals, vendorGroups } from '../domain/purchaseRules';
 import { quoteFiles } from '../domain/receipts';
 import { PurchaseLine, PurchaseRequest } from '../domain/types';
+import { listText } from './text';
 
 export type QuoteStatus =
   /** A quote file is attached to one of the vendor's rows. */
@@ -39,7 +40,7 @@ export const VENDOR_APPROVAL_LABEL: Record<LineApprovalStatus, string> = {
   changed: 'Changed since approval'
 };
 
-/** "Attached", "No quote: <reason>", "Missing", or "" when no quote is needed. */
+/** "Attached", "No quote: <reason>", "Missing", or "" when no quote is needed: the vendor totals table's Quote column. */
 export function quoteText(quote: QuoteStatus): string {
   switch (quote.kind) {
     case 'attached':
@@ -51,6 +52,44 @@ export function quoteText(quote: QuoteStatus): string {
     case 'notNeeded':
       return '';
   }
+}
+
+/** The quote in a sentence, after "Quote: ": "attached", "none (reason given: <reason>)", "missing" or "not required". */
+export function quoteSummary(quote: QuoteStatus): string {
+  switch (quote.kind) {
+    case 'attached':
+      return 'attached';
+    case 'reason':
+      return `none (reason given: ${quote.reason})`;
+    case 'missing':
+      return 'missing';
+    case 'notNeeded':
+      return 'not required';
+  }
+}
+
+/** Vendors as the start of a sentence: "Acme Lab Supply and Kestrel Instruments". */
+function vendorsText(vendors: readonly string[]): string {
+  const names = listText(vendors.map((v) => v.trim() || 'a purchase with no vendor'));
+  return `${names.charAt(0).toUpperCase()}${names.slice(1)}`;
+}
+
+/**
+ * The send dialog's note for the vendor totals that will be flagged Bought
+ * before approval (P-017), naming them: those that look already bought, and
+ * those an earlier round flagged, which stay flagged. For example "Northwind
+ * Office Supply looks already bought. It will be flagged Bought before
+ * approval. You can still send it." '' when there are none.
+ */
+export function boughtBeforeNote(looksBought: readonly string[], flaggedEarlier: readonly string[] = []): string {
+  const parts: string[] = [];
+  if (looksBought.length === 1) parts.push(`${vendorsText(looksBought)} looks already bought. It will be flagged Bought before approval.`);
+  if (looksBought.length > 1) parts.push(`${vendorsText(looksBought)} look already bought. They will be flagged Bought before approval.`);
+  if (flaggedEarlier.length === 1) parts.push(`${vendorsText(flaggedEarlier)} was flagged Bought before approval when it was sent before, and stays flagged.`);
+  if (flaggedEarlier.length > 1) parts.push(`${vendorsText(flaggedEarlier)} were flagged Bought before approval when they were sent before, and stay flagged.`);
+  if (parts.length === 0) return '';
+  parts.push(looksBought.length + flaggedEarlier.length === 1 ? 'You can still send it.' : 'You can still send the request.');
+  return parts.join(' ');
 }
 
 export function vendorRows(lines: readonly PurchaseLine[], request: Pick<PurchaseRequest, 'status' | 'approval'>): VendorRow[] {

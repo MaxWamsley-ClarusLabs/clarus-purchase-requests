@@ -202,8 +202,11 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
             <div className="ctx-banner green" role="status" style={{ marginTop: 16, display: 'block', overflowWrap: 'anywhere' }}>
               <strong>{made.fileName}</strong> downloaded. Submissions list {made.config.submissionsListId}; folders go to {made.config.destinationSiteUrl}/
               {made.config.libraryUrlName}/{made.config.folders[made.config.folders.length - 1]}. Submission emails go to {made.config.adminEmail}. Approval
-              emails go to {made.config.approverSource === 'owners' ? 'the site Owners' : 'your own address, because the site Owners could not be read'}:{' '}
-              {made.approvalRecipients.join(', ')}.
+              emails go to{' '}
+              {made.config.approverSource === 'owners'
+                ? 'the site Owners'
+                : 'your own address, because the site Owners could not be read, or none of them has an address the flow can use'}
+              : {made.approvalRecipients.join(', ')}.
             </div>
           ) : null}
           <ol className="ctx-hint" style={{ margin: '16px 0 0', paddingLeft: 18 }}>

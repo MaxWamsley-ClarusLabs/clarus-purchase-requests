@@ -177,19 +177,28 @@ export const NO_RECEIPT_REASONS: readonly string[] = ['Receipt lost', 'No receip
 // need a newer TypeScript target than the SharePoint build uses.
 const COMBINING_MARKS = new RegExp('\\p{M}+', 'gu');
 const NOT_LETTER_OR_NUMBER = new RegExp('[^\\p{L}\\p{N}]+', 'gu');
+/**
+ * Characters that show nothing: zero-width spaces and joiners, soft hyphens,
+ * variation selectors, the byte-order mark, the word joiner, direction marks,
+ * and the Hangul fillers, which Unicode counts as letters.
+ */
+const SHOWS_NOTHING = new RegExp('\\p{Default_Ignorable_Code_Point}+', 'gu');
 
 /**
- * A vendor name for matching: capitals, accents, spaces and punctuation are
- * ignored, in any alphabet, so "Digi-Key" and "DigiKey", "Thor Labs" and
- * "Thorlabs", "Café" and "Cafe", and "O'Reilly" and "o reilly" are each one
- * vendor. "Amazon" and "Amazon.com" are two. A name with no letter or digit
- * at all (such as "-") is matched as typed, ignoring capitals and spaces.
- * '' only for a blank name; such a line counts on its own (`vendorGroups`).
+ * A vendor name for matching: capitals, accents, spaces, punctuation and
+ * characters that show nothing are ignored, in any alphabet, so "Digi-Key" and
+ * "DigiKey", "Thor Labs" and "Thorlabs", "Café" and "Cafe", "O'Reilly" and
+ * "o reilly", and "Amazon" and "Amazon" with a zero-width space or a Hangul
+ * filler typed in are each one vendor. "Amazon" and "Amazon.com" are two. A
+ * name with no letter or digit at all (such as "-") is matched as typed,
+ * ignoring capitals, spaces and characters that show nothing. '' only for a
+ * blank name, or one made only of characters that show nothing; such a line
+ * counts on its own (`vendorGroups`), and validation asks for a vendor.
  * Matching more names together only ever asks for more approval, never less.
  */
 export function vendorKey(vendor: string): string {
-  const key = vendor.normalize('NFKD').replace(COMBINING_MARKS, '').toLowerCase().replace(NOT_LETTER_OR_NUMBER, '');
-  return key || vendor.trim().toLowerCase().replace(/\s+/g, ' ');
+  const key = vendor.normalize('NFKD').replace(SHOWS_NOTHING, '').replace(COMBINING_MARKS, '').toLowerCase().replace(NOT_LETTER_OR_NUMBER, '');
+  return key || vendor.replace(SHOWS_NOTHING, '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /** The part of a line the thresholds look at. */
@@ -299,24 +308,40 @@ export function isAlreadyBought(line: Pick<BoughtLine, 'date' | 'hasReceipt'>, s
   return line.hasReceipt || (isValidIsoDate(line.date) && line.date < sentOn);
 }
 
-/** Nothing sent, nothing approved: a request that has never been sent for approval. */
-export const EMPTY_APPROVAL: ApprovalRecord = { sent: [], approved: [] };
+/** Nothing sent, nothing approved, now or earlier: a request that has never been sent for approval. */
+export const EMPTY_APPROVAL: ApprovalRecord = { sent: [], approved: [], earlier: [] };
+
+/**
+ * Every vendor total approved so far, in any round: the newest approval of
+ * each vendor, which is the one approved now (`approved`) if there is one, and
+ * otherwise the newest earlier one (`earlier`). In the order the vendors were
+ * first approved. What sending the request for approval again keeps as
+ * `earlier`, and what `groupsForApproval` judges "approved before it was
+ * bought" against. Never used to tell whether the request is approved now:
+ * that is `approved` alone (`approvalState`).
+ */
+export function approvalsSoFar(record: ApprovalRecord): ApprovalGroup[] {
+  const newest = new Map<string, ApprovalGroup>();
+  for (const group of [...record.earlier, ...record.approved]) newest.set(group.key, group);
+  return Array.from(newest.values());
+}
 
 /**
  * The vendor totals that need approval, as recorded when the request is sent
  * for approval, each flagged "bought" (P-017) when:
  * - an earlier round already flagged the same vendor (`previous`, the record
- *   the request holds when it is sent): a flag, once set, stays, even if a
- *   date is changed later; or
- * - no earlier approval covers the vendor total (it was never approved, or it
- *   has risen past the allowance) and one of its lines looks already bought.
- * A vendor total an earlier approval still covers is never newly flagged: it
- * was approved before it was bought.
+ *   the request holds when it is sent, earlier approvals included): a flag,
+ *   once set, stays, even if a date is changed later; or
+ * - no approval so far covers the vendor total (it was never approved, or it
+ *   has risen past the allowance of its newest approval, `approvalsSoFar`) and
+ *   one of its lines looks already bought.
+ * A vendor total an approval so far still covers is never newly flagged: it
+ * was approved before it was bought, even if a later round was returned.
  */
 export function groupsForApproval(lines: readonly BoughtLine[], sentOn: IsoDate, previous: ApprovalRecord = EMPTY_APPROVAL): ApprovalGroup[] {
   const byId = new Map(lines.map((l) => [l.id, l]));
-  const flagged = new Set([...previous.sent, ...previous.approved].filter((g) => g.bought).map((g) => g.key));
-  return approvalCoverage(vendorGroups(lines), previous.approved).map(({ group, covered }) => ({
+  const flagged = new Set([...previous.sent, ...previous.approved, ...previous.earlier].filter((g) => g.bought).map((g) => g.key));
+  return approvalCoverage(vendorGroups(lines), approvalsSoFar(previous)).map(({ group, covered }) => ({
     key: group.key,
     vendor: group.vendor,
     cents: group.totalCents,

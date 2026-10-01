@@ -2,6 +2,34 @@
 // this app (D-032, D-033). Injected once as a <style> element, as KFA does.
 // Every rule is scoped under .ctx-app so nothing leaks into SharePoint pages.
 
+/**
+ * The purchases grid's narrowest width. On a narrower screen the grid scrolls
+ * sideways inside its card, and its last column, the row menu, stays in view.
+ */
+export const GRID_MIN_WIDTH_PX = 1090;
+/** What the grid's card adds around the grid: its padding and border, less the grid's own negative margins. */
+export const GRID_CARD_EXTRA_PX = 26;
+/** The files panel beside the grid on a wide screen, and the gap between them. */
+export const SIDE_FILES_WIDTH_PX = 340;
+export const LAYOUT_GAP_PX = 18;
+/**
+ * A little more than a scroll bar's width. Files already beside the grid stay
+ * there until the space shrinks by more than this, so a scroll bar that comes
+ * and goes as the page changes height cannot flip the layout back and forth.
+ */
+const SIDE_FILES_ALLOWANCE_PX = 24;
+
+/**
+ * Whether the files sit beside the grid (travel D-033), which they do only
+ * when the grid keeps its full width there; otherwise they slide over the
+ * page. `layoutWidth` is the measured width of the area that holds both;
+ * `besideNow` says whether they are beside the grid now.
+ */
+export function filesBesideGrid(layoutWidth: number, besideNow: boolean): boolean {
+  const needed = GRID_MIN_WIDTH_PX + GRID_CARD_EXTRA_PX + LAYOUT_GAP_PX + SIDE_FILES_WIDTH_PX;
+  return layoutWidth >= needed || (besideNow && layoutWidth >= needed - SIDE_FILES_ALLOWANCE_PX);
+}
+
 export const THEME_CSS = `
 .ctx-app {
   --c-purple: #70388D;
@@ -44,7 +72,7 @@ export const THEME_CSS = `
 .ctx-brand img { width: 40px; height: 40px; flex: none; }
 .ctx-brand-title { font-weight: 800; font-size: 1.25rem; line-height: 1.1; }
 .ctx-brand-subtitle { font-size: 0.8rem; color: rgba(255, 255, 255, 0.72); }
-.ctx-nav-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: rgba(255, 255, 255, 0.55); font-weight: 800; margin: 6px 6px 0; }
+.ctx-nav-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: rgba(255, 255, 255, 0.55); font-weight: 800; margin: 6px 6px 0; overflow-wrap: break-word; }
 .ctx-nav { display: flex; flex-direction: column; gap: 8px; }
 .ctx-nav-item {
   display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
@@ -77,8 +105,10 @@ export const THEME_CSS = `
   box-shadow: var(--shadow-header); padding: 14px 20px;
   display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
 }
-.ctx-page-title { font-size: 1.3rem; font-weight: 800; margin: 0; line-height: 1.2; }
-.ctx-page-subtitle { font-size: 0.86rem; color: var(--c-muted); margin-top: 2px; }
+/* The title may shrink below its longest word, so a very long one breaks instead of widening the page */
+.ctx-header > div:first-child { min-width: 0; }
+.ctx-page-title { font-size: 1.3rem; font-weight: 800; margin: 0; line-height: 1.2; overflow-wrap: break-word; }
+.ctx-page-subtitle { font-size: 0.86rem; color: var(--c-muted); margin-top: 2px; overflow-wrap: break-word; }
 .ctx-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
 .ctx-saved { font-size: 0.8rem; color: var(--c-muted); display: inline-flex; align-items: center; gap: 6px; }
 .ctx-saved-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--c-success); }
@@ -110,13 +140,17 @@ export const THEME_CSS = `
 .ctx-tag.lavender { background: var(--c-lavender); color: var(--c-purple); }
 
 /* Cards and totals */
-.ctx-card { background: var(--c-card); border: 1px solid var(--c-border); border-radius: 20px; box-shadow: var(--shadow-card); padding: 18px 20px; min-width: 0; }
+/* A very long word (a name typed without spaces) breaks where it must, so it cannot widen the page. Other text wraps as
+   before: break-word, unlike anywhere, does not let a box or a table column shrink below its longest word. */
+.ctx-card { background: var(--c-card); border: 1px solid var(--c-border); border-radius: 20px; box-shadow: var(--shadow-card); padding: 18px 20px; min-width: 0; overflow-wrap: break-word; }
 .ctx-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .ctx-card-title { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--c-muted); margin: 0; }
 .ctx-totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-.ctx-metric { background: linear-gradient(180deg, #fff 0%, #fbf7ff 100%); border: 1px solid var(--c-border); border-radius: 18px; padding: 12px 16px; box-shadow: 0 10px 26px rgba(59, 30, 77, 0.06); }
+.ctx-metric { background: linear-gradient(180deg, #fff 0%, #fbf7ff 100%); border: 1px solid var(--c-border); border-radius: 18px; padding: 12px 16px; box-shadow: 0 10px 26px rgba(59, 30, 77, 0.06); min-width: 0; overflow-wrap: break-word; }
+.ctx-metric .ctx-badge { white-space: normal; }
 .ctx-metric-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--c-muted); font-weight: 700; }
-.ctx-metric-value { font-size: 1.2rem; font-weight: 800; margin-top: 2px; font-variant-numeric: tabular-nums; }
+/* An amount is never broken across lines */
+.ctx-metric-value { font-size: 1.2rem; font-weight: 800; margin-top: 2px; font-variant-numeric: tabular-nums; overflow-wrap: normal; }
 .ctx-metric-note { font-size: 0.74rem; color: var(--c-muted); }
 .ctx-metric.attention .ctx-metric-value { color: var(--c-error); }
 .ctx-metric.clear .ctx-metric-value { color: var(--c-success); }
@@ -160,10 +194,16 @@ export const THEME_CSS = `
 .ctx-segmented button:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
 
 /* Expense grid */
-.ctx-expenses-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+.ctx-expenses-layout { display: grid; grid-template-columns: minmax(0, 1fr) ${SIDE_FILES_WIDTH_PX}px; gap: ${LAYOUT_GAP_PX}px; align-items: start; }
 .ctx-expenses-layout.no-preview { grid-template-columns: minmax(0, 1fr); }
 .ctx-grid-wrap { overflow-x: auto; margin: 0 -8px; }
-table.ctx-grid { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; min-width: 1220px; font-size: 0.86rem; }
+table.ctx-grid { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; min-width: ${GRID_MIN_WIDTH_PX}px; font-size: 0.86rem; }
+/* The row menu column stays at the right edge of the grid when the grid scrolls sideways, so the menu can always be reached */
+.ctx-grid thead th:last-child, .ctx-grid tr.ctx-row > td:last-child { position: sticky; right: 0; background: var(--c-card); }
+.ctx-grid tr.ctx-row.selected > td:last-child { background: #faf5fd; }
+.ctx-grid-wrap.scrolls thead th:last-child, .ctx-grid-wrap.scrolls tr.ctx-row > td:last-child { box-shadow: -8px 0 8px -8px rgba(59, 30, 77, 0.28); }
+/* The open menu sits over the rows below it, so its cell is lifted above theirs */
+.ctx-grid tr.ctx-row > td.menu-open { z-index: 31; }
 .ctx-grid th { text-align: left; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--c-muted); font-weight: 800; padding: 8px 6px; border-bottom: 1px solid var(--c-border); background: #fff; vertical-align: bottom; }
 .ctx-grid td { padding: 4px 3px; border-bottom: 1px solid #f3edf8; vertical-align: middle; }
 .ctx-grid tr.ctx-row td:first-child { padding-left: 8px; }
@@ -196,6 +236,8 @@ select.ctx-cell { cursor: pointer; appearance: auto; }
 .ctx-row-issues td { padding: 0 8px 8px 44px; font-size: 0.78rem; border-bottom: 1px solid #f3edf8; }
 .ctx-issue-line { display: flex; gap: 6px; align-items: flex-start; }
 .ctx-issue-line svg { flex-shrink: 0; }
+/* Text that can hold a typed name may shrink below its longest word, so a very long word breaks instead of pushing out of its box */
+.ctx-issue-line > span, .ctx-issue-item > .ctx-issue-line, .ctx-vendor-head > :first-child, .ctx-send-list li > :first-child { min-width: 0; }
 .ctx-issue-line.blocking { color: var(--c-error); }
 .ctx-issue-line.warning { color: var(--c-warning); }
 .ctx-suggest-note { display: inline-flex; gap: 10px; align-items: center; flex-wrap: wrap; color: #8a5a12; background: #fff4de; border-radius: 8px; padding: 3px 4px 3px 8px; margin-bottom: 4px; }
@@ -215,7 +257,7 @@ select.ctx-cell { cursor: pointer; appearance: auto; }
 .ctx-files-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: 100%; }
 .ctx-files-cell .ctx-reading { margin-left: 0; }
 .ctx-approval-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
-.ctx-approval-cell .ctx-badge { white-space: normal; }
+.ctx-approval-cell .ctx-badge, .ctx-approval-cell .ctx-tag { white-space: normal; }
 .ctx-flag { display: inline-flex; vertical-align: middle; color: var(--c-warning); margin-left: 6px; }
 .ctx-cell.category-other { margin-top: 4px; font-size: 0.8rem; border-color: var(--c-border); background: #fff; }
 .ctx-menu-wrap { position: relative; }
@@ -223,6 +265,8 @@ select.ctx-cell { cursor: pointer; appearance: auto; }
 .ctx-menu { position: fixed; background: #fff; border: 1px solid var(--c-border); border-radius: 12px; box-shadow: 0 18px 44px rgba(59, 30, 77, 0.18); padding: 6px; z-index: 30; min-width: 250px; max-height: calc(100vh - 24px); overflow-y: auto; }
 .ctx-menu button, .ctx-menu label { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; background: none; border: none; font: inherit; font-size: 0.86rem; color: var(--c-text); cursor: pointer; }
 .ctx-menu button:hover, .ctx-menu label:hover, .ctx-menu button:focus-visible, .ctx-menu label:focus-visible { background: var(--c-lavender); }
+.ctx-menu button:disabled, .ctx-menu label[aria-disabled="true"], .ctx-menu select:disabled { opacity: 0.5; cursor: not-allowed; }
+.ctx-menu button:disabled:hover, .ctx-menu label[aria-disabled="true"]:hover { background: none; }
 .ctx-menu button:focus-visible, .ctx-menu label:focus-visible { outline: 2px solid var(--c-purple); outline-offset: -2px; }
 .ctx-menu hr { border: none; border-top: 1px solid var(--c-border); margin: 4px 0; }
 .ctx-menu .danger { color: var(--c-error); }
@@ -248,7 +292,9 @@ select.ctx-cell { cursor: pointer; appearance: auto; }
 .ctx-table-wrap { overflow-x: auto; max-width: 100%; }
 table.ctx-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 .ctx-table th { text-align: left; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--c-muted); font-weight: 800; padding: 8px 10px; border-bottom: 1px solid var(--c-border); vertical-align: bottom; }
-.ctx-table td { padding: 11px 10px; border-bottom: 1px solid #f3edf8; vertical-align: middle; }
+.ctx-table td { padding: 11px 10px; border-bottom: 1px solid #f3edf8; vertical-align: middle; overflow-wrap: break-word; }
+/* One cell's text cannot take more than this much of its table's width, so one very long word breaks in its cell instead of widening the table */
+.ctx-table:not(.nowrap) td { max-width: 36em; }
 .ctx-table .ctx-badge, .ctx-table .ctx-tag { white-space: normal; border-radius: 12px; }
 .ctx-nowrap { white-space: nowrap; }
 .ctx-datetime { font-variant-numeric: tabular-nums; }
@@ -269,7 +315,8 @@ table.ctx-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 .ctx-strong { font-weight: 700; }
 
 /* Banners, lists, layout helpers */
-.ctx-banner { border-radius: 14px; padding: 12px 16px; font-size: 0.9rem; display: flex; gap: 10px; align-items: flex-start; }
+.ctx-banner { border-radius: 14px; padding: 12px 16px; font-size: 0.9rem; display: flex; gap: 10px; align-items: flex-start; overflow-wrap: break-word; }
+.ctx-banner > div { min-width: 0; }
 .ctx-banner > svg { flex: none; margin-top: 1px; }
 .ctx-banner.amber { background: #fff7e6; color: #7a4f12; border: 1px solid #f3dcae; }
 .ctx-banner.purple { background: var(--c-lavender); color: var(--c-dark-purple); border: 1px solid #e0cdef; }
@@ -312,14 +359,14 @@ table.ctx-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 .ctx-drawer p, .ctx-drawer li { font-size: 0.88rem; }
 .ctx-drawer ul { padding-left: 20px; margin: 6px 0; }
 .ctx-dialog-wrap { position: fixed; inset: 0; display: grid; place-items: center; z-index: 61; }
-.ctx-dialog { background: #fff; border-radius: 20px; width: min(560px, 92vw); padding: 22px; box-shadow: 0 24px 60px rgba(19, 13, 28, 0.35); display: flex; flex-direction: column; gap: 14px; }
+.ctx-dialog { background: #fff; border-radius: 20px; width: min(560px, 92vw); padding: 22px; box-shadow: 0 24px 60px rgba(19, 13, 28, 0.35); display: flex; flex-direction: column; gap: 14px; overflow-wrap: break-word; }
 .ctx-dialog h2 { margin: 0; font-size: 1.15rem; }
 .ctx-send-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .ctx-send-list li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; background: var(--c-light-lavender); border: 1px solid var(--c-border); border-radius: 10px; }
 .ctx-send-amount { font-variant-numeric: tabular-nums; font-weight: 800; }
 .ctx-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .ctx-toasts { position: fixed; bottom: 18px; right: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 70; }
-.ctx-toast { background: var(--c-text); color: #fff; padding: 10px 14px; border-radius: 12px; font-size: 0.86rem; max-width: 440px; box-shadow: 0 12px 30px rgba(19, 13, 28, 0.3); }
+.ctx-toast { background: var(--c-text); color: #fff; padding: 10px 14px; border-radius: 12px; font-size: 0.86rem; max-width: 440px; box-shadow: 0 12px 30px rgba(19, 13, 28, 0.3); overflow-wrap: break-word; }
 .ctx-toast.warning { background: #7a4f12; }
 
 /* Smaller screens: the sidebar narrows (D-033) and the preview moves under the grid */

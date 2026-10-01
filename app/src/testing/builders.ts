@@ -1,7 +1,7 @@
 // Builders for synthetic test data. Used by unit tests only. Vendors and
 // people are made up.
 
-import { AttachedFile, PurchaseLine, PurchaseRequest } from '../domain/types';
+import { ApprovalRecord, AttachedFile, PurchaseLine, PurchaseRequest } from '../domain/types';
 
 export function file(overrides: Partial<AttachedFile> = {}): AttachedFile {
   return { id: 'f1', fileName: 'receipt.pdf', sizeBytes: 1000, fingerprint: 'aaa', contentType: 'application/pdf', kind: 'receipt', ...overrides };
@@ -34,7 +34,11 @@ export function line(overrides: Partial<PurchaseLine> = {}): PurchaseLine {
   };
 }
 
-export function request(overrides: Partial<PurchaseRequest> = {}): PurchaseRequest {
+/** A request's fields to change, where the approval record may give only some of its lists: the others are empty. */
+export type RequestOverrides = Omit<Partial<PurchaseRequest>, 'approval'> & { approval?: Partial<ApprovalRecord> };
+
+export function request(overrides: RequestOverrides = {}): PurchaseRequest {
+  const { approval, ...rest } = overrides;
   return {
     id: 42,
     requestNumber: 'PR-0042',
@@ -53,7 +57,6 @@ export function request(overrides: Partial<PurchaseRequest> = {}): PurchaseReque
     totalRequestCents: 0,
     sentForApprovalOn: '',
     boughtBeforeApproval: false,
-    approval: { sent: [], approved: [] },
     approvalNote: '',
     approvedOn: '',
     approvedBy: '',
@@ -62,6 +65,7 @@ export function request(overrides: Partial<PurchaseRequest> = {}): PurchaseReque
     processedOn: '',
     processedBy: '',
     lastChanged: '2026-10-16 09:00',
-    ...overrides
+    ...rest,
+    approval: { sent: [], approved: [], earlier: [], ...approval }
   };
 }

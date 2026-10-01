@@ -467,12 +467,10 @@ function definitionOf(config: CheckedFlowConfig): Record<string, unknown> {
     Mark_approval_sent: patchSubmission({ Send_approval_email: OK }, config, { 'PackageStatus/Value': 'Packaged', PackagedAt: '@{utcNow()}', ErrorMessage: '' })
   };
 
-  // The error of the step that failed. A connector failure may carry its message in the step's outputs rather
-  // than in its error, so each place is tried in turn, then a fixed sentence.
-  const failedApprovalStep = "first(body('Failed_approval_steps'))";
-  const approvalError =
-    `coalesce(${failedApprovalStep}?['error']?['message'], ${failedApprovalStep}?['outputs']?['body']?['error']?['message'], ` +
-    `${failedApprovalStep}?['outputs']?['body']?['message'], ${lit(`${APPROVAL_FAILED}. See the flow run.`)})`;
+  // The error of the step that failed, read the way the packaging branch reads it, or a fixed sentence. Nothing
+  // reads into the step's outputs: an output body can be text, and selecting a property of text fails the
+  // expression itself, which would leave the item Processing with no email (Unverified, flow/FLOW.md).
+  const approvalError = `coalesce(first(body('Failed_approval_steps'))?['error']?['message'], ${lit(`${APPROVAL_FAILED}. See the flow run.`)})`;
   const onApprovalFailure: Record<string, unknown> = {
     Failed_approval_steps: { runAfter: {}, type: 'Query', inputs: { from: "@result('Approval_email')", where: "@equals(item()?['status'], 'Failed')" } },
     Mark_approval_failed: patchSubmission({ Failed_approval_steps: OK }, config, { 'PackageStatus/Value': 'Failed', ErrorMessage: `@{${approvalError}}` }),

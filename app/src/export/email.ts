@@ -47,6 +47,11 @@ function totalsBlock(out: string[], totals: Totals): void {
   out.push(`Request total: ${formatCents(totals.requestCents)}`);
 }
 
+/** "row 2" for one row, "rows 1, 2" for several. */
+function rowsText(rowNumbers: readonly number[]): string {
+  return rowNumbers.length === 1 ? `row ${rowNumbers[0]}` : `rows ${rowNumbers.join(', ')}`;
+}
+
 function boughtBeforeText(groups: readonly ApprovalGroup[]): string {
   return groups
     .filter((g) => g.bought)
@@ -153,7 +158,7 @@ export function buildSubmissionEmailSummary(input: SubmissionEmailInput): string
   if (unconfirmed.length > 0) {
     out.push(
       '',
-      `Categories only suggested by the employee (not confirmed by an approver or administrator): rows ${unconfirmed.map((l) => l.rowNumber).join(', ')}.`
+      `Categories only suggested by the employee (not confirmed by an approver or administrator): ${rowsText(unconfirmed.map((l) => l.rowNumber))}.`
     );
   }
   if (input.warnings.length > 0) {

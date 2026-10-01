@@ -32,7 +32,7 @@ This app replaces the Word purchase request form and posting it in the Purchasin
 
 - On the Purchases step, add one row for each purchase: date, vendor, what was bought and why, category, amount and who paid. Press Enter to move down a column. Ctrl+D copies the value from the row above.
 - You can paste several rows from a spreadsheet. Put its columns in the order of the grid (date, vendor, what was bought and why, category, amount, who paid), add enough rows first, click the cell where the first value goes, and paste. Write dates like 2026-10-14, 10/14/2026 or Oct 14, 2026, categories and who paid as they are named in the lists, and amounts like 45.10. A value the app cannot read is not used, and a message says how many there were and why.
-- Have the files? Drop receipts, invoices or quotes into the box at once (PDF, JPG, PNG or HEIC, up to 15 MB each). Each file becomes a row. The switch above the box says whether the files are receipts or invoices, or quotes.
+- Have the files? Drop receipts, invoices or quotes into the box at once (PDF, JPG, PNG or HEIC, up to 15 MB each). Each file becomes a row. The switch in the box says whether the files are receipts or invoices, or quotes.
 - The app reads each receipt or invoice and fills in the date, amount and vendor it finds. For a vendor you have used before, typed or read, it also fills in the category and who paid last time. Values taken from the receipt, and a "Who paid" changed this way, are highlighted: check each one against the receipt, correct anything wrong, then click Confirm on the row. A row with highlighted values cannot be sent or submitted until you confirm it.
 - The app only fills in empty boxes: anything you typed stays as you typed it. Quotes, unclear photos and HEIC files are not read; type those rows yourself. Receipts are read on your own computer; nothing is sent anywhere else to read them.
 - One receipt for several purchases (for example one invoice for two items)? Add a row for each purchase, then use the row menu (the three dots) and choose "Same receipt as row". A row that holds its own receipt file cannot also use another row's.
@@ -141,7 +141,7 @@ The app and the flow never change, move or delete anything else in the Accountin
 ### B7. Needs attention and failed packages (checkpoint)
 
 - **Needs attention** in the app lists submissions whose folder was not created within 30 minutes, approval emails that were not sent within 30 minutes, and anything that failed. It also lists possible duplicates between two employees' requests, which only you can see.
-- A failure also sends you an email. Open the request (from Needs attention) and choose **Retry packaging** (or **Retry approval email** for an approval). Retry works only on a submission that failed or has not finished within 30 minutes, while its request is still waiting for approval (an approval email) or submitted (a package). If an approval email had been sent before the failure, the approvers may get it twice.
+- A failure also sends you an email. Open the request (from Needs attention) and choose **Retry packaging** (or **Retry approval email** for an approval). Retry works only on a submission that failed or has not changed for 30 minutes, while its request is still waiting for approval (an approval email) or submitted (a package); the request page shows the button exactly then, and a Retry starts the 30 minutes again. If an approval email had been sent before the failure, the approvers may get it twice.
 - If it keeps failing, the flow is usually off or its connection needs signing in again. Steps for checking the flow are added at the checkpoint.
 
 ### B8. Adding an employee or an approver (checkpoint)
@@ -163,14 +163,14 @@ Done once per site: the test site first, the production site at the pilot. Exact
 
 ## Part C. Troubleshooting and support
 
-To be completed from the test-site runs at the checkpoint. These messages are written from the code and are confirmed at the checkpoint.
+To be completed from the test-site runs at the checkpoint. These messages are written from the code; the checkpoint does not trigger them. The app shows a refusal as it is written here.
 
 | What you see | What it means | What to do |
 |---|---|---|
 | "This request was changed after it was sent for approval, so it cannot be approved as it stands." (approver) | The vendor totals no longer match what was sent | Return the request with a note; the employee sends it again |
-| "Only an approval email or a package that failed, or that has not finished after 30 minutes, can be tried again." (administrator) | Retry was chosen too early | Wait 30 minutes, then check the flow is on (B7) |
-| "The request has moved on since this was sent, so it cannot be tried again." (administrator) | The request was approved, returned or processed in the meantime | Nothing to retry |
-| "This request needs approval first." (employee, at Submit) | A vendor total is over what was approved | Send the request for approval again |
+| "Only an approval email or a package that failed, or that has not finished after 30 minutes, can be tried again." (administrator) | The page was out of date: the submission had been retried or finished since it was loaded | Reload the page |
+| "The request has moved on since this was sent, so it cannot be tried again." (administrator) | The request was approved, returned or processed since the page was loaded | Nothing to retry |
+| "This request needs approval first." (employee) | The request changed while the page was open, so a vendor total is now over what was approved | Reload the page; the Review step then says what changed, and the button reads Send for approval |
 | "Row N has no receipt of its own to share." (employee) | The row points at a row that has no receipt | Choose a row that has one, or attach a receipt |
 | "This row has a receipt of its own." (employee) | A row cannot hold its own receipt and also use another row's | Remove its own receipt first |
 

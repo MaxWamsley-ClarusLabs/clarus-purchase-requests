@@ -29,6 +29,7 @@ import {
   approvalStateOf,
   blockingIssues,
   issuePrefix,
+  looksBoughtNow,
   validateRequest,
   validationStage
 } from '../../domain/validation';
@@ -36,8 +37,20 @@ import { LineChanges, RequestChanges } from '../../data/PurchaseDataService';
 import { ApprovalRequiredError, SubmissionBlockedError } from '../../export/submission';
 import { useApp } from '../AppContext';
 import { errorText } from '../errors';
-import { useMountedRef } from '../hooks';
-import { ChangeSet, NO_CHANGES, SaveRecord, addChanges, forRows, hasChanges, savesNotYetRead, withChanges } from '../pendingChanges';
+import { useElementWidth, useMountedRef } from '../hooks';
+import {
+  ChangeSet,
+  NO_CHANGES,
+  SaveQueue,
+  SaveRecord,
+  addChanges,
+  changeAsKept,
+  forRows,
+  hasChanges,
+  keptAsSent,
+  savesNotYetRead,
+  withChanges
+} from '../pendingChanges';
 import { Badge, Card, Dialog, HeaderCard, IssueLine, SavedIndicator, Tag, TotalsStrip } from '../components/common';
 import { DropZone } from '../components/DropZone';
 import { Icon } from '../components/Icon';
@@ -46,12 +59,12 @@ import { ReceiptPreview } from '../components/ReceiptPreview';
 import { RequestNav } from '../components/Sidebar';
 import { VendorTotals } from '../components/VendorTotals';
 import { RequestStep } from '../routing';
-import { VENDOR_APPROVAL_LABEL, changedMessages, quoteText, rowsText, vendorRows } from '../vendorRows';
+import { asSentence } from '../text';
+import { filesBesideGrid } from '../theme';
+import { VENDOR_APPROVAL_LABEL, boughtBeforeNote, changedMessages, quoteSummary, rowsText, vendorRows } from '../vendorRows';
 import { latestSubmission } from './admin/adminData';
 
 const SAVE_DELAY_MS = 500;
-/** From this window width the files sit beside the grid; below it, they slide over (travel D-033). */
-export const WIDE_LAYOUT_PX = 1600;
 const STEP_NUMBER: Record<RequestStep, number> = { details: 1, purchases: 2, review: 3 };
 
 /** Shown once per page load if the receipt reader cannot start (travel D-074). */
@@ -87,7 +100,14 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
   const [loadError, setLoadError] = React.useState('');
   const [selectedLineId, setSelectedLineId] = React.useState<string | null>(null);
   const [focusFileId, setFocusFileId] = React.useState<string | undefined>(undefined);
-  const [wide, setWide] = React.useState(() => window.innerWidth >= WIDE_LAYOUT_PX);
+  // The files sit beside the grid only when the grid keeps its full width there, measured on the
+  // Purchases step itself (the sidebar, the page around the app and a scroll bar all take room);
+  // otherwise they slide over the page (travel D-033).
+  const [layoutRef, layoutWidth] = useElementWidth<HTMLDivElement>();
+  const [wide, setWide] = React.useState(false);
+  React.useLayoutEffect(() => {
+    if (layoutWidth !== null) setWide((beside) => filesBesideGrid(layoutWidth, beside));
+  }, [layoutWidth]);
   const [showPreview, setShowPreview] = React.useState(true);
   const [overlayOpen, setOverlayOpen] = React.useState(false);
   const [touchedFields, setTouchedFields] = React.useState<Record<string, boolean>>({});
@@ -96,7 +116,10 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
   const [saving, setSaving] = React.useState(false);
   const [confirm, setConfirm] = React.useState<'send' | 'submit' | 'delete' | null>(null);
   const [certified, setCertified] = React.useState(false);
+  // While a row or a file is added or removed, or the request is sent or submitted. A count, so one
+  // that ends while another still runs does not end it.
   const [busy, setBusy] = React.useState(false);
+  const busyCount = React.useRef(0);
   // Receipt suggestions (travel D-074, D-078): rows being read, and rows where the
   // employee has chosen "Who paid" themselves, so vendor memory leaves it alone.
   const [readingLineIds, setReadingLineIds] = React.useState<ReadonlySet<string>>(new Set());
@@ -118,6 +141,12 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
   // screen always shows what is saved or about to be (pendingChanges.ts).
   const pending = React.useRef<ChangeSet>(NO_CHANGES);
   const saves = React.useRef<SaveRecord[]>([]);
+  // Saves run one after another, so two saves of one row are written in the order they were made,
+  // and the data layer judges each against the one before it (a category description is kept only
+  // once its category, saved first, needs one).
+  const [queue] = React.useState(() => new SaveQueue());
+  // Saves that failed, counted, so sending or submitting can tell whether the saves it waited for went through.
+  const failedSaves = React.useRef(0);
   // One counter orders reads and finished saves; a read started before a save finished may not hold it.
   const clock = React.useRef(0);
   const runningReads = React.useRef<Set<number>>(new Set());
@@ -131,6 +160,11 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
   const forgetReadSaves = () => {
     const oldest = Math.min(...Array.from(runningReads.current), Infinity);
     saves.current = saves.current.filter((s) => s.finishedAt === null || s.finishedAt > oldest);
+  };
+  /** Records when a save finished, on the counter that also orders the reads. */
+  const finishSave = (save: SaveRecord) => {
+    save.finishedAt = ++clock.current;
+    forgetReadSaves();
   };
 
   /** Reads the request again. `quiet`: a failure leaves the page as it is, instead of showing the error in its place. */
@@ -174,45 +208,58 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     void load();
   }, [load]);
 
-  React.useEffect(() => {
-    const onResize = () => setWide(window.innerWidth >= WIDE_LAYOUT_PX);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  /** Writes what is waiting now. Never throws: a failure is shown, and the page goes back to what is saved. */
-  const flush = React.useCallback(async (): Promise<void> => {
-    window.clearTimeout(timer.current);
-    const changes = pending.current;
-    pending.current = NO_CHANGES;
-    if (!hasChanges(changes)) {
-      if (mounted.current) setSaving(unsaved());
-      return;
-    }
-    const save: SaveRecord = { changes, finishedAt: null };
-    saves.current = [...saves.current, save];
-    const jobs: Promise<unknown>[] = [];
-    if (Object.keys(changes.request).length > 0) jobs.push(service.updateRequest(props.requestId, changes.request));
-    for (const [id, c] of Object.entries(changes.lines)) jobs.push(service.updateLine(id, c));
-    // Every write is waited for, so a failure does not hide a write still running.
-    const failures = (
-      await Promise.all(
+  /**
+   * Writes one save. The page reads back what is saved when a write failed, and also when the
+   * data layer kept something other than what was sent (such as a category description it
+   * cleared), so the screen never shows a value that is not saved.
+   */
+  const write = React.useCallback(
+    async (save: SaveRecord): Promise<void> => {
+      const { changes } = save;
+      const jobs: Promise<boolean>[] = [];
+      if (Object.keys(changes.request).length > 0)
+        jobs.push(service.updateRequest(props.requestId, changes.request).then((kept) => keptAsSent(changes.request, kept)));
+      for (const [id, c] of Object.entries(changes.lines)) jobs.push(service.updateLine(id, c).then((kept) => keptAsSent(c, kept)));
+      // Every write is waited for, so a failure does not hide a write still running.
+      const results = await Promise.all(
         jobs.map((job) =>
           job.then(
-            () => null,
-            (e: unknown) => e
+            (asSent) => ({ failed: false, asSent, error: null as unknown }),
+            (error: unknown) => ({ failed: true, asSent: false, error })
           )
         )
-      )
-    ).filter((e) => e !== null);
-    save.finishedAt = ++clock.current;
-    forgetReadSaves();
-    if (failures.length > 0) {
-      appRef.current.toast(`Could not save: ${errorText(failures[0])} The page shows what is saved.`, 'warning');
-      if (mounted.current) void load(true);
+      );
+      finishSave(save);
+      const failure = results.find((r) => r.failed);
+      if (failure) {
+        failedSaves.current += 1;
+        appRef.current.toast(`Could not save: ${errorText(failure.error)} The page shows what is saved.`, 'warning');
+      }
+      if ((failure || results.some((r) => !r.asSent)) && mounted.current) void load(true);
+    },
+    [service, props.requestId, load]
+  );
+
+  /**
+   * Starts saving what is waiting, then waits until every save made so far has finished, those
+   * running and those queued. Resolves to false if one of them failed. Never throws: a failure is
+   * shown, and the page goes back to what is saved.
+   */
+  const flush = React.useCallback((): Promise<boolean> => {
+    window.clearTimeout(timer.current);
+    const failuresBefore = failedSaves.current;
+    const changes = pending.current;
+    pending.current = NO_CHANGES;
+    if (hasChanges(changes)) {
+      const save: SaveRecord = { changes, finishedAt: null };
+      saves.current = [...saves.current, save];
+      queue.add(() => write(save));
     }
-    if (mounted.current) setSaving(unsaved());
-  }, [service, props.requestId, load]);
+    return queue.idle().then(() => {
+      if (mounted.current) setSaving(unsaved());
+      return failedSaves.current === failuresBefore;
+    });
+  }, [queue, write]);
   const flushRef = React.useRef(flush);
   flushRef.current = flush;
 
@@ -349,8 +396,11 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     [...othersRef.current.map((o) => o.line), ...linesRef.current].filter((l) => l.id !== lineId).sort((a, b) => a.date.localeCompare(b.date));
   const history = [...others.map((o) => o.line), ...lines].sort((a, b) => a.date.localeCompare(b.date));
 
-  // Writes changes to a row on screen, and saves them shortly after.
-  const applyLineChanges = (lineId: string, changes: LineChanges) => {
+  // Writes changes to a row on screen, and saves them shortly after. A change is made the way the
+  // data layer keeps it: a category that needs no description clears the row's (P-024).
+  const applyLineChanges = (lineId: string, requested: LineChanges) => {
+    const current = linesRef.current.find((l) => l.id === lineId);
+    const changes = current ? changeAsKept(current, requested) : requested;
     showLines(linesRef.current.map((l) => (l.id === lineId ? { ...l, ...changes } : l)));
     pending.current = addChanges(pending.current, { request: {}, lines: { [lineId]: changes } });
     scheduleSave();
@@ -413,11 +463,30 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     return filled;
   };
 
-  // Runs a change that adds or removes rows or files, then reloads. Anything typed
-  // meanwhile stays on screen and is saved (load). Errors are shown to the
+  const beginBusy = () => {
+    busyCount.current += 1;
+    setBusy(true);
+  };
+  const endBusy = () => {
+    busyCount.current -= 1;
+    if (mounted.current) setBusy(busyCount.current > 0);
+  };
+
+  /**
+   * Saves everything before the request is sent or submitted, including anything typed while
+   * the saves run. False if a save failed: the page then shows what is saved, and nothing is sent.
+   */
+  const saveEverything = async (): Promise<boolean> => {
+    let ok = await flush();
+    while (ok && mounted.current && unsaved()) ok = await flush();
+    return ok;
+  };
+
+  // Runs a change that adds or removes rows or files, after every save, then reloads. Anything
+  // typed meanwhile stays on screen and is saved (load). Errors are shown to the
   // employee; it never throws.
   const structural = async (work: () => Promise<unknown>): Promise<void> => {
-    setBusy(true);
+    beginBusy();
     try {
       await flush();
       await work();
@@ -425,7 +494,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     } catch (e) {
       app.reportError(e);
     } finally {
-      if (mounted.current) setBusy(false);
+      endBusy();
     }
   };
 
@@ -467,9 +536,12 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
 
   const send = async () => {
     setConfirm(null);
-    setBusy(true);
+    beginBusy();
     try {
-      await flush();
+      if (!(await saveEverything())) {
+        app.toast('Nothing was sent. Check the request, then send it for approval again.', 'warning');
+        return;
+      }
       await service.sendForApproval(request.id);
       await load();
       app.toast('Sent for approval. The approver has been emailed.');
@@ -480,15 +552,18 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
         app.toast(e.message, 'warning');
       } else app.reportError(e);
     } finally {
-      if (mounted.current) setBusy(false);
+      endBusy();
     }
   };
 
   const submit = async () => {
     setConfirm(null);
-    setBusy(true);
+    beginBusy();
     try {
-      await flush();
+      if (!(await saveEverything())) {
+        app.toast('Nothing was submitted. Check the request, then submit it again.', 'warning');
+        return;
+      }
       await service.submitRequest(request.id, CERTIFICATION);
       await load();
       app.toast('Request submitted. The administrator has been notified.');
@@ -501,7 +576,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
         app.toast(e.message, 'warning');
       } else app.reportError(e);
     } finally {
-      if (mounted.current) setBusy(false);
+      endBusy();
     }
   };
 
@@ -518,7 +593,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
   };
 
   const status = REQUEST_STATUS_DISPLAY[request.status];
-  const freshRequest = !request.businessPurpose && !request.projectCode && lines.length === 0;
+  const freshRequest = !request.businessPurpose.trim() && !request.projectCode.trim() && lines.length === 0;
   // The approval state is worth a note when something is still to be done about it.
   const approvalNote = state === 'needed' || state === 'pending' || state === 'changed' ? APPROVAL_STATE_DISPLAY[state].label : undefined;
   const statusMetric = editable
@@ -540,7 +615,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     else setOverlayOpen(true);
   };
   const selectedLine = lines.find((l) => l.id === selectedLineId);
-  const title = request.businessPurpose || 'New purchase request';
+  const title = request.businessPurpose.trim() || 'New purchase request';
   const subtitle = `${request.requestNumber}, step ${STEP_NUMBER[props.step]} of 3${editable ? '' : `. ${status.help}`}`;
   const instructionsButton = (
     <button className="ctx-btn ctx-btn-secondary" onClick={app.openInstructions}>
@@ -581,8 +656,14 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     );
 
   // What the send dialog lists: each vendor total that needs approval, flagged if it counts as bought
-  // before approval (P-017), worked out as sending will record it.
-  const sentGroups = approvalGroupsToSend(request, lines, todayIso());
+  // before approval (P-017), worked out as sending will record it. The note names the flagged ones.
+  const today = todayIso();
+  const sentGroups = approvalGroupsToSend(request, lines, today);
+  const flaggedGroups = sentGroups.filter((g) => g.bought);
+  const boughtNote = boughtBeforeNote(
+    flaggedGroups.filter((g) => looksBoughtNow(lines, g.key, today)).map((g) => g.vendor),
+    flaggedGroups.filter((g) => !looksBoughtNow(lines, g.key, today)).map((g) => g.vendor)
+  );
 
   return (
     <>
@@ -625,7 +706,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
       ) : null}
 
       {props.step === 'purchases' ? (
-        <div className={`ctx-expenses-layout ${sidePreview ? '' : 'no-preview'}`}>
+        <div className={`ctx-expenses-layout ${sidePreview ? '' : 'no-preview'}`} ref={layoutRef}>
           <div className="ctx-stack">
             {editable ? <DropZone onFiles={addFiles} disabled={busy} quoteHint={sending} /> : null}
             <Card
@@ -663,6 +744,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
                   readingLineIds={readingLineIds}
                   onConfirm={confirmLine}
                   onWarning={(text) => app.toast(text, 'warning')}
+                  busy={busy}
                 />
               )}
               {lines.some((l) => isFresh(l) && !touchedLines[l.id]) && !showAllIssues ? (
@@ -748,10 +830,10 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
               ))}
             </ul>
           </div>
-          {sentGroups.some((g) => g.bought) ? (
+          {boughtNote ? (
             <div className="ctx-banner amber" role="note">
               <Icon name="alert" />
-              <div>This looks already bought. It will be flagged Bought before approval. You can still send it.</div>
+              <div>{boughtNote}</div>
             </div>
           ) : null}
         </Dialog>
@@ -828,7 +910,7 @@ function StatusBanner(props: {
       <div className="ctx-banner amber">
         <Icon name="undo" />
         <div>
-          <strong>Returned by {by}.</strong> {request.returnNote} Correct the request and {next}.
+          <strong>Returned by {by}.</strong> {asSentence(request.returnNote)} Correct the request and {next}.
         </div>
       </div>
     );
@@ -863,7 +945,7 @@ function StatusBanner(props: {
               Approved by {request.approvedBy}
               {self} on {request.approvedOn}.
             </strong>{' '}
-            {request.approvalNote.trim() ? `Note: ${request.approvalNote.trim()} ` : ''}
+            {request.approvalNote.trim() ? `Note: ${asSentence(request.approvalNote)} ` : ''}
             {request.boughtBeforeApproval ? 'Flagged: bought before approval. ' : ''}
             Buy, attach your receipts and invoices, then submit.
           </div>
@@ -1015,10 +1097,17 @@ function DetailsStep(props: {
       </Card>
       <Card title="How approval works">
         <ul className="ctx-plain-list">
-          <li>
-            A vendor total of <strong>{APPROVAL_THRESHOLD_TEXT} or more</strong> needs the approver&apos;s approval before you buy. You also attach a quote, or
-            say why there is none (a vendor total of {QUOTE_THRESHOLD_TEXT} or more).
-          </li>
+          {APPROVAL_THRESHOLD_TEXT === QUOTE_THRESHOLD_TEXT ? (
+            <li>
+              A vendor total of <strong>{APPROVAL_THRESHOLD_TEXT} or more</strong> needs the approver&apos;s approval before you buy, and a quote or a reason
+              why there is none.
+            </li>
+          ) : (
+            <li>
+              A vendor total of <strong>{APPROVAL_THRESHOLD_TEXT} or more</strong> needs the approver&apos;s approval before you buy. A vendor total of{' '}
+              {QUOTE_THRESHOLD_TEXT} or more needs a quote, or a reason why there is none.
+            </li>
+          )}
           <li>Totals are by vendor within this request, so splitting a purchase across rows does not avoid the limit.</li>
           <li>Under {APPROVAL_THRESHOLD_TEXT}, no approval is needed. You still submit the request with your receipts.</li>
           <li>When you send a request for approval, the approver is emailed. After approval, buy, attach your receipts and invoices, then submit.</li>
@@ -1110,11 +1199,11 @@ function ReviewStep(props: {
           <Card title="Request">
             <dl className="ctx-dl">
               <dt>Business purpose</dt>
-              <dd>{request.businessPurpose || <span className="ctx-muted">Not entered</span>}</dd>
+              <dd>{request.businessPurpose.trim() || <span className="ctx-muted">Not entered</span>}</dd>
               <dt>Department</dt>
-              <dd>{request.department || <span className="ctx-muted">Not entered</span>}</dd>
+              <dd>{request.department.trim() || <span className="ctx-muted">Not entered</span>}</dd>
               <dt>Project or grant code</dt>
-              <dd>{request.projectCode || <span className="ctx-muted">None</span>}</dd>
+              <dd>{request.projectCode.trim() || <span className="ctx-muted">None</span>}</dd>
               <dt>Purchase dates</dt>
               <dd>{dates || <span className="ctx-muted">No dates yet</span>}</dd>
               <dt>Approver</dt>
@@ -1218,7 +1307,7 @@ function ReviewStep(props: {
                         <span className="ctx-strong">{total}</span>
                       </div>
                       <div className="ctx-hint">
-                        {rowsText(r.rows)}. Quote: {quoteText(r.quote) || 'not required'}. Approval: {VENDOR_APPROVAL_LABEL[r.approval]}
+                        {rowsText(r.rows)}. Quote: {quoteSummary(r.quote)}. Approval: {VENDOR_APPROVAL_LABEL[r.approval]}
                         {r.approvedCents !== null ? ` (${formatCents(r.approvedCents)} approved)` : ''}.{' '}
                         {r.boughtBefore ? (
                           <Tag title="The purchase looked already made when the request was sent for approval">Bought before approval</Tag>
@@ -1233,7 +1322,7 @@ function ReviewStep(props: {
             {approvalIsKept ? (
               <div className="ctx-hint" style={{ marginTop: 10 }}>
                 Approved by {request.approvedBy}
-                {self} on {request.approvedOn}.{request.approvalNote.trim() ? ` Note: ${request.approvalNote.trim()}` : ''}
+                {self} on {request.approvedOn}.{request.approvalNote.trim() ? ` Note: ${asSentence(request.approvalNote)}` : ''}
               </div>
             ) : null}
           </Card>

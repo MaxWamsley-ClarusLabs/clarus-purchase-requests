@@ -1,5 +1,5 @@
 import { toLocalDateTime } from '../../domain/dates';
-import { CATEGORIES, CERTIFICATION, PAID_BY_OPTIONS, vendorKey } from '../../domain/purchaseRules';
+import { CATEGORIES, CERTIFICATION, PAID_BY_OPTIONS, approvalState, vendorGroups, vendorKey } from '../../domain/purchaseRules';
 import { REQUEST_STATUSES } from '../../domain/statuses';
 import { prepareApprovalRequest, prepareSubmission } from '../../export/submission';
 import { file, line, quote, request } from '../../testing/builders';
@@ -339,27 +339,68 @@ describe('reading a request (anything may have been edited directly, travel D-00
 });
 
 describe('the approval record (JSON on the request)', () => {
-  const group = { key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 64000, bought: false };
+  const group = { key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 64000, bought: false };
+  const empty = { sent: [], approved: [], earlier: [] };
 
   it('round trips what the app writes', () => {
-    const record = { sent: [group, { key: 'line:5', vendor: '', cents: 70000, bought: true }], approved: [{ ...group, bought: true }] };
+    const earlier = { key: vendorKey('Beta Instruments'), vendor: 'Beta Instruments', cents: 55000, bought: false };
+    const record = { sent: [group, { key: 'line:5', vendor: '', cents: 70000, bought: true }], approved: [{ ...group, bought: true }], earlier: [earlier] };
     expect(parseApprovalRecord(approvalRecordJson(record))).toEqual(record);
     expect(requestFromItem(requestItem({ ApprovalRecord: requestFields({ approval: record }).ApprovalRecord as string })).approval).toEqual(record);
   });
 
-  it('reads an empty or missing record as nothing sent and nothing approved', () => {
-    const empty = { sent: [], approved: [] };
-    for (const value of [null, undefined, '', '{}', '{"sent":[],"approved":[]}']) expect(parseApprovalRecord(value)).toEqual(empty);
-    expect(parseApprovalRecord('{"approved":[' + JSON.stringify(group) + ']}')).toEqual({ sent: [], approved: [group] });
+  it('reads an empty or missing record as nothing sent, nothing approved and nothing approved earlier', () => {
+    for (const value of [null, undefined, '', '{}', '{"sent":[],"approved":[]}', '{"sent":[],"approved":[],"earlier":[]}']) {
+      expect(parseApprovalRecord(value)).toEqual(empty);
+    }
+    expect(parseApprovalRecord('{"approved":[' + JSON.stringify(group) + ']}')).toEqual({ sent: [], approved: [group], earlier: [] });
+  });
+
+  it('reads a record stored before earlier approvals were kept as having none (P-017)', () => {
+    expect(parseApprovalRecord(JSON.stringify({ sent: [group], approved: [group] }))).toEqual({ sent: [group], approved: [group], earlier: [] });
+    expect(requestFromItem(requestItem()).approval.earlier).toEqual([]);
   });
 
   it('reads bad JSON and wrong shapes as the empty record', () => {
-    const empty = { sent: [], approved: [] };
-    for (const value of ['{not json', 'null', '42', '"text"', '[1,2]', '[]', '{"sent":"x","approved":[]}', '{"sent":[],"approved":{"a":1}}']) {
-      expect(parseApprovalRecord(value)).toEqual(empty);
+    for (const value of [
+      '{not json',
+      'null',
+      '42',
+      '"text"',
+      '[1,2]',
+      '[]',
+      '{"sent":"x","approved":[]}',
+      '{"sent":[],"approved":{"a":1}}',
+      '{"sent":[],"approved":[],"earlier":"x"}',
+      '{"sent":[],"approved":[],"earlier":null}'
+    ]) {
+      expect([value, parseApprovalRecord(value)]).toEqual([value, empty]);
     }
-    // One bad half makes the whole record untrustworthy, so a good half next to it is not kept either.
+    // One bad part makes the whole record untrustworthy, so a good part next to it is not kept either.
     expect(parseApprovalRecord(JSON.stringify({ sent: 'x', approved: [group] }))).toEqual(empty);
+    expect(parseApprovalRecord(JSON.stringify({ sent: [group], approved: [group], earlier: { a: 1 } }))).toEqual(empty);
+  });
+
+  it('works out each key again from the vendor as stored, so a record kept from before a change to the matching rule still matches (P-016)', () => {
+    // A key an older matching rule wrote: it kept the spaces.
+    const old = { key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 64000, bought: false };
+    const record = parseApprovalRecord(JSON.stringify({ sent: [old], approved: [old], earlier: [old] }));
+    expect(record).toEqual({ sent: [group], approved: [group], earlier: [group] });
+    // So the approval still covers the same vendor today, however its name is typed now.
+    expect(approvalState('Approved', vendorGroups([{ id: 'a', vendor: 'ACME Lab Supply.', amountCents: 64000 }]), record)).toBe('approved');
+    expect(requestFromItem(requestItem()).approval.approved.map((g) => g.key)).toEqual([vendorKey('Acme Lab Supply')]);
+    // A line's own key stays as it is, and so does a key whose stored vendor gives none.
+    const kept = parseApprovalRecord(
+      JSON.stringify({
+        sent: [
+          { key: 'line:5', vendor: '', cents: 70000, bought: true },
+          { key: 'line:7', vendor: 'Acme Lab Supply', cents: 70000, bought: false },
+          { key: 'stored', vendor: ' ​ ', cents: 50000, bought: false }
+        ],
+        approved: []
+      })
+    );
+    expect(kept.sent.map((g) => g.key)).toEqual(['line:5', 'line:7', 'stored']);
   });
 
   it('drops a vendor total that is not well formed, and keeps the good ones', () => {
@@ -377,7 +418,7 @@ describe('the approval record (JSON on the request)', () => {
       ],
       approved: [{ key: 'f', vendor: 'F', cents: 0, bought: false }]
     };
-    expect(parseApprovalRecord(JSON.stringify(record))).toEqual({ sent: [group], approved: [{ key: 'f', vendor: 'F', cents: 0, bought: false }] });
+    expect(parseApprovalRecord(JSON.stringify(record))).toEqual({ sent: [group], approved: [{ key: 'f', vendor: 'F', cents: 0, bought: false }], earlier: [] });
   });
 
   it('reads bought as true only when it is exactly true', () => {
@@ -392,10 +433,10 @@ describe('the approval record (JSON on the request)', () => {
     expect(parseApprovalRecord('{"sent":[{"key":"a","vendor":"A","cents":1e309,"bought":false}],"approved":[]}').sent).toEqual([]);
   });
 
-  it('writes only the two lists', () => {
-    const json = approvalRecordJson({ sent: [group], approved: [] });
-    expect(JSON.parse(json)).toEqual({ sent: [group], approved: [] });
-    expect(JSON.parse(approvalRecordJson({ sent: [], approved: [], extra: 1 } as never))).toEqual({ sent: [], approved: [] });
+  it('writes only the three lists', () => {
+    const json = approvalRecordJson({ sent: [group], approved: [], earlier: [group] });
+    expect(JSON.parse(json)).toEqual({ sent: [group], approved: [], earlier: [group] });
+    expect(JSON.parse(approvalRecordJson({ sent: [], approved: [], earlier: [], extra: 1 } as never))).toEqual(empty);
   });
 });
 
@@ -567,6 +608,14 @@ describe('reading a row and its files', () => {
 });
 
 describe('reading a submission', () => {
+  it('takes the last change from Modified, and falls back to Created when it is missing', () => {
+    const modified = submissionFromItem(submissionItem({ Created: '2026-10-12T09:00:00.000Z', Modified: '2026-10-12T09:45:00.000Z' }), 'PR-0042');
+    expect(modified.lastChanged).toBe(localTime('2026-10-12T09:45:00.000Z'));
+    expect(modified.submittedOn).toBe(localTime('2026-10-12T09:00:00.000Z'));
+    const missing = submissionFromItem(submissionItem({ Created: '2026-10-12T09:00:00.000Z', Modified: null }), 'PR-0042');
+    expect(missing.lastChanged).toBe(localTime('2026-10-12T09:00:00.000Z'));
+  });
+
   it('converts an item, with its files and the request number given', () => {
     const s = submissionFromItem(submissionItem(), 'PR-0042');
     expect(s).toMatchObject({
@@ -643,7 +692,7 @@ describe('writing changes', () => {
   });
 
   it('writes totals in dollars, counts, the flag and the approval record', () => {
-    const approval = { sent: [{ key: 'acme', vendor: 'Acme', cents: 64000, bought: true }], approved: [] };
+    const approval = { sent: [{ key: 'acme', vendor: 'Acme', cents: 64000, bought: true }], approved: [], earlier: [] };
     expect(
       requestFields({
         totalReimburseCents: 45230,
@@ -786,7 +835,7 @@ describe('writing a submission', () => {
   it('writes the columns of a package, titled "submission", with the frozen approval as text', () => {
     const approved = request({
       status: 'Approved',
-      approval: { sent: [], approved: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 100000, bought: true }] },
+      approval: { sent: [], approved: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 100000, bought: true }], earlier: [] },
       boughtBeforeApproval: true,
       approvedBy: 'Max Wamsley',
       approvedByEmail: 'max.wamsley@example.com',

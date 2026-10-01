@@ -13,10 +13,18 @@ import {
   lineApprovals
 } from '../../../domain/purchaseRules';
 import { hasReceipt, quoteFiles, receiptFiles } from '../../../domain/receipts';
-import { APPROVAL_STATE_DISPLAY, LINE_APPROVAL_DISPLAY, REQUEST_STATUS_DISPLAY, canConfirmCategories, submissionStatusDisplay } from '../../../domain/statuses';
+import {
+  APPROVAL_STATE_DISPLAY,
+  LINE_APPROVAL_DISPLAY,
+  PACKAGE_ATTENTION_MINUTES,
+  REQUEST_STATUS_DISPLAY,
+  canConfirmCategories,
+  submissionStatusDisplay
+} from '../../../domain/statuses';
 import { CategoryId, PurchaseLine, PurchaseRequest, Submission } from '../../../domain/types';
 import { approvalStateOf } from '../../../domain/validation';
 import { CategoryChoice } from '../../../data/PurchaseDataService';
+import { retryRefusal } from '../../../data/sharepoint/serviceRules';
 import { CSV_COLUMNS, approverText } from '../../../export/csv';
 import { useApp } from '../../AppContext';
 import { useMountedRef } from '../../hooks';
@@ -150,8 +158,13 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
   const state = approvalStateOf(request, lines);
   const approvals = lineApprovals(lines, request.status, request.approval);
   const csvRows = csv ? parseCsv(csv) : [];
-  const packageFailed = request.status === 'Submitted' && latestPackage?.packageStatus === 'Failed';
-  const approvalEmailFailed = request.status === 'Awaiting approval' && latestApproval?.packageStatus === 'Failed';
+  // Retry is offered exactly when the services allow it (P-030): for the newest approval email or
+  // package, while the request is still at that step, once it has failed or has not finished
+  // within PACKAGE_ATTENTION_MINUTES. Worked out again each time the page is drawn, so a stuck one
+  // shows as the minutes pass while its progress is checked.
+  const now = new Date();
+  const retryApproval = latestApproval && retryRefusal(latestApproval, submissions, request.status, now) === '' ? latestApproval : undefined;
+  const retryPackage = latestPackage && retryRefusal(latestPackage, submissions, request.status, now) === '' ? latestPackage : undefined;
   const noValidApproval =
     (request.status === 'Approved' || request.status === 'Submitted' || request.status === 'Processed') && (state === 'needed' || state === 'changed');
   const year = dateRange(lines.map((l) => l.date)).first.slice(0, 4);
@@ -226,11 +239,11 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
         }
         actions={
           <>
-            {latestApproval && latestApproval.packageStatus === 'Failed' ? (
+            {retryApproval ? (
               <button
                 className="ctx-btn ctx-btn-secondary"
                 disabled={busy}
-                onClick={() => act(() => app.service.retryPackaging(latestApproval.id), 'Approval email started again.')}
+                onClick={() => act(() => app.service.retryPackaging(retryApproval.id), 'Approval email started again.')}
               >
                 <Icon name="refresh" size={16} />
                 Retry approval email
@@ -250,11 +263,11 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
             ) : null}
             {request.status === 'Submitted' ? (
               <>
-                {latestPackage && latestPackage.packageStatus === 'Failed' ? (
+                {retryPackage ? (
                   <button
                     className="ctx-btn ctx-btn-secondary"
                     disabled={busy}
-                    onClick={() => act(() => app.service.retryPackaging(latestPackage.id), 'Packaging started again.')}
+                    onClick={() => act(() => app.service.retryPackaging(retryPackage.id), 'Packaging started again.')}
                   >
                     <Icon name="refresh" size={16} />
                     Retry packaging
@@ -277,22 +290,37 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
           </>
         }
       />
-      {packageFailed && latestPackage ? (
+      {retryPackage ? (
         <div className="ctx-banner red">
           <Icon name="alert" />
-          <div>
-            <strong>The folder was not created.</strong> {latestPackage.errorMessage} If a partial folder exists in Purchases_To_Process, delete it first, then
-            click Retry packaging.
-          </div>
+          {retryPackage.packageStatus === 'Failed' ? (
+            <div>
+              <strong>The folder was not created.</strong> {retryPackage.errorMessage} If a partial folder exists in Purchases_To_Process, delete it first, then
+              click Retry packaging.
+            </div>
+          ) : (
+            <div>
+              <strong>The folder has not been created for more than {PACKAGE_ATTENTION_MINUTES} minutes.</strong> The flow may be turned off, or it may have
+              stopped part-way. Check it in Power Automate. If a partial folder exists in Purchases_To_Process, delete it first, then click Retry packaging.
+            </div>
+          )}
         </div>
       ) : null}
-      {approvalEmailFailed && latestApproval ? (
+      {retryApproval ? (
         <div className="ctx-banner red">
           <Icon name="alert" />
-          <div>
-            <strong>The approval email may not have been sent.</strong> {latestApproval.errorMessage} The request is still waiting under Approvals. Click Retry
-            approval email (the approvers may then get it twice), or approve it here.
-          </div>
+          {retryApproval.packageStatus === 'Failed' ? (
+            <div>
+              <strong>The approval email may not have been sent.</strong> {retryApproval.errorMessage} The request is still waiting under Approvals. Click Retry
+              approval email (the approvers may then get it twice), or approve it here.
+            </div>
+          ) : (
+            <div>
+              <strong>The approval email has not been sent for more than {PACKAGE_ATTENTION_MINUTES} minutes.</strong> The flow may be turned off, or it may
+              have stopped part-way. Check it in Power Automate. The request is still waiting under Approvals. Click Retry approval email (the approvers may
+              then get it twice), or approve it here.
+            </div>
+          )}
         </div>
       ) : null}
       {request.boughtBeforeApproval ? (

@@ -49,7 +49,10 @@ async function harness(): Promise<Harness & { site: FakeSharePoint }> {
       const item = site.listByUrlName('PurchaseSubmissions')!.items.get(id)!;
       item.fields.PackageStatus = status;
       item.fields.ErrorMessage = errorMessage;
-      if (madeAt) item.fields.Created = madeAt.toISOString();
+      if (madeAt) {
+        item.fields.Created = madeAt.toISOString();
+        item.fields.Modified = madeAt.toISOString();
+      }
     },
     editLineDirectly: (lineId, edit) => {
       const fields = site.listByUrlName('PurchaseRequestLines')!.items.get(Number(lineId))!.fields;
@@ -82,7 +85,7 @@ async function harness(): Promise<Harness & { site: FakeSharePoint }> {
       const fields = site.listByUrlName('PurchaseRequests')!.items.get(requestId)!.fields;
       const record = JSON.parse(String(fields.ApprovalRecord));
       const person = FAKE_USERS[approver.email];
-      fields.ApprovalRecord = JSON.stringify({ sent: record.sent, approved });
+      fields.ApprovalRecord = JSON.stringify({ ...record, approved });
       fields.ApprovedOn = new Date(2026, 9, 14, 10, 5).toISOString();
       fields.ApprovedById = person.id;
       fields.ApprovedBy = { Id: person.id, Title: person.title, EMail: person.email };
@@ -306,7 +309,7 @@ describe('what is stored in the lists (docs/DATA_MODEL.md)', () => {
       TotalCompany: 0,
       TotalRequest: 452.3,
       BoughtBeforeApproval: false,
-      ApprovalRecord: '{"sent":[],"approved":[]}',
+      ApprovalRecord: '{"sent":[],"approved":[],"earlier":[]}',
       AuthorId: FAKE_JANE.id
     });
   });
@@ -401,7 +404,8 @@ describe('what is stored in the lists (docs/DATA_MODEL.md)', () => {
     });
     expect(JSON.parse(String(stored(site, 'PurchaseRequests', request.id).ApprovalRecord))).toEqual({
       sent: [{ key: 'acmelabsupply', vendor: 'Acme Lab Supply', cents: 100000, bought: false }],
-      approved: []
+      approved: [],
+      earlier: []
     });
 
     const max = serviceFor(site, FAKE_MAX, new Date(2026, 9, 17, 10, 5));
@@ -537,7 +541,13 @@ describe('what is stored in the lists (docs/DATA_MODEL.md)', () => {
     line.FileFingerprints = '[not json';
     const jane = serviceFor(site, FAKE_JANE);
     const { request, lines } = await jane.getRequest(id);
-    expect(request).toMatchObject({ status: 'Draft', approval: { sent: [], approved: [] }, returnStage: '', totalReimburseCents: 0, submissionCount: 0 });
+    expect(request).toMatchObject({
+      status: 'Draft',
+      approval: { sent: [], approved: [], earlier: [] },
+      returnStage: '',
+      totalReimburseCents: 0,
+      submissionCount: 0
+    });
     expect(lines[0]).toMatchObject({ category: '' });
     // With the record of the files gone, neither counts as the receipt.
     expect(lines[0].files.map((f) => [f.fileName, f.kind, f.fingerprint])).toEqual([
@@ -949,13 +959,14 @@ describe("rows and submissions belong to the request's owner (travel D-002, D-00
   });
 });
 
-describe('what a first send writes (P-019)', () => {
-  const requestWrites = (site: FakeSharePoint, from: number) =>
-    site.log
-      .slice(from)
-      .filter((r) => r.method === 'MERGE' && decodeURIComponent(r.url).includes("Lists/PurchaseRequests')/items("))
-      .map((r) => JSON.parse(r.body!) as Record<string, unknown>);
+/** The columns each change to a request wrote, in order, from log entry `from` on. */
+const requestWrites = (site: FakeSharePoint, from: number) =>
+  site.log
+    .slice(from)
+    .filter((r) => r.method === 'MERGE' && decodeURIComponent(r.url).includes("Lists/PurchaseRequests')/items("))
+    .map((r) => JSON.parse(r.body!) as Record<string, unknown>);
 
+describe('what a first send writes (P-019)', () => {
   it('sends a Draft without clearing an approver, a time or a return stage it never had, and clears them when there are some', async () => {
     const site = await setUpSite();
     const jane = serviceFor(site, FAKE_JANE);
@@ -1009,6 +1020,99 @@ describe('what a first send writes (P-019)', () => {
     from = site.log.length;
     await jane.submitRequest(id, CERTIFICATION);
     expect(requestWrites(site, from)[0]).toMatchObject({ RequestStatus: 'Submitted', SubmissionCount: 2, ReturnStage: null });
+  });
+});
+
+describe('what approving and returning write (P-019)', () => {
+  const APPROVED_AT = new Date(2026, 9, 17, 10, 5);
+
+  /** Jane's request with Acme Lab Supply at $1,000.00 and a quote, sent for approval for the first time. */
+  async function sentOnce(site: FakeSharePoint): Promise<number> {
+    const jane = serviceFor(site, FAKE_JANE);
+    const request = await jane.createRequest();
+    await jane.updateRequest(request.id, { businessPurpose: 'Lab supplies', department: 'R&D' });
+    const line = await jane.addEmptyLine(request.id);
+    await jane.updateLine(line.id, {
+      date: '2026-10-20',
+      vendor: 'Acme Lab Supply',
+      description: 'Pipette tips',
+      category: 'rdMaterials',
+      amountCents: 100000
+    });
+    await jane.addFileToLine(line.id, file('quote.pdf'), 'quote');
+    await jane.sendForApproval(request.id);
+    return request.id;
+  }
+
+  it('approves a request that was never returned without clearing a return stage it never had', async () => {
+    const site = await setUpSite();
+    const id = await sentOnce(site);
+    const from = site.log.length;
+    await serviceFor(site, FAKE_MAX, APPROVED_AT).approveRequest(id, { note: 'OK', categories: {} });
+    const [write] = requestWrites(site, from);
+    expect(write).toMatchObject({
+      RequestStatus: 'Approved',
+      ApprovedById: FAKE_MAX.id,
+      ApprovedOn: APPROVED_AT.toISOString(),
+      ApprovalNote: 'OK',
+      ReturnNote: ''
+    });
+    expect(Object.keys(write)).not.toContain('ReturnStage');
+  });
+
+  it('clears a return stage left on a request that is awaiting approval, for example by an edit in SharePoint, when it is approved', async () => {
+    const site = await setUpSite();
+    const id = await sentOnce(site);
+    stored(site, 'PurchaseRequests', id).ReturnStage = 'Approval';
+    const from = site.log.length;
+    const approved = await serviceFor(site, FAKE_MAX, APPROVED_AT).approveRequest(id, { note: '', categories: {} });
+    expect(requestWrites(site, from)[0]).toMatchObject({ RequestStatus: 'Approved', ReturnStage: null });
+    expect(approved.returnStage).toBe('');
+  });
+
+  it('returns a request that never held an approval without clearing an approver, a time or a note it never had', async () => {
+    const site = await setUpSite();
+    const id = await sentOnce(site);
+    const from = site.log.length;
+    await serviceFor(site, FAKE_MAX, APPROVED_AT).returnRequest(id, 'Please add a second quote.');
+    const [write] = requestWrites(site, from);
+    expect(write).toMatchObject({ RequestStatus: 'Returned', ReturnNote: 'Please add a second quote.', ReturnStage: 'Approval' });
+    for (const column of ['ApprovedById', 'ApprovedOn', 'ApprovalNote']) expect(Object.keys(write)).not.toContain(column);
+    expect(JSON.parse(String(write.ApprovalRecord))).toEqual({
+      sent: [{ key: 'acmelabsupply', vendor: 'Acme Lab Supply', cents: 100000, bought: false }],
+      approved: [],
+      earlier: []
+    });
+  });
+
+  it('clears an approval left on a request that is awaiting approval when it is returned', async () => {
+    const site = await setUpSite();
+    const id = await sentOnce(site);
+    const fields = stored(site, 'PurchaseRequests', id);
+    Object.assign(fields, {
+      ApprovedOn: APPROVED_AT.toISOString(),
+      ApprovedById: FAKE_MAX.id,
+      ApprovedBy: { Id: FAKE_MAX.id, Title: FAKE_MAX.title, EMail: FAKE_MAX.email },
+      ApprovalNote: 'Left by an edit'
+    });
+    const from = site.log.length;
+    await serviceFor(site, FAKE_MAX, APPROVED_AT).returnRequest(id, 'Please add a second quote.');
+    expect(requestWrites(site, from)[0]).toMatchObject({
+      RequestStatus: 'Returned',
+      ReturnStage: 'Approval',
+      ApprovedById: null,
+      ApprovedOn: null,
+      ApprovalNote: ''
+    });
+  });
+
+  it('writes only the status, the note and the stage when a submitted request is returned', async () => {
+    const site = await setUpSite();
+    const { id } = await janeRequest(site);
+    await serviceFor(site, FAKE_JANE).submitRequest(id, CERTIFICATION);
+    const from = site.log.length;
+    await serviceFor(site, FAKE_MAX).returnRequest(id, 'Please attach the itemized invoice.');
+    expect(requestWrites(site, from)).toEqual([{ RequestStatus: 'Returned', ReturnNote: 'Please attach the itemized invoice.', ReturnStage: 'Processing' }]);
   });
 });
 

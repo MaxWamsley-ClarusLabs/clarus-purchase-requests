@@ -73,15 +73,17 @@ export const PACKAGE_ATTENTION_MINUTES = 30;
 
 /**
  * A submission that failed, or that the flow has not finished within
- * PACKAGE_ATTENTION_MINUTES of it being made (P-030): its folder was not
- * created, or its approval email was not sent. `submittedOn` is the local
- * "YYYY-MM-DD HH:MM" it was made at.
+ * PACKAGE_ATTENTION_MINUTES of its last change (P-030): its folder was not
+ * created, or its approval email was not sent. The time is the local
+ * "YYYY-MM-DD HH:MM" of the last change (`lastChanged`), or of when it was
+ * made (`submittedOn`) if that is not known, so a retry starts the time again
+ * and a second Retry is not offered the moment after the first.
  */
-export function submissionNeedsAttention(s: Pick<Submission, 'packageStatus' | 'submittedOn'>, now: Date): boolean {
+export function submissionNeedsAttention(s: Pick<Submission, 'packageStatus' | 'submittedOn' | 'lastChanged'>, now: Date): boolean {
   if (s.packageStatus === 'Failed') return true;
   if (s.packageStatus === 'Packaged') return false;
-  const submitted = new Date(s.submittedOn.replace(' ', 'T'));
-  return now.getTime() - submitted.getTime() > PACKAGE_ATTENTION_MINUTES * 60 * 1000;
+  const since = new Date((s.lastChanged || s.submittedOn).replace(' ', 'T'));
+  return now.getTime() - since.getTime() > PACKAGE_ATTENTION_MINUTES * 60 * 1000;
 }
 
 /** The request status a submission of each type is for: an approval request while the request awaits approval, a package while it is submitted. */

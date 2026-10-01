@@ -159,7 +159,8 @@ describe('the submission email summary', () => {
       approvalNote: 'OK, use the company card.',
       approval: {
         sent: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 60000, bought: true }],
-        approved: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 60000, bought: true }]
+        approved: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 60000, bought: true }],
+        earlier: []
       }
     });
     const text = buildSubmissionEmailSummary({ ...base, request: approvedRequest });
@@ -176,9 +177,19 @@ describe('the submission email summary', () => {
       warnings: [{ severity: 'warning', scope: 'row', field: 'amount', lineId: 'b', rowNumber: 2, message: 'Same date, vendor and amount as row 7.' }]
     });
     expect(text).toContain('Rows without a receipt:\n- Row 2: Receipt lost');
-    expect(text).toContain('Categories only suggested by the employee (not confirmed by an approver or administrator): rows 2.');
+    expect(text).toContain('Categories only suggested by the employee (not confirmed by an approver or administrator): row 2.');
     expect(text).toContain('- Row 2: Same date, vendor and amount as row 7.');
     expect(text).toContain('Certified by Jane Doe at submission, 2026-10-16 09:00:\n"I certify it."');
+  });
+
+  it('names one row as "row 2" and several as "rows 1, 2"', () => {
+    const none = lines.map((l) => ({ ...l, categoryConfirmedBy: '' }));
+    const text = buildSubmissionEmailSummary({ ...base, lines: none, totals: computeTotals(none), request: request() });
+    expect(text).toContain('(not confirmed by an approver or administrator): rows 1, 2.');
+    expect(buildSubmissionEmailSummary({ ...base, request: request() })).not.toMatch(/rows \d+\./);
+    // With every category confirmed, there is no such line.
+    const all = lines.map((l) => ({ ...l, categoryConfirmedBy: 'Max Wamsley' }));
+    expect(buildSubmissionEmailSummary({ ...base, lines: all, totals: computeTotals(all), request: request() })).not.toContain('Categories only suggested');
   });
 
   it('names the folder a resubmission replaces', () => {

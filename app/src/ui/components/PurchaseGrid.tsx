@@ -38,9 +38,18 @@ interface Props {
   onConfirm: (lineId: string) => void;
   /** Tells the employee about part of a paste that was not used. */
   onWarning: (text: string) => void;
+  /**
+   * A row or a file is being added or removed. Meanwhile the row menu cannot
+   * attach, remove or share files, or delete a row: two such changes to one
+   * row at the same moment could undo each other.
+   */
+  busy?: boolean;
 }
 
 const SUGGESTED_TITLE = 'Filled in by the app. Check it against the receipt.';
+
+/** Why a row menu choice is turned off for a moment. */
+const BUSY_TITLE = 'Wait until the file or row being added or removed is done.';
 
 /** About as tall as the open row menu: a menu that would not fit below its button opens above it. */
 const MENU_HEIGHT_PX = 340;
@@ -132,8 +141,25 @@ function without(record: Record<string, string>, key: string): Record<string, st
 
 export function PurchaseGrid(props: Props): React.ReactElement {
   const { lines, issues, readOnly } = props;
+  const busy = !!props.busy;
   const tableRef = React.useRef<HTMLTableElement>(null);
+  const wrapRef = React.useRef<HTMLDivElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
+  // Whether the grid is wider than its card and scrolls sideways: the row menu column then shows an edge.
+  const [scrolls, setScrolls] = React.useState(false);
+  React.useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const measure = () => setScrolls(wrap.scrollWidth > wrap.clientWidth + 1);
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, []);
   // The button that opened the row menu, which gets the focus back when the menu closes.
   const menuButton = React.useRef<HTMLElement | null>(null);
   const [menu, setMenu] = React.useState<OpenMenu | null>(null);
@@ -266,7 +292,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
   });
 
   return (
-    <div className="ctx-grid-wrap">
+    <div className={`ctx-grid-wrap ${scrolls ? 'scrolls' : ''}`} ref={wrapRef}>
       <datalist id="ctx-vendor-options">
         {props.vendorOptions.map((v) => (
           <option key={v} value={v} />
@@ -285,15 +311,16 @@ export function PurchaseGrid(props: Props): React.ReactElement {
       <table className="ctx-grid" ref={tableRef}>
         <thead>
           <tr>
+            {/* "What was bought and why" takes the width left over: at least 172 pixels at the grid's narrowest (GRID_MIN_WIDTH_PX). */}
             <th style={{ width: 24 }}>#</th>
-            <th style={{ width: 150 }}>Files</th>
-            <th style={{ width: 128 }}>Date</th>
-            <th style={{ width: 204 }}>Vendor</th>
+            <th style={{ width: 128 }}>Files</th>
+            <th style={{ width: 120 }}>Date</th>
+            <th style={{ width: 166 }}>Vendor</th>
             <th>What was bought and why</th>
-            <th style={{ width: 172 }}>Category</th>
+            <th style={{ width: 148 }}>Category</th>
             <th style={{ width: 86, textAlign: 'right' }}>Amount</th>
-            <th style={{ width: 104 }}>Who paid</th>
-            <th style={{ width: 128 }}>Approval</th>
+            <th style={{ width: 102 }}>Who paid</th>
+            <th style={{ width: 108 }}>Approval</th>
             <th style={{ width: 36 }} aria-label="Row menu" />
           </tr>
         </thead>
@@ -503,7 +530,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                       </div>
                     ) : null}
                   </td>
-                  <td>
+                  <td className={menuFor === line.id ? 'menu-open' : undefined}>
                     {readOnly ? null : (
                       <div className="ctx-menu-wrap">
                         <button
@@ -538,9 +565,12 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                                 key={kind}
                                 role="menuitem"
                                 tabIndex={0}
+                                aria-disabled={busy ? true : undefined}
+                                title={busy ? BUSY_TITLE : undefined}
                                 onKeyDown={(e) => {
                                   if (e.key !== 'Enter' && e.key !== ' ') return;
                                   e.preventDefault();
+                                  // A file box that is turned off does not open.
                                   e.currentTarget.querySelector('input')?.click();
                                 }}
                               >
@@ -550,6 +580,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                                   type="file"
                                   accept={ACCEPT_ATTRIBUTE}
                                   hidden
+                                  disabled={busy}
                                   onChange={(e) => {
                                     const f = e.target.files?.[0];
                                     if (f) props.onAddFile(line.id, f, kind);
@@ -567,6 +598,8 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                                   className="ctx-select"
                                   aria-label={`Row ${line.rowNumber} same receipt as row`}
                                   value={line.sameReceiptAsRow ?? ''}
+                                  disabled={busy}
+                                  title={busy ? BUSY_TITLE : undefined}
                                   onChange={(e) => {
                                     props.onChange(line.id, { sameReceiptAsRow: e.target.value === '' ? null : Number(e.target.value) });
                                     closeMenu();
@@ -587,6 +620,8 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                                 type="button"
                                 key={f.id}
                                 role="menuitem"
+                                disabled={busy}
+                                title={busy ? BUSY_TITLE : undefined}
                                 onClick={() => {
                                   props.onRemoveFile(line.id, f.id);
                                   closeMenu();
@@ -601,6 +636,8 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                               type="button"
                               role="menuitem"
                               className="danger"
+                              disabled={busy}
+                              title={busy ? BUSY_TITLE : undefined}
                               onClick={() => {
                                 props.onDelete(line.id);
                                 closeMenu();

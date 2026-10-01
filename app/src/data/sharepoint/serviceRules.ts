@@ -4,10 +4,10 @@
 // SharePoint calls and no stored state.
 
 import { messages } from '../../domain/messages';
-import { categoryNeedsDescription, categoryText, findCategory, findPaidBy } from '../../domain/purchaseRules';
+import { approvalsSoFar, categoryNeedsDescription, categoryText, findCategory, findPaidBy } from '../../domain/purchaseRules';
 import { receiptFiles } from '../../domain/receipts';
 import { PACKAGE_ATTENTION_MINUTES, STATUS_FOR_SUBMISSION, submissionNeedsAttention } from '../../domain/statuses';
-import { CategoryId, PurchaseLine, PurchaseRequest, RequestStatus, Submission, SubmissionType } from '../../domain/types';
+import { ApprovalGroup, ApprovalRecord, CategoryId, PurchaseLine, PurchaseRequest, RequestStatus, Submission, SubmissionType } from '../../domain/types';
 import { CategoryChoice, LineChanges, RequestChanges } from '../PurchaseDataService';
 import { line255, parseSuggested } from './mapping';
 
@@ -203,12 +203,37 @@ export function categoryUpdates(lines: readonly PurchaseLine[], choices: Record<
 // ---- Sending for approval ----------------------------------------------------
 
 /**
- * Whether a request holds an approval that sending it for approval again must
- * take back (P-019). A request that never had one (a Draft being sent for the
- * first time) has nothing to clear, so no person or date column is written.
+ * Whether a request holds an approval that sending it for approval again, or
+ * returning it at the approval step, must take back (P-019). A request that
+ * never had one (a Draft being sent for the first time, or a request returned
+ * before it was ever approved) has nothing to clear, so no person or date
+ * column is written.
  */
 export function holdsApproval(request: Pick<PurchaseRequest, 'approvedOn' | 'approvedBy' | 'approvedByEmail' | 'approvalNote'>): boolean {
   return request.approvedOn !== '' || request.approvedBy !== '' || request.approvedByEmail !== '' || request.approvalNote !== '';
+}
+
+// ---- The approval record at each step (P-017, P-019, P-027) -------------------
+// A return at processing leaves the record as it is.
+
+/**
+ * The record once the request is sent for approval: what is sent now, nothing
+ * approved, and every approval so far kept as earlier (`approvalsSoFar`), so a
+ * later return cannot make a vendor bought after its approval look bought
+ * before it.
+ */
+export function approvalWhenSent(previous: ApprovalRecord, sent: ApprovalGroup[]): ApprovalRecord {
+  return { sent, approved: [], earlier: approvalsSoFar(previous) };
+}
+
+/** The record once the approver approves: what was sent, what is approved now, and the earlier approvals as they were. */
+export function approvalWhenApproved(previous: ApprovalRecord, approved: ApprovalGroup[]): ApprovalRecord {
+  return { sent: previous.sent, approved, earlier: previous.earlier };
+}
+
+/** The record once the request is returned at the approval step: nothing approved now; what was sent and the earlier approvals are kept. */
+export function approvalWhenReturned(previous: ApprovalRecord): ApprovalRecord {
+  return { sent: previous.sent, approved: [], earlier: previous.earlier };
 }
 
 // ---- Submissions ------------------------------------------------------------

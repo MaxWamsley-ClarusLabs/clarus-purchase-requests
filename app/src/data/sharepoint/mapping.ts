@@ -4,7 +4,7 @@
 
 import { toLocalDateTime } from '../../domain/dates';
 import { requestNumber } from '../../domain/naming';
-import { CATEGORIES, PAID_BY_OPTIONS } from '../../domain/purchaseRules';
+import { CATEGORIES, PAID_BY_OPTIONS, vendorKey } from '../../domain/purchaseRules';
 import { REQUEST_STATUSES } from '../../domain/statuses';
 import { SUGGESTED_FIELDS } from '../../domain/suggestions';
 import {
@@ -87,6 +87,8 @@ export interface LineItem {
 
 export interface SubmissionItem {
   Id: number;
+  /** Last changed (SharePoint's Modified). */
+  Modified?: string | null;
   /** Who created the submission. It belongs to a request only if the request's author made it (SharePointDataService). */
   AuthorId?: number | null;
   RequestId: number | null;
@@ -239,7 +241,19 @@ function filesFromAttachments(attachments: readonly SpAttachment[], prints: read
 
 // ---- The approval record -----------------------------------------------------
 
-const emptyRecord = (): ApprovalRecord => ({ sent: [], approved: [] });
+const emptyRecord = (): ApprovalRecord => ({ sent: [], approved: [], earlier: [] });
+
+/**
+ * The matching key of a stored vendor total, worked out again from its vendor
+ * as stored, with today's `vendorKey`: the stored key was made by the rule of
+ * the day it was written, and the rule may have changed since (the policy
+ * stage edits purchaseRules.ts). A line's own key (`line:<id>`) is kept, and
+ * so is the stored key when the vendor gives none.
+ */
+function storedKey(key: string, vendor: string): string {
+  if (key.startsWith('line:')) return key;
+  return vendorKey(vendor) || key;
+}
 
 /** The vendor totals in a record. A group that is not well formed is dropped, which can only ask for more approval, never less. */
 function parseGroups(value: unknown): ApprovalGroup[] {
@@ -248,15 +262,17 @@ function parseGroups(value: unknown): ApprovalGroup[] {
   for (const g of value) {
     if (!isRecord(g) || typeof g.key !== 'string' || typeof g.vendor !== 'string') continue;
     if (typeof g.cents !== 'number' || !Number.isFinite(g.cents) || g.cents < 0) continue;
-    groups.push({ key: g.key, vendor: g.vendor, cents: Math.round(g.cents), bought: g.bought === true });
+    groups.push({ key: storedKey(g.key, g.vendor), vendor: g.vendor, cents: Math.round(g.cents), bought: g.bought === true });
   }
   return groups;
 }
 
 /**
  * The approval record stored on a request as JSON (docs/DATA_MODEL.md),
- * read defensively: anything that is not the two lists of vendor totals gives
- * the empty record, which reads as "not approved" (P-029).
+ * read defensively: anything that is not the three lists of vendor totals
+ * gives the empty record, which reads as "not approved" (P-029). A list that
+ * is missing is empty, so a record stored before `earlier` was added reads as
+ * having no earlier approvals.
  */
 export function parseApprovalRecord(value: string | null | undefined): ApprovalRecord {
   if (!value) return emptyRecord();
@@ -264,15 +280,15 @@ export function parseApprovalRecord(value: string | null | undefined): ApprovalR
     const parsed: unknown = JSON.parse(value);
     if (!isRecord(parsed)) return emptyRecord();
     const shape = (v: unknown) => v === undefined || Array.isArray(v);
-    if (!shape(parsed.sent) || !shape(parsed.approved)) return emptyRecord();
-    return { sent: parseGroups(parsed.sent), approved: parseGroups(parsed.approved) };
+    if (!shape(parsed.sent) || !shape(parsed.approved) || !shape(parsed.earlier)) return emptyRecord();
+    return { sent: parseGroups(parsed.sent), approved: parseGroups(parsed.approved), earlier: parseGroups(parsed.earlier) };
   } catch {
     return emptyRecord();
   }
 }
 
 export function approvalRecordJson(record: ApprovalRecord): string {
-  return JSON.stringify({ sent: record.sent, approved: record.approved });
+  return JSON.stringify({ sent: record.sent, approved: record.approved, earlier: record.earlier });
 }
 
 // ---- Purchase Requests -----------------------------------------------------
@@ -447,6 +463,7 @@ export function submissionFromItem(item: SubmissionItem, requestNo: string): Sub
     submitterName: str(item.SubmitterName),
     submitterEmail: str(item.SubmitterEmail).toLowerCase(),
     submittedOn: localTime(item.Created),
+    lastChanged: localTime(item.Modified) || localTime(item.Created),
     certificationText: str(item.CertificationText),
     businessPurpose: str(item.BusinessPurpose),
     department: str(item.Department),

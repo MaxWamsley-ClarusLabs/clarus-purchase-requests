@@ -16,6 +16,7 @@ import {
   anyBoughtBefore,
   approvalCoverage,
   approvalState,
+  approvalsSoFar,
   categoryNeedsDescription,
   categoryText,
   findCategory,
@@ -123,7 +124,7 @@ describe('how vendor totals are counted (P-016)', () => {
     expect(vendorKey('OReilly')).toBe('oreilly');
     expect(vendorKey('o reilly')).toBe('oreilly');
     expect(vendorKey('O’Reilly')).toBe('oreilly');
-    expect(vendorKey('Amazon.com')).toBe(vendorKey('Amazon.com'));
+    expect(vendorKey('Amazon.com')).toBe('amazoncom');
     expect(vendorKey('Amazon.com')).toBe(vendorKey('AMAZON COM'));
     // Different names stay different vendors.
     expect(vendorKey('Amazon')).not.toBe(vendorKey('Amazon.com'));
@@ -149,6 +150,43 @@ describe('how vendor totals are counted (P-016)', () => {
     expect(vendorKey('   ')).toBe('');
   });
 
+  it('ignores the Hangul fillers, which count as letters but show nothing, so "Amazon" with one added is still Amazon', () => {
+    for (const filler of ['ㅤ', 'ᅟ', 'ᅠ', 'ﾠ']) {
+      expect([filler, vendorKey(`Amazon${filler}`)]).toEqual([filler, 'amazon']);
+      expect([filler, vendorKey(`Ama${filler}zon`)]).toEqual([filler, 'amazon']);
+    }
+    // So two $300.00 purchases at the two spellings are one vendor total of $600.00, which needs approval.
+    expect(vendorGroups([l('a', 'Amazon', 30000), l('b', 'Amazonㅤ', 30000)]).map((g) => [g.totalCents, g.needsApproval])).toEqual([[60000, true]]);
+  });
+
+  it('ignores the other characters that show nothing, in any name, including one with no letter or digit', () => {
+    const invisible: Record<string, string> = {
+      'zero-width space': '​',
+      'zero-width non-joiner': '‌',
+      'zero-width joiner': '‍',
+      'soft hyphen': '­',
+      'variation selector': '️',
+      'variation selector from the supplement': '󠄀',
+      'byte-order mark': '﻿',
+      'word joiner': '⁠',
+      'left-to-right mark': '‎',
+      'Mongolian vowel separator': '᠎'
+    };
+    for (const [name, ch] of Object.entries(invisible)) {
+      expect([name, vendorKey(`Digi${ch}-Key${ch}`)]).toEqual([name, 'digikey']);
+      // A name with no letter or digit is matched as typed, but without them: "-" and "-" with one are one vendor.
+      expect([name, vendorKey(`-${ch}`)]).toEqual([name, '-']);
+      expect([name, vendorKey(`${ch}-`)]).toEqual([name, '-']);
+    }
+  });
+
+  it('reads a name made only of characters that show nothing as blank, so the line counts on its own', () => {
+    expect(vendorKey('​')).toBe('');
+    expect(vendorKey('ㅤㅤ')).toBe('');
+    expect(vendorKey(' ­⁠ ')).toBe('');
+    expect(vendorGroups([l('a', '​', 60000)]).map((g) => g.key)).toEqual(['line:a']);
+  });
+
   it('adds up two lines of one vendor in another alphabet, and keeps different names apart', () => {
     const same = vendorGroups([l('a', '株式会社テスト', 30000), l('b', '株式会社テスト', 30000)]);
     expect(same.map((g) => [g.totalCents, g.lineIds, g.needsApproval])).toEqual([[60000, ['a', 'b'], true]]);
@@ -168,7 +206,7 @@ describe('how vendor totals are counted (P-016)', () => {
 
   it('does not let a respelling get round the 10% allowance (P-019)', () => {
     // $1,000.00 approved for "Thor Labs"; a "Thorlabs" line of $499.00 makes the one vendor total $1,499.00.
-    const approved: ApprovalRecord = { sent: [], approved: [{ key: vendorKey('Thor Labs'), vendor: 'Thor Labs', cents: 100000, bought: false }] };
+    const approved: ApprovalRecord = { sent: [], approved: [{ key: vendorKey('Thor Labs'), vendor: 'Thor Labs', cents: 100000, bought: false }], earlier: [] };
     const lines = [l('a', 'Thor Labs', 100000), l('b', 'Thorlabs', 49900)];
     const groups = vendorGroups(lines);
     expect(groups.map((g) => [g.vendor, g.totalCents])).toEqual([['Thor Labs', 149900]]);
@@ -285,12 +323,64 @@ describe('bought before approval (P-017)', () => {
     const first = groupsForApproval([{ ...l('a', 'Acme', 60000), date: '2026-10-01', hasReceipt: false }], '2026-10-12');
     expect(first[0].bought).toBe(true);
     // Returned at the approval step: what was sent stays on record, nothing is approved.
-    const returned: ApprovalRecord = { sent: first, approved: [] };
+    const returned: ApprovalRecord = { sent: first, approved: [], earlier: [] };
     const again = groupsForApproval([{ ...l('a', 'Acme', 60000), date: '2026-12-01', hasReceipt: false }], '2026-10-14', returned);
     expect(again).toEqual([{ key: 'acme', vendor: 'Acme', cents: 60000, bought: true }]);
     // The flag stays after an approval too.
-    const afterApproval: ApprovalRecord = { sent: [], approved: [{ ...first[0], cents: 60000 }] };
+    const afterApproval: ApprovalRecord = { sent: [], approved: [{ ...first[0], cents: 60000 }], earlier: [] };
     expect(groupsForApproval([{ ...l('a', 'Acme', 90000), date: '2026-12-01', hasReceipt: false }], '2026-10-20', afterApproval)[0].bought).toBe(true);
+    // And when it is kept only with an earlier approval, for example after a round that did not send this vendor.
+    const keptEarlier: ApprovalRecord = { sent: [], approved: [], earlier: [{ ...first[0], cents: 60000 }] };
+    expect(groupsForApproval([{ ...l('a', 'Acme', 60000), date: '2026-12-01', hasReceipt: false }], '2026-10-20', keptEarlier)[0].bought).toBe(true);
+  });
+
+  it('remembers an approval from an earlier round once a later round is sent and returned, so it is not flagged when sent again', () => {
+    // Round 1 approved Acme at $600.00. Round 2, Acme and a new vendor Beta, was sent and returned at the approval step:
+    // nothing is approved now, and round 1's approval is kept as an earlier one.
+    const acme = { key: 'acme', vendor: 'Acme', cents: 60000, bought: false };
+    const returned: ApprovalRecord = { sent: [acme, { key: 'beta', vendor: 'Beta', cents: 55000, bought: false }], approved: [], earlier: [acme] };
+    // Acme was bought after its approval (its receipt is attached); Beta is not bought yet.
+    const roundThree = [
+      { ...l('a', 'Acme', 60000), date: '2026-10-15', hasReceipt: true },
+      { ...l('b', 'Beta', 55000), date: '2026-10-25', hasReceipt: false }
+    ];
+    expect(groupsForApproval(roundThree, '2026-10-20', returned)).toEqual([
+      { key: 'acme', vendor: 'Acme', cents: 60000, bought: false },
+      { key: 'beta', vendor: 'Beta', cents: 55000, bought: false }
+    ]);
+    // Without the earlier approval, Acme would look bought before approval.
+    expect(groupsForApproval(roundThree, '2026-10-20', { ...returned, earlier: [] })[0].bought).toBe(true);
+    // A vendor total that was never approved and is already bought is still flagged.
+    const betaBought = [roundThree[0], { ...roundThree[1], hasReceipt: true }];
+    expect(groupsForApproval(betaBought, '2026-10-20', returned).map((g) => [g.vendor, g.bought])).toEqual([
+      ['Acme', false],
+      ['Beta', true]
+    ]);
+    // So is one that has risen past the allowance of its earlier approval.
+    expect(groupsForApproval([{ ...roundThree[0], amountCents: 66001 }], '2026-10-20', returned)[0].bought).toBe(true);
+  });
+
+  it('judges a vendor total against its newest approval: the one approved now before an earlier one', () => {
+    const record: ApprovalRecord = {
+      sent: [],
+      approved: [{ key: 'acme', vendor: 'Acme', cents: 100000, bought: false }],
+      earlier: [{ key: 'acme', vendor: 'Acme', cents: 60000, bought: false }]
+    };
+    // $1,050.00 is within 10% of the $1,000.00 approved now, though far above the $600.00 approved earlier.
+    const bought = [{ ...l('a', 'Acme', 105000), date: '2026-10-15', hasReceipt: true }];
+    expect(groupsForApproval(bought, '2026-10-20', record)[0].bought).toBe(false);
+  });
+
+  it('keeps the newest approval of each vendor from every round so far', () => {
+    const acme600 = { key: 'acme', vendor: 'Acme', cents: 60000, bought: false };
+    const acme900 = { ...acme600, cents: 90000 };
+    const beta = { key: 'beta', vendor: 'Beta', cents: 55000, bought: true };
+    const cedar = { key: 'cedar', vendor: 'Cedar', cents: 70000, bought: false };
+    expect(approvalsSoFar(EMPTY_APPROVAL)).toEqual([]);
+    expect(approvalsSoFar({ sent: [], approved: [], earlier: [acme600, beta] })).toEqual([acme600, beta]);
+    // The one approved now replaces an earlier one of the same vendor; what was only sent is not an approval.
+    expect(approvalsSoFar({ sent: [cedar], approved: [acme900], earlier: [acme600, beta] })).toEqual([acme900, beta]);
+    expect(approvalsSoFar({ sent: [], approved: [cedar], earlier: [] })).toEqual([cedar]);
   });
 
   it('flags only the vendor total that rose past what was approved, not one an earlier approval still covers', () => {
@@ -303,7 +393,8 @@ describe('bought before approval (P-017)', () => {
       approved: [
         { key: 'acme', vendor: 'Acme', cents: 100000, bought: false },
         { key: 'borealis', vendor: 'Borealis', cents: 80000, bought: false }
-      ]
+      ],
+      earlier: []
     };
     const bought = [
       { ...l('a', 'Acme', 115000), date: '2026-10-15', hasReceipt: true },
@@ -320,8 +411,20 @@ describe('bought before approval (P-017)', () => {
     expect(groupsForApproval([{ ...l('c', 'Cedar', 60000), date: '2026-10-21', hasReceipt: true }], '2026-10-20', approved)[0].bought).toBe(true);
   });
 
-  it('judges the first round against nothing approved', () => {
-    expect(groupsForApproval(lines, '2026-10-12', EMPTY_APPROVAL)).toEqual(groupsForApproval(lines, '2026-10-12'));
+  it('judges the first round against nothing approved, and a later one against the record passed', () => {
+    expect(EMPTY_APPROVAL).toEqual({ sent: [], approved: [], earlier: [] });
+    // With nothing approved, the Acme purchase dated before the day it is sent is flagged.
+    const nothing: ApprovalRecord = { sent: [], approved: [], earlier: [] };
+    expect(groupsForApproval(lines, '2026-10-12', nothing).map((g) => [g.vendor, g.bought])).toEqual([
+      ['Acme', true],
+      ['Borealis', false]
+    ]);
+    // The same lines judged against an approval of Acme at that amount are not: it was approved before it was bought.
+    const acmeApproved: ApprovalRecord = { sent: [], approved: [{ key: 'acme', vendor: 'Acme', cents: 60000, bought: false }], earlier: [] };
+    expect(groupsForApproval(lines, '2026-10-12', acmeApproved).map((g) => [g.vendor, g.bought])).toEqual([
+      ['Acme', false],
+      ['Borealis', false]
+    ]);
   });
 });
 
@@ -390,7 +493,8 @@ describe('approval covers what the approver saw (P-019)', () => {
 describe('approval state', () => {
   const record = (approvedCents: number | null): ApprovalRecord => ({
     sent: [{ key: 'acme', vendor: 'Acme', cents: 100000, bought: false }],
-    approved: approvedCents === null ? [] : [{ key: 'acme', vendor: 'Acme', cents: approvedCents, bought: false }]
+    approved: approvedCents === null ? [] : [{ key: 'acme', vendor: 'Acme', cents: approvedCents, bought: false }],
+    earlier: []
   });
   const big = vendorGroups([l('a', 'Acme', 100000)]);
   const small = vendorGroups([l('a', 'Acme', 10000)]);
@@ -403,6 +507,13 @@ describe('approval state', () => {
   it('is needed before it has been sent, and after a return clears the approval', () => {
     expect(approvalState('Draft', big, EMPTY_APPROVAL)).toBe('needed');
     expect(approvalState('Returned', big, record(null))).toBe('needed');
+  });
+
+  it('is needed after a return at the approval step, whatever earlier rounds approved: an earlier approval is not an approval now', () => {
+    const returned: ApprovalRecord = { ...record(null), earlier: [{ key: 'acme', vendor: 'Acme', cents: 100000, bought: false }] };
+    expect(approvalState('Returned', big, returned)).toBe('needed');
+    expect(mustSendForApproval(approvalState('Returned', big, returned))).toBe(true);
+    expect(lineApprovals([l('a', 'Acme', 100000)], 'Returned', returned).get('a')).toEqual({ status: 'needed', boughtBefore: false });
   });
 
   it('is pending while the request awaits approval', () => {
@@ -458,7 +569,8 @@ describe('the approval status of each line, which the app works out (P-003)', ()
       approved: [
         { key: 'acme', vendor: 'Acme', cents: 120000, bought: true },
         { key: 'cedar', vendor: 'Cedar', cents: 40000, bought: false }
-      ]
+      ],
+      earlier: []
     };
     const map = lineApprovals(lines, 'Approved', record);
     expect(map.get('a')).toEqual({ status: 'approved', boughtBefore: true });

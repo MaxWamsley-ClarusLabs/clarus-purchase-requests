@@ -45,7 +45,7 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ## 3. A purchase already made without approval (P-017)
 
-- **Built:** when a request is sent for approval, a vendor total of $500 or more is flagged **Bought before approval** if any of its lines is dated before the day it is sent, or already has a receipt or invoice attached. The request still goes to the approver first. The flag stays on the request. The administrator sees it in the email and in a CSV column. After the approval, the employee submits for processing as usual. A flag, once set, stays in later rounds. If the request is sent again after an approval (a vendor total rose past the allowance), a vendor total the approval still covers is not newly flagged, because it was approved before it was bought. (That second-send rule is Claude's; your prompt did not cover it.)
+- **Built:** when a request is sent for approval, a vendor total of $500 or more is flagged **Bought before approval** if any of its lines is dated before the day it is sent, or already has a receipt or invoice attached. The request still goes to the approver first. The flag stays on the request. The administrator sees it in the email and in a CSV column. After the approval, the employee submits for processing as usual. A flag, once set, stays in later rounds. If the request is sent again after an approval (a vendor total rose past the allowance), a vendor total an approval still covers, including an approval from an earlier round, is not newly flagged, because it was approved before it was bought. (That second-send rule is Claude's; your prompt did not cover it.)
 - **Options:** A. As built: flag, approve, then submit (two steps; the folder and CSV are built once, with the approval in them). B. Let the employee submit straight to processing, flagged, with the approval still to come (one step, but the CSV and folder would be made before the approval exists and would say "pending"). C. Ask the employee to tick "already bought" instead of working it out from dates and receipts.
 - **Recommendation:** A.
 - **If you choose differently:** `isAlreadyBought` and `groupsForApproval` in `purchaseRules.ts` (C); the send and submit actions in both data services and the Review step (B).
@@ -55,7 +55,7 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 - **Built:** the approver approves each vendor total at the amount shown. Later, the employee may change amounts (real prices differ). A vendor total that is more than **10%** above its approved amount, or a new vendor total of $500 or more, needs approval again, and Submit says so. Lower amounts never need approval again.
 - **Options:** A. 10% allowance (built; the number is a guess). B. No allowance (any increase needs approval). C. No check after approval.
 - **Recommendation:** A, with your number in place of mine.
-- **If you choose differently:** `OVERRUN_TOLERANCE_PERCENT` in `purchaseRules.ts` (0 for B). For C, remove the check of `approvalState` in `prepareSubmission` (`app/src/export/submission.ts`).
+- **If you choose differently:** `OVERRUN_TOLERANCE_PERCENT` in `purchaseRules.ts` (0 for B). For C, change `approvalCoverage` and `approvalState` in `purchaseRules.ts`; `prepareSubmission` and `prepareApprovalRequest` (`app/src/export/submission.ts`) and the Review step follow.
 
 ## 5. Who approves (P-018, P-020)
 
@@ -83,7 +83,7 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 - **Built:** each attached file is a receipt (invoices count) or a quote. The drop box has a switch; the row menu has "Attach a quote" and "Attach a receipt or invoice". A quote never counts as the receipt. In the folder: `R01_...` and `Q01_...`. The receipt reader reads receipt files only.
 - **Options:** A. As built. B. One untyped list of files (simpler screen, but a quote could pass for a receipt).
 - **Recommendation:** A.
-- **If you choose differently:** `ReceiptFile.kind`, `naming.ts`, `mapping.ts`, the grid.
+- **If you choose differently:** `AttachedFile.kind` in `types.ts`, `naming.ts`, `mapping.ts`, the grid.
 
 ## 9. Header fields (P-022)
 
@@ -136,7 +136,7 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ## 16. Needs attention covers approval emails, and Retry is limited (P-030)
 
-- **Built:** an approval email that was not sent within 30 minutes, or failed, shows under Needs attention like a failed package. Only the newest submission of a request that is still at that step is listed. The sidebar counts Approvals, Requests to process and Needs attention. Retry works only on a failed or stuck submission that is the newest of its kind, while the request is Awaiting approval (email) or Submitted (package).
+- **Built:** an approval email that was not sent within 30 minutes, or failed, shows under Needs attention like a failed package. Only the newest submission of a request that is still at that step is listed. The sidebar counts Approvals, Requests to process and Needs attention. Retry works only on a failed or stuck submission (no change for 30 minutes) that is the newest of its kind, while the request is Awaiting approval (email) or Submitted (package), and the request page shows the button exactly then.
 - **Options:** A. As built. B. Leave approval emails unmonitored (an unnoticed failed email would stall a purchase). C. List every failed submission for ever (old failures would bury the current ones).
 - **Recommendation:** A.
 - **If you choose differently:** `adminData.ts` (`stuckSubmissions`), `retryRefusal` in `serviceRules.ts`.
@@ -171,7 +171,7 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ## 21. Typing, pasting and saving limits (P-035)
 
-- **Built:** an amount takes a comma only as a thousands separator, so "12,50" is refused rather than read as $1,250.00; amounts above $10,000,000.00 are refused; dates must be real dates in 2000 to 2099; pasting from a spreadsheet understands quoted cells and dates like 10/14/2026, and says what it skipped; text is cut at 255 characters; changes save half a second after the last keystroke, and the browser asks before you leave a page with something unsaved.
+- **Built:** an amount takes a comma only as a thousands separator, so "12,50" is refused rather than read as $1,250.00; amounts above $10,000,000.00 are refused; dates must be real dates in 2000 to 2099; pasting from a spreadsheet understands quoted cells and dates like 10/14/2026, and says what it skipped; text is cut at 255 characters; changes save half a second after the last keystroke, one after another, and Send for approval and Submit wait for them; the browser asks before you leave a page with something unsaved (leaving at once can still lose the last characters).
 - **Options:** A. As built. B. Read "12,50" as 12.50 (ambiguous with thousands). C. Remove the $10,000,000.00 limit. D. Limit dates to a year around today.
 - **Recommendation:** A.
 - **If you choose differently:** `money.ts`, `dates.ts`, `app/src/ui/pasteParse.ts`.

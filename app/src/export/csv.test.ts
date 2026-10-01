@@ -49,7 +49,8 @@ describe('csvCell', () => {
 // Acme's vendor total is $1,000.00: approved, and bought before approval. Borealis is small.
 const approval: ApprovalRecord = {
   sent: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 100000, bought: true }],
-  approved: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 100000, bought: true }]
+  approved: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 100000, bought: true }],
+  earlier: []
 };
 
 describe('buildPurchasesCsv', () => {

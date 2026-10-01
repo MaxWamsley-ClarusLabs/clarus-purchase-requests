@@ -83,16 +83,27 @@ export interface ApprovalGroup {
   bought: boolean;
 }
 
-/** Stored as JSON on the request (docs/DATA_MODEL.md). Read back defensively. */
+/**
+ * Stored as JSON on the request (docs/DATA_MODEL.md). Read back defensively; a
+ * record stored before `earlier` existed reads as having no earlier approvals.
+ */
 export interface ApprovalRecord {
   /** The vendor totals of $500 or more when the request was last sent for approval. */
   sent: ApprovalGroup[];
   /**
    * The vendor totals the approver approved: empty until approved, and
    * emptied again when the request is sent for approval again or returned at
-   * the approval step. A return at processing keeps it (P-027).
+   * the approval step. A return at processing keeps it (P-027). The only list
+   * that says whether the request is approved now (`approvalState`).
    */
   approved: ApprovalGroup[];
+  /**
+   * The vendor totals approved in earlier rounds, the newest approval for each
+   * vendor, kept when the request is sent again or returned at the approval
+   * step; used only to tell whether a vendor total was approved before it was
+   * bought (P-017, `approvalsSoFar`).
+   */
+  earlier: ApprovalGroup[];
 }
 
 export interface PurchaseRequest {
@@ -142,6 +153,11 @@ export interface Submission {
   /** The submitting account (travel D-064). The item's Created By is the lasting record. */
   submitterEmail: string;
   submittedOn: string;
+  /**
+   * The last time the item changed (SharePoint's Modified), local "YYYY-MM-DD HH:MM". "Not finished within 30 minutes" is measured from it, so a
+   * retry starts the time again. Absent: `submittedOn` is used.
+   */
+  lastChanged?: string;
   /** The certification sentence the employee ticked at Submit; '' for an approval request. */
   certificationText: string;
   businessPurpose: string;

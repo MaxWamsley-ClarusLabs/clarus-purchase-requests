@@ -6,7 +6,7 @@ import { InstructionsDrawer } from './components/InstructionsDrawer';
 import { AdminCounts, AdminList, RequestNav, Sidebar } from './components/Sidebar';
 import { Toast, Toasts } from './components/common';
 import { MyRequestsPage } from './pages/MyRequestsPage';
-import { RequestWorkspace, WIDE_LAYOUT_PX } from './pages/RequestWorkspace';
+import { RequestWorkspace } from './pages/RequestWorkspace';
 import { AdminRequestPage } from './pages/admin/AdminRequestPage';
 import { AllRequestsPage } from './pages/admin/AllRequestsPage';
 import { ApprovalsPage } from './pages/admin/ApprovalsPage';
@@ -24,6 +24,8 @@ import { NotAllowedError } from '../data/sharepoint/serviceRules';
 
 const COLLAPSE_KEY = 'ctx-sidebar-collapsed';
 const NARROW_WIDTH = 1280;
+/** On the Purchases step the sidebar narrows below this window width, so the grid has room for its columns (travel D-033). */
+const PURCHASES_NARROW_WIDTH = 1600;
 
 // The sidebar choice is remembered on this computer only (travel D-033). Storage can be
 // unavailable (private windows, blocked site data), so every access is guarded.
@@ -176,7 +178,7 @@ export function App(props: { service: PurchaseDataService; logoUrl: string; read
   // The sidebar narrows on smaller screens, and on the Purchases step when the
   // grid needs the width, unless the employee has chosen otherwise (travel D-033).
   const onPurchases = route.name === 'request' && route.step === 'purchases';
-  const collapsed = userCollapsed ?? (viewportWidth < NARROW_WIDTH || (onPurchases && viewportWidth < WIDE_LAYOUT_PX));
+  const collapsed = userCollapsed ?? (viewportWidth < NARROW_WIDTH || (onPurchases && viewportWidth < PURCHASES_NARROW_WIDTH));
   const adminOnly =
     route.name === 'adminApprovals' ||
     route.name === 'adminProcess' ||

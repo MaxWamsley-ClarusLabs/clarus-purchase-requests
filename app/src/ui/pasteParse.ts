@@ -212,14 +212,14 @@ export function planPaste(table: readonly (readonly string[])[], lineIds: readon
   return plan;
 }
 
-const REASONS: Record<PasteProblem, string> = {
+/** Why a cell was not pasted. An amount that is not a number is not skipped: it empties the amount, and is counted on its own. */
+const REASONS: Record<Exclude<PasteProblem, 'amount'>, string> = {
   date: 'dates must look like 2026-10-14, 10/14/2026 or Oct 14, 2026',
   category: 'categories must match a category name',
-  amount: 'amounts must be numbers like 45.10',
   paidBy: `who paid must be ${PAID_BY_OPTIONS.map((p) => p.label).join(' or ')}`,
   outside: 'cells to the right of Who paid do not fit'
 };
-const ORDER: readonly PasteProblem[] = ['date', 'category', 'amount', 'paidBy', 'outside'];
+const ORDER: readonly Exclude<PasteProblem, 'amount'>[] = ['date', 'category', 'paidBy', 'outside'];
 
 const count = (n: number, one: string, many: string): string => (n === 1 ? `1 ${one}` : `${n} ${many}`);
 
@@ -236,6 +236,9 @@ export function pasteWarning(plan: PastePlan): string {
   const problems = ORDER.filter((p) => (plan.skipped[p] ?? 0) > 0);
   const skipped = problems.reduce((sum, p) => sum + (plan.skipped[p] ?? 0), 0);
   if (skipped > 0) parts.push(`${count(skipped, 'cell was', 'cells were')} not pasted: ${problems.map((p) => REASONS[p]).join('; ')}.`);
+  const amounts = plan.skipped.amount ?? 0;
+  if (amounts > 0)
+    parts.push(`${count(amounts, 'amount was not a number and was', 'amounts were not numbers and were')} left empty: amounts must be numbers like 45.10.`);
   if (plan.cut > 0) parts.push(`${count(plan.cut, 'cell was', 'cells were')} cut to ${TEXT_MAX_LENGTH} characters, the most a box holds.`);
   return parts.join(' ');
 }

@@ -1,7 +1,7 @@
 import { vendorKey } from '../domain/purchaseRules';
 import { LINE_APPROVAL_DISPLAY } from '../domain/statuses';
 import { file, line, quote, request } from '../testing/builders';
-import { VENDOR_APPROVAL_LABEL, changedMessages, quoteText, rowsText, vendorRows } from './vendorRows';
+import { VENDOR_APPROVAL_LABEL, boughtBeforeNote, changedMessages, quoteSummary, quoteText, rowsText, vendorRows } from './vendorRows';
 
 // The approval record keys a vendor by its matching key (P-016).
 const ACME = vendorKey('Acme Lab Supply');
@@ -32,6 +32,13 @@ describe('the vendor totals (P-015, P-016, P-019)', () => {
     const [small] = vendorRows([acme({ amountCents: 8645 })], request());
     expect(small.quote).toEqual({ kind: 'notNeeded' });
     expect(quoteText(small.quote)).toBe('');
+  });
+
+  it('says the same in a sentence, as the Review step writes it after "Quote: "', () => {
+    expect(quoteSummary({ kind: 'attached' })).toBe('attached');
+    expect(quoteSummary({ kind: 'reason', reason: 'Already purchased' })).toBe('none (reason given: Already purchased)');
+    expect(quoteSummary({ kind: 'missing' })).toBe('missing');
+    expect(quoteSummary({ kind: 'notNeeded' })).toBe('not required');
   });
 
   it('does not take a receipt for a quote', () => {
@@ -66,6 +73,28 @@ describe('the vendor totals (P-015, P-016, P-019)', () => {
     const sent = { sent: [{ key: ACME, vendor: 'Acme Lab Supply', cents: 64000, bought: true }], approved: [] };
     expect(vendorRows([acme()], request({ status: 'Awaiting approval', approval: sent }))[0].boughtBefore).toBe(true);
     expect(vendorRows([acme()], request())[0].boughtBefore).toBe(false);
+  });
+
+  it('names the vendor totals that will be flagged Bought before approval in the send dialog', () => {
+    expect(boughtBeforeNote([])).toBe('');
+    expect(boughtBeforeNote([], [])).toBe('');
+    expect(boughtBeforeNote(['Northwind Office Supply'])).toBe(
+      'Northwind Office Supply looks already bought. It will be flagged Bought before approval. You can still send it.'
+    );
+    expect(boughtBeforeNote(['Acme Lab Supply', 'Kestrel Instruments', 'Redwood Fabrication'])).toBe(
+      'Acme Lab Supply, Kestrel Instruments and Redwood Fabrication look already bought. They will be flagged Bought before approval. You can still send the request.'
+    );
+    expect(boughtBeforeNote(['  '])).toBe('A purchase with no vendor looks already bought. It will be flagged Bought before approval. You can still send it.');
+  });
+
+  it('says a vendor flagged in an earlier round stays flagged, rather than that it looks bought', () => {
+    expect(boughtBeforeNote([], ['Kestrel Instruments'])).toBe(
+      'Kestrel Instruments was flagged Bought before approval when it was sent before, and stays flagged. You can still send it.'
+    );
+    expect(boughtBeforeNote(['Acme Lab Supply'], ['Kestrel Instruments', 'Redwood Fabrication'])).toBe(
+      'Acme Lab Supply looks already bought. It will be flagged Bought before approval. ' +
+        'Kestrel Instruments and Redwood Fabrication were flagged Bought before approval when they were sent before, and stay flagged. You can still send the request.'
+    );
   });
 
   it('words what rose past the allowance, or was never approved', () => {

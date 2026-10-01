@@ -88,11 +88,41 @@ async function paste(locator, text) {
 }
 
 /** Goes to another address in the same page, so the sample data kept in the session carries over. */
-async function goTo(page, user, hash) {
-  await page.goto(`${BASE}?user=${user}&shot=1${hash}`);
+async function goTo(page, user, hash, extra = '') {
+  await page.goto(`${BASE}?user=${user}&shot=1${extra ? `&${extra}` : ''}${hash}`);
   await page.waitForSelector('.ctx-main');
   await page.waitForTimeout(700);
 }
+
+/**
+ * Opens a page on the real clock in which the preview's service calls can be
+ * made slow: `slowCalls(page, n, ms)` makes the next n calls take `ms` instead
+ * of their usual short pause (about 120 ms), so a save or a reading back can be
+ * caught while it runs.
+ */
+async function openSlow(user, hash, width = 1440, height = 900) {
+  const context = await browser.newContext({ viewport: { width, height } });
+  await context.addInitScript(() => {
+    window.__slowCalls = { left: 0, ms: 0 };
+    const setTimeoutAsUsual = window.setTimeout;
+    window.setTimeout = function (fn, ms, ...rest) {
+      if (ms >= 100 && ms <= 200 && window.__slowCalls.left > 0) {
+        window.__slowCalls.left -= 1;
+        ms = window.__slowCalls.ms;
+      }
+      return setTimeoutAsUsual.call(window, fn, ms, ...rest);
+    };
+  });
+  const page = await context.newPage();
+  page.setDefaultTimeout(20000);
+  page.on('console', (m) => m.type() === 'error' && problems.push(`${user} ${hash}: ${m.text()}`));
+  page.on('pageerror', (e) => problems.push(`${user} ${hash}: ${e.message}`));
+  await page.goto(`${BASE}?user=${user}&shot=1${hash}`);
+  await page.waitForSelector('.ctx-main');
+  await page.waitForTimeout(700);
+  return page;
+}
+const slowCalls = (page, n, ms) => page.evaluate(([left, ms]) => (window.__slowCalls = { left, ms }), [n, ms]);
 
 async function shot(page, name, fullPage = true) {
   await page.waitForTimeout(300);
@@ -230,10 +260,10 @@ try {
   await shot(p, '09-review-ready-to-send');
   await p.getByRole('button', { name: 'Send for approval', exact: true }).click();
   const flagged = p.getByRole('dialog');
-  check(await flagged.getByText('Redwood Fabrication').isVisible(), 'The send dialog lists the vendor total that needs approval');
+  check(await flagged.getByText('Redwood Fabrication', exact).isVisible(), 'The send dialog lists the vendor total that needs approval');
   check(
-    await flagged.getByText('This looks already bought. It will be flagged Bought before approval. You can still send it.').isVisible(),
-    'The send dialog says a purchase dated before today looks already bought'
+    await flagged.getByText('Redwood Fabrication looks already bought. It will be flagged Bought before approval. You can still send it.').isVisible(),
+    'The send dialog says which vendor total, dated before today, looks already bought'
   );
   await shot(p, '10-send-dialog-bought-before-approval', false);
   await p.close();
@@ -255,7 +285,7 @@ try {
   p = await open('jane', '#/request/41/review', 1440, 900, 'reset=1');
   await p.getByRole('button', { name: 'Send for approval', exact: true }).click();
   const plain = p.getByRole('dialog');
-  check((await plain.getByText('This looks already bought').count()) === 0, 'A purchase dated after today is not flagged as bought');
+  check((await plain.getByText('looks already bought').count()) === 0, 'A purchase dated after today is not flagged as bought');
   await shot(p, '13-send-for-approval-dialog', false);
   await plain.getByRole('button', { name: 'Send for approval', exact: true }).click();
   await p.getByText('Sent for approval. The approver has been emailed.').waitFor();
@@ -437,8 +467,10 @@ try {
   check(pasted[1].date === '2026-10-14' && pasted[1].amountCents === null, 'A pasted date that cannot be read is not used; a bad amount empties the amount');
   const pasteToasts = (await p.locator('.ctx-toast').allInnerTexts()).join(' ');
   check(
-    pasteToasts.includes('1 row was not pasted') && pasteToasts.includes('3 cells were not pasted'),
-    'One warning says which rows and cells were not pasted, and why',
+    pasteToasts.includes('1 row was not pasted') &&
+      pasteToasts.includes('2 cells were not pasted') &&
+      pasteToasts.includes('1 amount was not a number and was left empty'),
+    'One warning says which rows and cells were not pasted, and which amount was left empty, and why',
     pasteToasts
   );
   // A date box takes no year outside the app's range: the date is emptied and the cell says why.
@@ -489,19 +521,139 @@ try {
   await p.keyboard.press('Escape');
   await p.close();
 
+  // The purchases grid at common laptop and desktop widths: every row's menu (the three dots, which attaches files
+  // and deletes rows) is in the window and in the grid's visible area; from 1366 wide no column is scrolled out of sight.
+  for (const width of [1280, 1366, 1600, 1920]) {
+    p = await open('jane', '#/request/41/purchases', width, 900);
+    const grid = await p.evaluate(() => {
+      const area = document.querySelector('.ctx-grid-wrap');
+      const box = area.getBoundingClientRect();
+      return {
+        scrolls: area.scrollWidth > area.clientWidth + 1,
+        menus: Array.from(document.querySelectorAll('.ctx-row-menu-button')).map((b) => {
+          const r = b.getBoundingClientRect();
+          return r.left >= box.left && r.right <= box.right && r.left >= 0 && r.right <= window.innerWidth;
+        })
+      };
+    });
+    check(
+      grid.menus.length === 2 && grid.menus.every(Boolean) && (width < 1366 || !grid.scrolls),
+      `At ${width} wide, every row menu of the grid is in view${width < 1366 ? '' : ', and no column is hidden'}`,
+      JSON.stringify(grid)
+    );
+    await p.close();
+  }
+
+  // Saving: a slow save of an amount finishes before Send for approval sends the request, so what is sent is what is on screen.
+  p = await openSlow('jane', '#/request/41/purchases');
+  await p.getByLabel('Row 1 amount', exact).fill('700');
+  await slowCalls(p, 1, 2500);
+  await p.waitForTimeout(700);
+  await p.getByRole('button', { name: 'Next: Review' }).click();
+  await p.getByRole('button', { name: 'Send for approval', exact: true }).click();
+  await p.getByRole('dialog').getByRole('button', { name: 'Send for approval', exact: true }).click();
+  await p.getByText('Sent for approval. The approver has been emailed.').waitFor();
+  const sentRequest = await p.evaluate(() => JSON.parse(window.sessionStorage.getItem('purchase-requests-preview-store')).requests.find((r) => r.id === 41));
+  check(
+    sentRequest.approval.sent.length === 1 && sentRequest.approval.sent[0].cents === 70000,
+    'Send for approval waits for a slow save: the amount sent is the amount typed',
+    JSON.stringify(sentRequest.approval.sent)
+  );
+  await p.close();
+
+  // While a file is being attached, the row menu cannot attach, remove or share files, or delete a row; Escape still closes it.
+  p = await openSlow('jane', '#/request/41/purchases');
+  await slowCalls(p, 1, 3000);
+  await p.getByLabel('Row 2 menu', exact).click();
+  await p.locator('.ctx-menu input[type=file]').first().setInputFiles(fixture('northwind-office-receipt.png'));
+  await p.waitForTimeout(300);
+  await p.getByLabel('Row 1 menu', exact).click();
+  const busyMenu = p.getByRole('menu');
+  const turnedOff = {
+    attach: (await busyMenu.getByRole('menuitem', { name: 'Attach a quote' }).getAttribute('aria-disabled')) === 'true',
+    attachInput: await busyMenu.locator('input[type=file]').first().isDisabled(),
+    remove: await busyMenu.getByRole('menuitem', { name: /Remove the quote/ }).isDisabled(),
+    share: await busyMenu.getByLabel('Row 1 same receipt as row').isDisabled(),
+    deleteRow: await busyMenu.getByRole('menuitem', { name: 'Delete row 1' }).isDisabled()
+  };
+  await p.keyboard.press('Escape');
+  check(
+    Object.values(turnedOff).every(Boolean) && (await p.getByRole('menu').count()) === 0,
+    'While a file is attached, the row menu cannot attach, remove, share or delete, and Escape closes it',
+    JSON.stringify(turnedOff)
+  );
+  await p.close();
+
+  // A category description the data layer clears when the category changes is cleared on screen too (P-024).
+  p = await openLive('jane', '#/request/41/purchases');
+  await p.getByLabel('Row 2 category', exact).selectOption('other');
+  await p.getByLabel('Row 2 category description', exact).fill('Lab safety audit');
+  await p.waitForTimeout(1200);
+  await p.getByLabel('Row 2 category', exact).selectOption('office');
+  await p.waitForTimeout(1200);
+  await p.getByLabel('Row 2 category', exact).selectOption('other');
+  await p.waitForTimeout(1200);
+  const describedOnScreen = await p.getByLabel('Row 2 category description', exact).inputValue();
+  const describedSaved = (await storedLines(p, 41))[1].categoryOther;
+  check(
+    describedOnScreen === describedSaved && describedSaved === '',
+    'Other, then another category, then Other again: the description on screen is the one saved (none)',
+    JSON.stringify({ describedOnScreen, describedSaved })
+  );
+  await p.close();
+
+  // Retry is offered exactly when the services allow it (P-030): for a failed approval email or package while the request
+  // is still at that step, and for one that has not finished within 30 minutes; not once the request has moved on.
+  p = await open('admin', '#/admin/request/32');
+  check(await p.getByRole('button', { name: 'Retry approval email' }).isVisible(), 'PR-0032, approval email failed: Retry approval email is offered');
+  await p.getByRole('button', { name: 'Approve', exact: true }).click();
+  await p.getByRole('dialog').getByRole('button', { name: 'Approve request' }).click();
+  await p.getByText('PR-0032 approved.').waitFor();
+  await header(p).getByText('Approved', exact).waitFor();
+  check(
+    (await p.getByRole('button', { name: 'Retry approval email' }).count()) === 0,
+    'Once PR-0032 is approved, its failed approval email is not offered for Retry'
+  );
+  await goTo(p, 'admin', '#/admin/request/35');
+  check(await p.getByRole('button', { name: 'Retry packaging' }).isVisible(), 'PR-0035, package failed: Retry packaging is offered');
+  // &flow=off keeps waiting work waiting; PR-0037's package is set back to waiting (it was made on 2026-09-24).
+  await goTo(p, 'admin', '#/admin/all', 'flow=off');
+  await p.evaluate(() => {
+    const key = 'purchase-requests-preview-store';
+    const kept = JSON.parse(window.sessionStorage.getItem(key));
+    Object.assign(
+      kept.submissions.find((s) => s.requestId === 37 && s.type === 'package'),
+      { packageStatus: 'Ready', packagedAt: '', folderLink: '' }
+    );
+    window.sessionStorage.setItem(key, JSON.stringify(kept));
+  });
+  await goTo(p, 'admin', '#/admin/request/37', 'flow=off');
+  await p.reload();
+  await p.waitForSelector('.ctx-main');
+  await p.waitForTimeout(700);
+  check(
+    (await p.getByRole('button', { name: 'Retry packaging' }).isVisible()) &&
+      (await p.getByText('The folder has not been created for more than 30 minutes.').first().isVisible()),
+    'PR-0037, package waiting for more than 30 minutes without failing: Retry packaging is offered, and the banner says so'
+  );
+  await p.close();
+
   // Laptop and phone widths: no sideways scrolling of the page, and nothing outside its card.
   for (const [width, user, hash] of [
     [1024, 'admin', '#/admin/process'],
     [1024, 'admin', '#/admin/request/40'],
     [1024, 'jane', '#/'],
     [375, 'jane', '#/request/41/purchases'],
+    [375, 'jane', '#/request/40/review'],
     [375, 'admin', '#/admin/request/37'],
     [375, 'sam', '#/request/33/review']
   ]) {
     p = await openLive(user, hash, width, 800);
     const layout = await p.evaluate(() => ({
       sideways: document.documentElement.scrollWidth - window.innerWidth,
-      outside: Array.from(document.querySelectorAll('.ctx-main .ctx-card, .ctx-main .ctx-header, .ctx-main .ctx-banner, .ctx-main .ctx-drop'))
+      outside: Array.from(
+        document.querySelectorAll('.ctx-main .ctx-card, .ctx-main .ctx-header, .ctx-main .ctx-banner, .ctx-main .ctx-drop, .ctx-main .ctx-metric')
+      )
         .filter((box) => box.scrollWidth > box.clientWidth + 1)
         .map((box) => box.className)
     }));

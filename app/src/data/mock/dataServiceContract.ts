@@ -307,7 +307,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
         boughtBeforeApproval: false,
         returnNote: '',
         returnStage: '',
-        approval: { sent: [], approved: [] },
+        approval: { sent: [], approved: [], earlier: [] },
         approvalNote: '',
         approvedOn: '',
         approvedBy: '',
@@ -794,7 +794,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
         approvedOn: '',
         approvedBy: '',
         approvalNote: '',
-        approval: { sent: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }], approved: [] }
+        approval: { sent: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }], approved: [], earlier: [] }
       });
       expect((await jane.listSubmissionsForRequest(id)).map((s) => [s.type, s.submissionNumber, s.id])).toEqual([['approval', 1, submission.id]]);
       expect(await jane.getSubmissionCsv(submission.id)).toBe('');
@@ -851,7 +851,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect(again.emailSummary).toContain('(round 2, sent again)');
       expect((await later.getRequest(id)).request).toMatchObject({
         boughtBeforeApproval: true,
-        approval: { sent: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: true }], approved: [] }
+        approval: { sent: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: true }], approved: [], earlier: [] }
       });
     });
 
@@ -894,6 +894,66 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect(rows[1]).toContain('Approved,Yes,Max Wamsley');
       expect(rows[2]).toContain('Borealis Optics');
       expect(rows[2]).toContain('Approved,No,Max Wamsley');
+    });
+
+    it('remembers an approval through later rounds that are returned, so a vendor bought after its approval is never flagged (P-017)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const max = h.as(MAX, SUBMITTED_AT);
+      const { id } = await fill(jane, [{ ...ACME, amountCents: 60000 }]);
+      await jane.sendForApproval(id);
+      await h.as(MAX, APPROVED_AT).approveRequest(id, { note: '', categories: {} });
+      // Jane buys Acme after the approval and attaches the receipt, then adds a second vendor of $550.00.
+      const later = h.as(JANE, SUBMITTED_AT);
+      await attachReceipts(later, id);
+      const added = await later.addEmptyLine(id);
+      await later.updateLine(added.id, {
+        date: '2026-10-25',
+        vendor: 'Beta Instruments',
+        description: 'Flow meter',
+        category: 'rdMaterials',
+        amountCents: 55000,
+        paidBy: 'company',
+        noQuoteReason: 'Sole supplier'
+      });
+      const acme = { key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 60000, bought: false };
+      const beta = { key: vendorKey('Beta Instruments'), vendor: 'Beta Instruments', cents: 55000, bought: false };
+
+      // Round 2 does not flag Acme, which its approval covers. The approval is kept as an earlier one.
+      expect((await later.sendForApproval(id)).boughtBeforeApproval).toBe(false);
+      expect((await later.getRequest(id)).request.approval).toEqual({ sent: [acme, beta], approved: [], earlier: [acme] });
+      // The approver returns round 2: nothing is approved now, and the earlier approval is still kept.
+      expect((await max.returnRequest(id, 'Please attach a quote for Beta Instruments.')).approval).toEqual({
+        sent: [acme, beta],
+        approved: [],
+        earlier: [acme]
+      });
+      await expect(later.submitRequest(id, CERTIFICATION)).rejects.toBeInstanceOf(ApprovalRequiredError);
+
+      // Round 3: Acme is still not flagged, although its receipt is attached and nothing is approved now.
+      const round3 = await later.sendForApproval(id);
+      expect(round3.boughtBeforeApproval).toBe(false);
+      expect(round3.emailSummary).not.toContain('FLAG');
+      expect((await later.getRequest(id)).request).toMatchObject({
+        boughtBeforeApproval: false,
+        approval: { sent: [acme, beta], approved: [], earlier: [acme] }
+      });
+
+      // Returned again; this time Jane buys Beta before it is approved. Round 4 flags Beta, and only Beta.
+      await max.returnRequest(id, 'Please confirm the price.');
+      await attachReceipts(later, id);
+      const round4 = await later.sendForApproval(id);
+      expect(round4.boughtBeforeApproval).toBe(true);
+      expect(round4.emailSummary).toContain('FLAG, bought before approval: Beta Instruments ($550.00).');
+
+      // Approving keeps the earlier approval as it was, and a return at processing changes nothing in the record.
+      const approved = await max.approveRequest(id, { note: '', categories: {} });
+      const record = { sent: [acme, { ...beta, bought: true }], approved: [acme, { ...beta, bought: true }], earlier: [acme] };
+      expect(approved.approval).toEqual(record);
+      const submitted = await later.submitRequest(id, CERTIFICATION);
+      expect(submitted.emailSummary).toContain('FLAG, bought before approval: Beta Instruments ($550.00).');
+      expect(submitted.emailSummary).not.toMatch(/FLAG.*Acme/);
+      expect((await max.returnRequest(id, 'Please attach the itemized invoice.')).approval).toEqual(record);
     });
 
     it('removes an earlier approval attempt that stopped part-way, but nothing else', async () => {
@@ -945,7 +1005,8 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       });
       expect(approved.approval).toEqual({
         sent: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }],
-        approved: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }]
+        approved: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }],
+        earlier: []
       });
       const after = (await h.as(JANE, NOW).getRequest(id)).lines;
       expect(after[0]).toMatchObject({ category: 'rdMaterials', categoryOther: '', categoryConfirmedBy: 'Max Wamsley' });
@@ -970,7 +1031,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect((await refusal(max.approveRequest(id, { note: 'OK', categories: changedCategory }))).message).toBe(notAllowed.changedSinceSent);
       const after = await max.getRequest(id);
       expect(after.request).toMatchObject({ status: 'Awaiting approval', approvedBy: '', approvedByEmail: '', approvedOn: '', approvalNote: '' });
-      expect(after.request.approval).toEqual({ sent: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }], approved: [] });
+      expect(after.request.approval).toEqual({ sent: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }], approved: [], earlier: [] });
       expect(after.lines.map((l) => [l.category, l.categoryOther, l.categoryConfirmedBy])).toEqual([
         ['rdMaterials', '', ''],
         ['office', '', '']

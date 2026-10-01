@@ -1,7 +1,9 @@
 // Prototype preview (Stage 6). Runs the real app on synthetic sample data.
 // Query options: ?user=jane|sam|admin chooses who is signed in; &shot=1 hides
 // the preview bar (used for screenshots); &setup=new shows a site whose lists
-// do not exist yet; &reader=off turns receipt suggestions off; &reset=1 starts
+// do not exist yet; &reader=off turns receipt suggestions off; &flow=off acts
+// as if the flow were turned off, so approval emails and packages stay waiting
+// (after 30 minutes they show under Needs attention, with Retry); &reset=1 starts
 // again from the sample data. The sample data is kept in this tab's session
 // storage, so switching between people shows the same requests and the approval
 // can be followed end to end: Jane sends a request, Max approves it, Jane
@@ -35,14 +37,22 @@ function saveStore(store: SampleStore): void {
   }
 }
 
-/** The kept sample data, with the work the simulated flow had still to do finished (its timers died with the last page). */
+// With &flow=off the simulated flow's steps wait a day, so nothing it would do happens in a
+// preview session; the service's own calls still take a moment, as they never wait longer than a step.
+const flowOff = params.get('flow') === 'off';
+const FLOW_STEP_MS = flowOff ? 24 * 60 * 60 * 1000 : 1500;
+
+/**
+ * The kept sample data, with the work the simulated flow had still to do finished (its timers
+ * died with the last page), unless the flow is off: that work then stays waiting.
+ */
 function restoreStore(): SampleStore | null {
   try {
     const text = window.sessionStorage.getItem(STORE_KEY);
     if (!text) return null;
     const saved = JSON.parse(text) as SampleStore;
     if (!Array.isArray(saved.requests) || !Array.isArray(saved.lines) || !Array.isArray(saved.submissions)) return null;
-    finishPendingWork(saved);
+    if (!flowOff) finishPendingWork(saved);
     return saved;
   } catch {
     return null;
@@ -51,7 +61,7 @@ function restoreStore(): SampleStore | null {
 
 const store = (params.get('reset') ? null : restoreStore()) ?? createSampleStore();
 saveStore(store);
-const service = new MockDataService(store, SAMPLE_USERS[userKey], 1500, () => saveStore(store));
+const service = new MockDataService(store, SAMPLE_USERS[userKey], FLOW_STEP_MS, () => saveStore(store));
 if (params.get('setup') === 'new') service.setupStatus = notSetUp();
 // The receipt reader's files are served at /reader/ (vite.config.mts).
 const reader =

@@ -40,7 +40,7 @@ export function MyRequestsPage(): React.ReactElement {
 
   // A request still being worked on opens at its purchases (or its details, if it has no business purpose yet); a sent one opens at Review.
   const open = (r: PurchaseRequest) =>
-    app.navigate({ name: 'request', requestId: r.id, step: isEditable(r.status) ? (r.businessPurpose ? 'purchases' : 'details') : 'review' });
+    app.navigate({ name: 'request', requestId: r.id, step: isEditable(r.status) ? (r.businessPurpose.trim() ? 'purchases' : 'details') : 'review' });
   const returned = (requests ?? []).filter((r) => r.status === 'Returned');
   const approved = (requests ?? []).filter((r) => r.status === 'Approved');
 
@@ -71,7 +71,7 @@ export function MyRequestsPage(): React.ReactElement {
             </strong>{' '}
             {r.returnNote}
           </div>
-          <button className="ctx-btn ctx-btn-secondary ctx-btn-small" onClick={() => open(r)}>
+          <button className="ctx-btn ctx-btn-secondary ctx-btn-small" aria-label={`Correct ${r.requestNumber}`} onClick={() => open(r)}>
             Correct it
           </button>
         </div>
@@ -85,7 +85,7 @@ export function MyRequestsPage(): React.ReactElement {
             </strong>{' '}
             Buy, attach your receipts and submit it.
           </div>
-          <button className="ctx-btn ctx-btn-secondary ctx-btn-small" onClick={() => open(r)}>
+          <button className="ctx-btn ctx-btn-secondary ctx-btn-small" aria-label={`Open ${r.requestNumber}`} onClick={() => open(r)}>
             Open
           </button>
         </div>
@@ -118,7 +118,7 @@ export function MyRequestsPage(): React.ReactElement {
                   return (
                     <tr key={r.id} {...openRowProps(`Open ${r.requestNumber}`, () => open(r))}>
                       <td className="ctx-strong nowrap">{r.requestNumber}</td>
-                      <td>{r.businessPurpose || <span className="ctx-muted">Untitled draft</span>}</td>
+                      <td>{r.businessPurpose.trim() || <span className="ctx-muted">Untitled draft</span>}</td>
                       <td>
                         <Badge tone={s.tone}>{s.label}</Badge>
                         {r.boughtBeforeApproval ? (

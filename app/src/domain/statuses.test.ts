@@ -51,6 +51,18 @@ describe('request statuses (P-006, P-027)', () => {
     }
   });
 
+  it('measures from the last change when it is known, so a retry starts the 30 minutes again', () => {
+    const now = new Date(2026, 9, 12, 10, 0);
+    // Made long ago, retried at 09:45: not stuck yet.
+    expect(submissionNeedsAttention({ packageStatus: 'Ready', submittedOn: '2026-10-11 09:00', lastChanged: '2026-10-12 09:45' }, now)).toBe(false);
+    // Last changed at 09:29: stuck.
+    expect(submissionNeedsAttention({ packageStatus: 'Ready', submittedOn: '2026-10-12 09:00', lastChanged: '2026-10-12 09:29' }, now)).toBe(true);
+    // Not known: the time it was made.
+    expect(submissionNeedsAttention({ packageStatus: 'Ready', submittedOn: '2026-10-12 09:29' }, now)).toBe(true);
+    // A failure is always listed.
+    expect(submissionNeedsAttention({ packageStatus: 'Failed', submittedOn: '2026-10-11 09:00', lastChanged: '2026-10-12 09:59' }, now)).toBe(true);
+  });
+
   it('says which request status each kind of submission is for', () => {
     expect(STATUS_FOR_SUBMISSION).toEqual({ approval: 'Awaiting approval', package: 'Submitted' });
   });

@@ -10,7 +10,7 @@ import { defaultPaidBy, latestDepartment } from '../../domain/defaults';
 import { LineRef } from '../../domain/duplicates';
 import { messages } from '../../domain/messages';
 import { cleanFileName, requestNumber } from '../../domain/naming';
-import { groupsForApproved, matchesWhatWasSent } from '../../domain/purchaseRules';
+import { EMPTY_APPROVAL, groupsForApproved, matchesWhatWasSent } from '../../domain/purchaseRules';
 import { checkReceiptFile } from '../../domain/receipts';
 import { isEditable } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
@@ -26,6 +26,9 @@ import {
   NotAllowedError,
   applyLineChanges,
   applyRequestChanges,
+  approvalWhenApproved,
+  approvalWhenReturned,
+  approvalWhenSent,
   canConfirmCategories,
   categoryUpdates,
   changesAfterDelete,
@@ -163,7 +166,7 @@ export class MockDataService implements PurchaseDataService {
       totalRequestCents: 0,
       sentForApprovalOn: '',
       boughtBeforeApproval: false,
-      approval: { sent: [], approved: [] },
+      approval: clone(EMPTY_APPROVAL),
       approvalNote: '',
       approvedOn: '',
       approvedBy: '',
@@ -299,8 +302,8 @@ export class MockDataService implements PurchaseDataService {
     };
     this.store.submissions.push(submission);
     this.changed();
-    // 2. Lock the request, recording what was sent. As on SharePoint, an earlier approval or
-    // return is cleared only if there is one.
+    // 2. Lock the request, recording what was sent, and keeping every approval so far as earlier (P-017).
+    // As on SharePoint, an earlier approval or return is cleared only if there is one.
     const clearApproval = holdsApproval(request);
     const clearReturnStage = request.returnStage !== '';
     this.update(request, {
@@ -308,7 +311,7 @@ export class MockDataService implements PurchaseDataService {
       approvalRounds: round,
       sentForApprovalOn: prepared.sentOn,
       boughtBeforeApproval: prepared.boughtBefore,
-      approval: { sent: prepared.sentGroups, approved: [] },
+      approval: approvalWhenSent(request.approval, prepared.sentGroups),
       returnNote: '',
       lastChanged: prepared.sentOn
     });
@@ -414,17 +417,19 @@ export class MockDataService implements PurchaseDataService {
     // Approving confirms every row's category as shown, with the changes given.
     const lines = this.confirmCategoriesOn(requestId, options.categories);
     const at = toLocalDateTime(this.now());
+    // As on SharePoint, a return stage is cleared only if there is one.
+    const clearReturnStage = request.returnStage !== '';
     this.update(request, {
       status: 'Approved',
-      approval: { sent: request.approval.sent, approved: groupsForApproved(lines, request.approval.sent) },
+      approval: approvalWhenApproved(request.approval, groupsForApproved(lines, request.approval.sent)),
       approvedOn: at,
       approvedBy: this.user.displayName,
       approvedByEmail: this.email,
       approvalNote: options.note,
       returnNote: '',
-      returnStage: '',
       lastChanged: at
     });
+    if (clearReturnStage) this.update(request, { returnStage: '' });
     this.changed();
     return clone(request);
   }
@@ -435,10 +440,13 @@ export class MockDataService implements PurchaseDataService {
     const request = this.mustFindRequest(requestId);
     const stage = returnStageFor(request.status);
     if (!stage) throw new NotAllowedError(notAllowed.returnWhen);
+    // As on SharePoint, the approver, time and note are cleared only if the request holds an approval.
+    const clearApproval = holdsApproval(request);
     this.update(request, { status: 'Returned', returnNote: note, returnStage: stage, lastChanged: this.stamp() });
-    // A return at the approval step takes the approval back; one at processing keeps it (P-027).
+    // A return at the approval step takes the approval back, keeping the earlier ones; one at processing keeps it (P-027).
     if (stage === 'approval') {
-      this.update(request, { approval: { sent: request.approval.sent, approved: [] }, approvedOn: '', approvedBy: '', approvedByEmail: '', approvalNote: '' });
+      this.update(request, { approval: approvalWhenReturned(request.approval) });
+      if (clearApproval) this.update(request, { approvedOn: '', approvedBy: '', approvedByEmail: '', approvalNote: '' });
     }
     this.changed();
     return clone(request);
@@ -476,6 +484,7 @@ export class MockDataService implements PurchaseDataService {
     if (refusal) throw new NotAllowedError(refusal);
     submission.packageStatus = 'Ready';
     submission.errorMessage = '';
+    submission.lastChanged = this.stamp();
     this.changed();
     this.simulateFlow(submission.id);
     return clone(submission);
@@ -519,6 +528,7 @@ export class MockDataService implements PurchaseDataService {
         const s = this.store.submissions.find((x) => x.id === submissionId);
         if (!s) return;
         s.packageStatus = status;
+        s.lastChanged = this.stamp();
         if (status === 'Packaged') {
           s.packagedAt = this.stamp();
           if (s.type === 'package') s.folderLink = packagedFolderLink(s.folderName);

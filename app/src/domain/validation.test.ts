@@ -1,6 +1,7 @@
-import { approvalGroupsToSend, blockingIssues, approvalStateOf, validateRequest, validationStage } from './validation';
+import { approvalGroupsToSend, blockingIssues, approvalStateOf, looksBoughtNow, validateRequest, validationStage } from './validation';
 import { LineRef } from './duplicates';
 import { messages } from './messages';
+import { MAX_AMOUNT_CENTS, formatCents } from './money';
 import { vendorKey } from './purchaseRules';
 import { ApprovalRecord, PurchaseLine, PurchaseRequest } from './types';
 import { file, line, quote, request } from '../testing/builders';
@@ -14,7 +15,8 @@ const big = (overrides: Partial<PurchaseLine> = {}) => line({ id: 'big', amountC
 const ACME = vendorKey('Acme Lab Supply');
 const approved = (cents: number): ApprovalRecord => ({
   sent: [{ key: ACME, vendor: 'Acme Lab Supply', cents, bought: false }],
-  approved: [{ key: ACME, vendor: 'Acme Lab Supply', cents, bought: false }]
+  approved: [{ key: ACME, vendor: 'Acme Lab Supply', cents, bought: false }],
+  earlier: []
 });
 
 describe('validateRequest: a request with no approval needed', () => {
@@ -46,7 +48,17 @@ describe('validateRequest: a request with no approval needed', () => {
     expect(message(null)).toEqual([['amount', messages.amountRequired]]);
     expect(message(0)).toEqual([['amount', messages.amountNotPositive]]);
     expect(message(-100)).toEqual([['amount', messages.amountNotPositive]]);
-    expect(messages.amountRequired).toBe('Enter an amount like 45.10: digits, and at most two decimals.');
+    // The largest amount accepted is said too, from the same number the amount check uses (P-035).
+    expect(messages.amountRequired).toBe('Enter an amount like 45.10: digits, at most two decimals, up to $10,000,000.00.');
+    expect(messages.amountRequired).toContain(formatCents(MAX_AMOUNT_CENTS));
+  });
+
+  it('reads a vendor made only of characters that show nothing as no vendor, which cannot be sent or submitted (P-016)', () => {
+    for (const vendor of ['​', 'ㅤ', ' ­⁠ ']) {
+      expect(blockingIssues(check(request(), [line({ vendor })])).map((i) => [i.field, i.message])).toEqual([['vendor', messages.vendorRequired]]);
+    }
+    // A name with no letter or digit that shows something is still a vendor.
+    expect(check(request(), [line({ vendor: '-' })])).toEqual([]);
   });
 
   it('needs a description of the category for Other, and nothing extra for the other categories', () => {
@@ -175,6 +187,39 @@ describe('validateRequest: a vendor total of $500 or more, before it is approved
     expect(withReceipt.filter((i) => i.severity === 'warning')).toHaveLength(1);
     // Planned for today or later, with only a quote: not flagged.
     expect(check(request(), [big({ date: '2026-10-20', files: [quote()] })])).toEqual([]);
+  });
+
+  it('says a vendor total keeps the flag of an earlier round when nothing in it looks bought now (P-017)', () => {
+    // Sent dated before the day it was sent, so flagged; returned; the date was then moved to after today.
+    const returned = request({
+      status: 'Returned',
+      returnStage: 'approval',
+      approval: { sent: [{ key: ACME, vendor: 'Acme Lab Supply', cents: 60000, bought: true }], approved: [], earlier: [] }
+    });
+    const warnings = (lines: PurchaseLine[]) =>
+      check(returned, lines)
+        .filter((i) => i.severity === 'warning')
+        .map((i) => [i.rowNumber, i.field, i.message]);
+    expect(warnings([big({ date: '2026-10-25', files: [quote()] })])).toEqual([[1, 'date', messages.boughtBeforeEarlierWarning('Acme Lab Supply', '$600.00')]]);
+    expect(messages.boughtBeforeEarlierWarning('Acme Lab Supply', '$600.00')).toBe(
+      'Acme Lab Supply totals $600.00 and was flagged as bought before approval when it was sent before. It can still be sent for approval.'
+    );
+    // Still dated before today, or with a receipt: it looks bought now, so the usual warning.
+    expect(warnings([big({ date: '2026-10-10', files: [quote()] })])).toEqual([[1, 'date', messages.boughtBeforeWarning('Acme Lab Supply', '$600.00')]]);
+    expect(warnings([big({ date: '2026-10-25', files: [quote(), file()] })])).toEqual([
+      [1, 'date', messages.boughtBeforeWarning('Acme Lab Supply', '$600.00')]
+    ]);
+  });
+
+  it('tells whether a vendor total looks bought now: a row dated before the day, or with a receipt (P-017)', () => {
+    const lines = [big({ id: 'a', rowNumber: 1, date: '2026-10-25', files: [quote()] }), big({ id: 'b', rowNumber: 2, date: '2026-10-25', files: [] })];
+    expect(looksBoughtNow(lines, ACME, TODAY)).toBe(false);
+    expect(looksBoughtNow([lines[0], { ...lines[1], date: '2026-10-19' }], ACME, TODAY)).toBe(true);
+    expect(looksBoughtNow([lines[0], { ...lines[1], files: [file()] }], ACME, TODAY)).toBe(true);
+    // A row that uses another row's receipt has one too.
+    const holder = line({ id: 'h', rowNumber: 3, vendor: 'Other Co', amountCents: 1000 });
+    expect(looksBoughtNow([lines[0], { ...lines[1], sameReceiptAsRow: 3 }, holder], ACME, TODAY)).toBe(true);
+    expect(looksBoughtNow(lines, 'no-such-vendor', TODAY)).toBe(false);
   });
 });
 

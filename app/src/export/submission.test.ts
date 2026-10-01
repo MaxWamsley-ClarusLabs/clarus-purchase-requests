@@ -13,7 +13,8 @@ const big = (overrides: Partial<PurchaseLine> = {}) => line({ id: 'big', vendor:
 const ACME = vendorKey('Acme Lab Supply');
 const approval = (cents: number, bought = false): ApprovalRecord => ({
   sent: [{ key: ACME, vendor: 'Acme Lab Supply', cents, bought }],
-  approved: [{ key: ACME, vendor: 'Acme Lab Supply', cents, bought }]
+  approved: [{ key: ACME, vendor: 'Acme Lab Supply', cents, bought }],
+  earlier: []
 });
 
 describe('prepareSubmission: a request that needs no approval', () => {
@@ -178,7 +179,12 @@ describe('prepareApprovalRequest (P-018)', () => {
     const first = prepareApprovalRequest(request(), [big({ date: '2026-10-10', files: [quote()] })], [], now, jane, 1);
     expect(first.sentGroups[0].bought).toBe(true);
     // Returned at the approval step, then the date is changed and the request is sent again.
-    const returned = request({ status: 'Returned', returnStage: 'approval', approvalRounds: 1, approval: { sent: first.sentGroups, approved: [] } });
+    const returned = request({
+      status: 'Returned',
+      returnStage: 'approval',
+      approvalRounds: 1,
+      approval: { sent: first.sentGroups, approved: [], earlier: [] }
+    });
     const again = prepareApprovalRequest(returned, [big({ date: '2026-12-01', files: [quote()] })], [], new Date(2026, 9, 17, 9, 0), jane, 2);
     expect(again.sentGroups).toEqual([{ key: ACME, vendor: 'Acme Lab Supply', cents: 100000, bought: true }]);
     expect(again.boughtBefore).toBe(true);
@@ -195,7 +201,7 @@ describe('prepareApprovalRequest (P-018)', () => {
     const roundOne = request({
       status: 'Approved',
       approvalRounds: 1,
-      approval: { sent: groups, approved: groups },
+      approval: { sent: groups, approved: groups, earlier: [] },
       approvedBy: 'Max Wamsley',
       approvedByEmail: 'max.wamsley@example.com',
       approvedOn: '2026-10-14 10:05'
@@ -231,7 +237,7 @@ describe('prepareApprovalRequest (P-018)', () => {
       ...roundOne,
       approvalRounds: 2,
       boughtBeforeApproval: roundTwo.boughtBefore,
-      approval: { sent: roundTwo.sentGroups, approved: groupsForApproved(bought, roundTwo.sentGroups) },
+      approval: { sent: roundTwo.sentGroups, approved: groupsForApproved(bought, roundTwo.sentGroups), earlier: groups },
       approvedOn: '2026-10-21 10:00'
     });
     const package_ = prepareSubmission(approvedAgain, bought, [], new Date(2026, 9, 22, 9, 0), '', certified);

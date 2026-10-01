@@ -1,0 +1,23 @@
+{
+  // Type check for the local preview harness and its tools (not part of the
+  // SharePoint package). The app code itself is checked by ../tsconfig.json.
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["ES2019", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["vitest/globals", "node"]
+  },
+  "include": ["../src", "."],
+  "exclude": ["../src/webparts"]
+}

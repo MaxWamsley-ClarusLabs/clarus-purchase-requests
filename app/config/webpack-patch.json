@@ -1,0 +1,3 @@
+{
+  "patchFiles": ["./config/webpack-patch/receipt-reader.js"]
+}

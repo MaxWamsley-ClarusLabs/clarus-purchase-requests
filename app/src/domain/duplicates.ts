@@ -2,6 +2,7 @@
 // vendor and amount. These are warnings; they never block a submission. Quote
 // files are not compared: one quote can support several lines of a vendor.
 
+import { vendorKey } from './purchaseRules';
 import { PurchaseLine } from './types';
 
 export interface LineRef {
@@ -16,19 +17,23 @@ export interface DuplicateMatch {
   kind: 'file' | 'entry';
 }
 
+/** The same date, the same vendor as the thresholds match it (`vendorKey`, P-016) and the same amount. */
 function entryKey(line: PurchaseLine): string | null {
-  if (!line.date || !line.vendor.trim() || line.amountCents === null) return null;
-  return `${line.date}|${line.vendor.trim().toLowerCase().replace(/\s+/g, ' ')}|${line.amountCents}`;
+  const vendor = vendorKey(line.vendor);
+  if (!line.date || !vendor || line.amountCents === null) return null;
+  return `${line.date}|${vendor}|${line.amountCents}`;
 }
 
-/** Fingerprints of the receipt files a row holds itself (shared receipts and quotes are not duplicates). */
+/**
+ * Fingerprints of the receipt files a row holds itself. A receipt another row
+ * shares ("Same receipt as row N") is not compared again, and quotes are not
+ * duplicates.
+ */
 function ownFingerprints(line: PurchaseLine): string[] {
-  return line.sameReceiptAsRow === null
-    ? line.files
-        .filter((f) => f.kind === 'receipt')
-        .map((f) => f.fingerprint)
-        .filter((f) => f)
-    : [];
+  return line.files
+    .filter((f) => f.kind === 'receipt')
+    .map((f) => f.fingerprint)
+    .filter((f) => f);
 }
 
 /**

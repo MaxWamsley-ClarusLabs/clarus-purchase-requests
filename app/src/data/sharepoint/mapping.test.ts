@@ -1,5 +1,5 @@
 import { toLocalDateTime } from '../../domain/dates';
-import { CATEGORIES, CERTIFICATION, PAID_BY_OPTIONS } from '../../domain/purchaseRules';
+import { CATEGORIES, CERTIFICATION, PAID_BY_OPTIONS, vendorKey } from '../../domain/purchaseRules';
 import { REQUEST_STATUSES } from '../../domain/statuses';
 import { prepareApprovalRequest, prepareSubmission } from '../../export/submission';
 import { file, line, quote, request } from '../../testing/builders';
@@ -285,6 +285,14 @@ describe('reading a request (anything may have been edited directly, travel D-00
     expect(r.lastChanged).toBe(localTime('2026-10-16T14:30:00Z'));
   });
 
+  it('makes the request number from the item ID, whatever the RequestNumber column holds', () => {
+    // The column is only for people viewing the list: an employee can edit it, and it is empty if writing it failed.
+    expect(requestFromItem(requestItem({ RequestNumber: 'PR-9999' })).requestNumber).toBe('PR-0042');
+    expect(requestFromItem(requestItem({ RequestNumber: null })).requestNumber).toBe('PR-0042');
+    expect(requestFromItem(requestItem({ Id: 7, RequestNumber: '<b>PR-0001</b>' })).requestNumber).toBe('PR-0007');
+    expect(requestFromItem(requestItem({ Id: 12345 })).requestNumber).toBe('PR-12345');
+  });
+
   it('reads who approved from the person column, with the email in lower case', () => {
     const r = requestFromItem(requestItem());
     expect(r.approvedBy).toBe('Max Wamsley');
@@ -454,7 +462,8 @@ describe('reading a row and its files', () => {
     expect(l.rowNumber).toBe(0);
     expect([l.date, l.vendor]).toEqual(['', '']);
     expect(l.files[0].fingerprint).toBe('');
-    expect(l.files[0].kind).toBe('receipt');
+    // With no record of the file, it is not taken for a receipt.
+    expect(l.files[0].kind).toBe('quote');
     // A label in the wrong case, or the app's own id, is not a choice.
     expect(lineFromItem(lineItem({ Category: 'office supplies' })).category).toBe('');
     expect(lineFromItem(lineItem({ Category: 'office' })).category).toBe('');
@@ -482,14 +491,16 @@ describe('reading a row and its files', () => {
     ]);
   });
 
-  it('reads a file with no stored kind, or an unknown kind, as a receipt (P-021)', () => {
+  it('reads a file with no stored kind, or an unknown kind, as a quote, so a missing record never counts as the receipt (P-021)', () => {
     const prints = [
       { fileName: 'old.pdf', sizeBytes: 10, fingerprint: 'o' },
       { fileName: 'odd.pdf', sizeBytes: 10, fingerprint: 'p', kind: 'invoice' },
       { fileName: 'num.pdf', sizeBytes: 10, fingerprint: 'n', kind: 7 },
-      { fileName: 'null.pdf', sizeBytes: 10, fingerprint: 'l', kind: null }
+      { fileName: 'null.pdf', sizeBytes: 10, fingerprint: 'l', kind: null },
+      { fileName: 'caps.pdf', sizeBytes: 10, fingerprint: 'c', kind: 'Receipt' }
     ];
-    expect(parseFingerprints(JSON.stringify(prints)).map((p) => p.kind)).toEqual(['receipt', 'receipt', 'receipt', 'receipt']);
+    expect(parseFingerprints(JSON.stringify(prints)).map((p) => p.kind)).toEqual(['quote', 'quote', 'quote', 'quote', 'quote']);
+    expect(parseFingerprints(JSON.stringify([{ fileName: 'r.pdf', kind: 'receipt' }])).map((p) => p.kind)).toEqual(['receipt']);
     const l = lineFromItem(
       lineItem({
         FileFingerprints: JSON.stringify(prints),
@@ -498,9 +509,9 @@ describe('reading a row and its files', () => {
           .concat([{ FileName: 'direct.pdf', ServerRelativeUrl: '/direct.pdf' }])
       })
     );
-    // A file added directly in SharePoint has no stored entry: a receipt, with no fingerprint.
-    expect(l.files.map((f) => f.kind)).toEqual(['receipt', 'receipt', 'receipt', 'receipt', 'receipt']);
-    expect(l.files[4]).toMatchObject({ fileName: 'direct.pdf', fingerprint: '', sizeBytes: 0 });
+    // A file added directly in SharePoint has no stored entry: a quote, with no fingerprint.
+    expect(l.files.map((f) => f.kind)).toEqual(['quote', 'quote', 'quote', 'quote', 'quote', 'quote']);
+    expect(l.files[5]).toMatchObject({ fileName: 'direct.pdf', fingerprint: '', sizeBytes: 0 });
   });
 
   it('keeps fingerprints and kinds when a row is read without its attachments', () => {
@@ -532,7 +543,7 @@ describe('reading a row and its files', () => {
     expect(parseFingerprints('{"fileName":"a.pdf"}')).toEqual([]);
     expect(parseFingerprints('[1, {"fileName": 3}, null, "x"]')).toEqual([]);
     expect(parseFingerprints('[{"fileName":"a.pdf","sizeBytes":"big","fingerprint":7}]')).toEqual([
-      { fileName: 'a.pdf', sizeBytes: 0, fingerprint: '7', kind: 'receipt' }
+      { fileName: 'a.pdf', sizeBytes: 0, fingerprint: '7', kind: 'quote' }
     ]);
   });
 
@@ -775,7 +786,7 @@ describe('writing a submission', () => {
   it('writes the columns of a package, titled "submission", with the frozen approval as text', () => {
     const approved = request({
       status: 'Approved',
-      approval: { sent: [], approved: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 100000, bought: true }] },
+      approval: { sent: [], approved: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 100000, bought: true }] },
       boughtBeforeApproval: true,
       approvedBy: 'Max Wamsley',
       approvedByEmail: 'max.wamsley@example.com',

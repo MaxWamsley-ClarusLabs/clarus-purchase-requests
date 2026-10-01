@@ -197,7 +197,7 @@ export function createSampleStore(): SampleStore {
     row(40, 1, {
       date: '2026-10-05',
       vendor: 'Harbor Software',
-      description: 'Annual licence for the analysis software',
+      description: 'Annual license for the analysis software',
       category: 'computer',
       amountCents: 87000,
       paidBy: 'company',
@@ -271,7 +271,7 @@ export function createSampleStore(): SampleStore {
     row(35, 1, {
       date: '2026-10-07',
       vendor: 'Northwind Office Supply',
-      description: 'Desk organiser and stationery for the new hire',
+      description: 'Desk organizer and stationery for the new hire',
       category: 'office',
       amountCents: 8645,
       paidBy: 'employee',
@@ -349,7 +349,7 @@ export function createSampleStore(): SampleStore {
     }),
     request({
       id: 40,
-      businessPurpose: 'Software licence for the analysis pipeline',
+      businessPurpose: 'Software license for the analysis pipeline',
       department: 'R&D',
       projectCode: grant,
       status: 'Awaiting approval',

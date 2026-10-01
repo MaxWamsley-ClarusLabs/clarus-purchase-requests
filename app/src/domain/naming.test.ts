@@ -1,4 +1,4 @@
-import { cleanFileName, cleanNamePart, csvFileName, fileCopyName, fileNamesForRow, folderName, packageFiles, requestNumber } from './naming';
+import { cleanFileName, cleanNamePart, csvFileName, fileCopyName, fileNamesForRow, folderName, packageFiles, requestNumber, stripInvisible } from './naming';
 import { file, line, quote } from '../testing/builders';
 
 describe('request numbers and folder names', () => {
@@ -21,6 +21,7 @@ describe('request numbers and folder names', () => {
 
   it('removes accents, slashes and other unsafe characters, and caps the purpose at 40 characters', () => {
     expect(cleanNamePart('Café / supplies #2')).toBe('Cafe-supplies-2');
+    expect(cleanNamePart('Lab supplies, Zürich office #2')).toBe('Lab-supplies-Zurich-office-2');
     const long = folderName({
       firstPurchaseDate: '2026-10-12',
       ownerName: 'José Núñez',
@@ -57,6 +58,30 @@ describe('file copies', () => {
     expect(cleanFileName('.pdf')).toBe('receipt.pdf');
   });
 
+  it('removes control, zero-width and direction characters from file and folder names', () => {
+    const invisible = ['\u0000', '\u0007', '\u001f', '\u007f', '\u200B', '\u200E', '\u200F', '\u202A', '\u202E', '\u2066', '\u2069', '\uFEFF'];
+    for (const ch of invisible) {
+      expect(stripInvisible(`in${ch}voice`)).toBe('invoice');
+      expect(cleanFileName(`in${ch}voice.pdf`)).toBe('invoice.pdf');
+      expect(cleanNamePart(`Jane${ch}Doe`)).toBe('JaneDoe');
+    }
+    // A right-to-left override would make "receipt<override>fdp.exe" read as "receiptexe.pdf".
+    expect(cleanFileName('receipt\u202Efdp.exe')).toBe('receiptfdp.exe');
+    expect(cleanFileName('receipt.p\u202Edf')).toBe('receipt.pdf');
+    expect(fileCopyName('receipt', 1, 0, 'slip\u200B.pdf')).toBe('R01_slip.pdf');
+    expect(
+      folderName({
+        firstPurchaseDate: '2026-10-12',
+        ownerName: 'Jane\u202EDoe',
+        businessPurpose: 'Lab\u200Bsupplies',
+        requestNumber: 'PR-0042',
+        submissionNumber: 1
+      })
+    ).toBe('2026-10-12_JaneDoe_Labsupplies_PR-0042');
+    // Ordinary text is left alone.
+    expect(stripInvisible('Café, Zürich #2')).toBe('Café, Zürich #2');
+  });
+
   it('copies a shared receipt once, under the row that holds it, and never shares quotes', () => {
     const lines = [
       line({ id: 'a', rowNumber: 1, files: [file({ id: 'r1', fileName: 'invoice.pdf' }), quote({ id: 'q1', fileName: 'quote.pdf' })] }),
@@ -70,5 +95,21 @@ describe('file copies', () => {
     expect(fileNamesForRow(lines[1], lines, 'receipt')).toEqual(['R01_invoice.pdf']);
     expect(fileNamesForRow(lines[1], lines, 'quote')).toEqual(['Q02_quote-b.pdf']);
     expect(fileNamesForRow(lines[0], lines, 'quote')).toEqual(['Q01_quote.pdf']);
+  });
+
+  it('never leaves a file out: a row that shares a receipt but also holds one of its own has it copied under its own number', () => {
+    const lines = [
+      line({ id: 'a', rowNumber: 1, files: [file({ id: 'r1', fileName: 'invoice.pdf' })] }),
+      line({ id: 'b', rowNumber: 2, files: [file({ id: 'r2', fileName: 'own-slip.pdf', fingerprint: 'b' })], sameReceiptAsRow: 1 })
+    ];
+    expect(packageFiles(lines).map((p) => [p.lineId, p.kind, p.packageName])).toEqual([
+      ['a', 'receipt', 'R01_invoice.pdf'],
+      ['b', 'receipt', 'R02_own-slip.pdf']
+    ]);
+    expect(fileNamesForRow(lines[1], lines, 'receipt')).toEqual(['R01_invoice.pdf', 'R02_own-slip.pdf']);
+    expect(fileNamesForRow(lines[0], lines, 'receipt')).toEqual(['R01_invoice.pdf']);
+    // A broken pointer still lists the row's own file.
+    const broken = { ...lines[1], sameReceiptAsRow: 9 };
+    expect(fileNamesForRow(broken, [lines[0], broken], 'receipt')).toEqual(['R02_own-slip.pdf']);
   });
 });

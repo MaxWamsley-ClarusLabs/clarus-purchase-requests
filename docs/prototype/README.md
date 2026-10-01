@@ -1,6 +1,6 @@
 # Purchase Requests prototype
 
-**Status:** Current with the Stage 5 screens (built overnight, 2026-10-01). Not yet reviewed by Max. Nothing here runs in SharePoint yet.
+**Status:** Current with the screens as they are after the review fixes (built overnight, 2026-10-01). Not yet reviewed by Max. Nothing here runs in SharePoint yet.
 
 These are the real app screens (the same React code that goes into SharePoint), running on synthetic sample data in a local preview. Packaging and emails are simulated. People, vendors and files are made up; every sample receipt, invoice and quote is stamped "synthetic sample for testing". The screenshots are taken with the browser's clock fixed at 2026-10-12, the day the sample data is set on, so they look the same whenever the script is run.
 
@@ -15,7 +15,7 @@ These are the real app screens (the same React code that goes into SharePoint), 
 | Request | Who | Status | What it shows |
 |---|---|---|---|
 | PR-0041 | Jane | Draft | Lab supplies for the Phase 1 assay. Acme Lab Supply $640.00 with its quote attached (needs approval), Northwind Office Supply $86.45 (needs none). Ready to send for approval |
-| PR-0040 | Jane | Awaiting approval | Software licence. Harbor Software $870.00 with a quote, Blue Fern Web Co. $129.00. The approver has been emailed |
+| PR-0040 | Jane | Awaiting approval | Software license. Harbor Software $870.00 with a quote, Blue Fern Web Co. $129.00. The approver has been emailed |
 | PR-0038 | Jane | Approved | Sensor kit. Kestrel Instruments $1,150.00, quote attached, approved with a note. The receipt is still to come |
 | PR-0037 | Jane | Submitted | Website hosting and marketing. Blue Fern Web Co. $1,140.00 over two rows with one shared receipt. Bought before approval, then approved. The package was created |
 | PR-0036 | Jane | Processed | Office supplies and postage |
@@ -63,7 +63,7 @@ All at 1440 pixels wide (a typical laptop) unless noted.
 
 | File | What it shows |
 |---|---|
-| `20-admin-request-awaiting-approval.png` | PR-0040: the approver's view. Each category is a drop-down, because the employee only suggested it. Return with a note and Approve are in the header |
+| `20-admin-request-awaiting-approval.png` | PR-0040: the approver's view. Each category is a drop-down, because the employee only suggested it. Each attached file name (here the Harbor quote) opens in a preview. Return with a note and Approve are in the header |
 | `21-admin-approve-dialog.png` | The Approve dialog: approving confirms the categories shown and records each vendor total as approved. It counts the categories changed, and takes an optional note for the employee |
 | `22-admin-return-dialog.png` | Returning a request at the approval step: the note is required, and the employee is asked to correct it and send it again |
 | `23-admin-approval-email.png` | The approval email as the approvers receive it, as plain text |
@@ -88,6 +88,11 @@ All at 1440 pixels wide (a typical laptop) unless noted.
 - The send dialog flags a purchase dated before today, and does not flag one dated after it.
 - The whole approval path above: Jane sends PR-0041 (Awaiting approval), Max approves it with a changed category (Approved), Jane attaches receipts and submits (Submit is disabled until the certification is ticked; then Submitted), Max marks it processed (Processed).
 - Returned requests say who returned them; Needs attention lists both kinds of stuck submission and the duplicate; Set-up names the package and says where the approval emails go.
+- An amount typed just after a row is added shows on screen and is saved, and the request total on screen matches what is saved. Typing 30 characters saves at most twice.
+- A pasted row with a US date, a quoted cell with a line break and an amount is read; a pasted date that cannot be read is not used, a bad amount empties the amount, and one warning says what was skipped. A date with a year like 0026 is not saved.
+- A dialog takes the focus and keeps Tab inside; Escape closes it (and the row menu) and the focus returns; a row of the Approvals list opens with Enter.
+- The approver opens the Harbor quote of PR-0040 in the preview.
+- At 1024 and 375 wide, key pages fit their cards.
 
 ## What the review changed
 
@@ -95,11 +100,23 @@ Claude reviewed every screen before sending them. Changes made:
 
 1. **The grid has fixed column widths**, so a long file name cannot widen the Files column and squeeze the vendor and description. On a screen too narrow for its columns the grid scrolls sideways.
 2. **The row menu is fixed to the window**, so the grid's own scrolling cannot cut it off. It opens upward near the bottom of the screen.
-3. **The administrator's purchases table is compact** (a flag icon for "bought before approval" instead of a tag) so all ten columns fit at 1440 without scrolling.
+3. **The administrator's purchases table is compact** (eight columns: one Files column replaces Receipt and Quote, and Who paid sits under the amount) so it fits from 1024 wide up without scrolling.
 4. **Header buttons sit on the right** when a long title pushes them to a second line, and request numbers never wrap.
 5. **Receipt suggestions apply to receipts only.** A quote dropped on the box is attached as a quote and typed by hand.
 6. **The "No quote" and "No receipt" boxes appear when they matter**: the quote reason on the first row of a vendor total of $500 or more while the request is waiting to be sent, the receipt reason once approval is done.
 7. **Needs attention ignores a stuck submission whose request has moved on** (for example an approval email that failed, for a request approved in the app anyway).
+
+## What the independent review changed (2026-10-01)
+
+Four independent reviews (a requirements audit, a code review of the rules and data, a review of the flow package, and a browser test of the preview) found problems in this prototype. The ones that change what you see or do:
+
+1. **The screen always shows what is saved.** Typing into a row a moment after adding a row, deleting one or attaching a file could leave the screen showing an old value while a different one was saved, so a total on the Review step could be wrong. Fixed, with a check in the screenshot script.
+2. **Saving waits for a pause in typing.** It saved on every keystroke. It now saves half a second after the last one, and closing or reloading the page with something unsaved saves it first (the browser asks before leaving).
+3. **Pasting from a spreadsheet** reads quoted cells and dates like 10/14/2026 or Oct 14, 2026, and says how many cells or rows it skipped and why, instead of dropping them silently. A bad amount empties the amount instead of keeping the old one. A date with a year like 0026 is not saved.
+4. **Amounts** accept a comma only as a thousands separator, so "12,50" is no longer read as $1,250.00.
+5. **Keyboard use.** Dialogs take the focus and keep Tab inside; Escape closes dialogs and the row menu and returns the focus; the rows of the administrator's lists open with Enter.
+6. **The approver can read the quote.** Each attached file name on the administrator's request page opens a preview.
+7. **Layout.** Tables scroll inside their cards instead of poking out, from 1024 wide down to a phone. The product is for laptop screens; smaller sizes are usable, not polished.
 
 ## Known limits of the preview
 

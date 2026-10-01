@@ -1,6 +1,6 @@
 import { ApprovalRequiredError, SubmissionBlockedError, prepareApprovalRequest, prepareSubmission } from './submission';
 import { messages } from '../domain/messages';
-import { CERTIFICATION } from '../domain/purchaseRules';
+import { CERTIFICATION, groupsForApproved, vendorKey } from '../domain/purchaseRules';
 import { ApprovalRecord, PurchaseLine } from '../domain/types';
 import { file, line, quote, request } from '../testing/builders';
 
@@ -10,9 +10,10 @@ const jane = { name: 'Jane Doe', email: 'jane.doe@example.com' };
 
 // A vendor total of $1,000.00, which needs approval.
 const big = (overrides: Partial<PurchaseLine> = {}) => line({ id: 'big', vendor: 'Acme Lab Supply', amountCents: 100000, ...overrides });
+const ACME = vendorKey('Acme Lab Supply');
 const approval = (cents: number, bought = false): ApprovalRecord => ({
-  sent: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents, bought }],
-  approved: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents, bought }]
+  sent: [{ key: ACME, vendor: 'Acme Lab Supply', cents, bought }],
+  approved: [{ key: ACME, vendor: 'Acme Lab Supply', cents, bought }]
 });
 
 describe('prepareSubmission: a request that needs no approval', () => {
@@ -136,7 +137,7 @@ describe('prepareApprovalRequest (P-018)', () => {
     expect(prepared.submission.quoteCount).toBe(1);
     expect(prepared.submission.emailSubject).toBe('Purchase approval needed: Jane Doe, Lab supplies for the Phase 1 assay (PR-0042)');
     expect(prepared.submission.emailSummary).toContain('- Acme Lab Supply: $1,000.00 (quote attached)');
-    expect(prepared.sentGroups).toEqual([{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 100000, bought: false }]);
+    expect(prepared.sentGroups).toEqual([{ key: 'acmelabsupply', vendor: 'Acme Lab Supply', cents: 100000, bought: false }]);
     expect(prepared.boughtBefore).toBe(false);
     expect(prepared.sentOn).toBe('2026-10-16 09:30');
   });
@@ -156,9 +157,14 @@ describe('prepareApprovalRequest (P-018)', () => {
     expect(() => prepareApprovalRequest(request(), [big({ files: [], noQuoteReason: 'Sole supplier' })], [], now, jane, 1)).not.toThrow();
   });
 
-  it('refuses a request that needs no approval, and one that is already with the approver', () => {
+  it('refuses a request that needs no approval, one that is already with the approver, and one still covered by its approval, saying which', () => {
     expect(() => prepareApprovalRequest(request(), [line()], [], now, jane, 1)).toThrow(messages.approvalNotNeeded);
-    expect(() => prepareApprovalRequest(request({ status: 'Awaiting approval' }), [big({ files: [quote()] })], [], now, jane, 1)).toThrow();
+    expect(() => prepareApprovalRequest(request({ status: 'Awaiting approval' }), [big({ files: [quote()] })], [], now, jane, 1)).toThrow(
+      messages.alreadyWithApprover
+    );
+    const approved = request({ status: 'Approved', approval: approval(100000), approvedBy: 'Max Wamsley', approvedOn: '2026-10-14 10:05' });
+    expect(() => prepareApprovalRequest(approved, [big({ files: [quote(), file()] })], [], now, jane, 2)).toThrow(messages.alreadyApproved);
+    expect(messages.alreadyApproved).not.toContain('with the approver');
   });
 
   it('can be sent again when a vendor total has risen past what was approved (P-019)', () => {
@@ -166,5 +172,76 @@ describe('prepareApprovalRequest (P-018)', () => {
     expect(() => prepareApprovalRequest(approved, [big({ amountCents: 120000, files: [quote()] })], [], now, jane, 2)).not.toThrow();
     // Still covered, so there is nothing to send.
     expect(() => prepareApprovalRequest(approved, [big({ amountCents: 105000, files: [quote()] })], [], now, jane, 2)).toThrow();
+  });
+
+  it('keeps the bought-before-approval flag of an earlier round, even after the date is moved to the future (P-017)', () => {
+    const first = prepareApprovalRequest(request(), [big({ date: '2026-10-10', files: [quote()] })], [], now, jane, 1);
+    expect(first.sentGroups[0].bought).toBe(true);
+    // Returned at the approval step, then the date is changed and the request is sent again.
+    const returned = request({ status: 'Returned', returnStage: 'approval', approvalRounds: 1, approval: { sent: first.sentGroups, approved: [] } });
+    const again = prepareApprovalRequest(returned, [big({ date: '2026-12-01', files: [quote()] })], [], new Date(2026, 9, 17, 9, 0), jane, 2);
+    expect(again.sentGroups).toEqual([{ key: ACME, vendor: 'Acme Lab Supply', cents: 100000, bought: true }]);
+    expect(again.boughtBefore).toBe(true);
+    expect(again.submission.emailSummary).toContain('FLAG, bought before approval: Acme Lab Supply ($1,000.00).');
+    expect(again.submission.emailSummary).toContain('(round 2, sent again)');
+  });
+
+  it('flags only the vendor total that rose past its approval, and the approval email, the CSV and the submission email agree', () => {
+    // Round 1 approved Acme at $1,000.00 and Borealis at $800.00, each with a quote. Both were bought afterwards.
+    const groups = [
+      { key: ACME, vendor: 'Acme Lab Supply', cents: 100000, bought: false },
+      { key: vendorKey('Borealis Optics'), vendor: 'Borealis Optics', cents: 80000, bought: false }
+    ];
+    const roundOne = request({
+      status: 'Approved',
+      approvalRounds: 1,
+      approval: { sent: groups, approved: groups },
+      approvedBy: 'Max Wamsley',
+      approvedByEmail: 'max.wamsley@example.com',
+      approvedOn: '2026-10-14 10:05'
+    });
+    const bought = [
+      big({
+        id: 'a',
+        rowNumber: 1,
+        date: '2026-10-15',
+        amountCents: 115000,
+        files: [quote(), file({ id: 'ra', fileName: 'acme-invoice.pdf', fingerprint: 'ra' })]
+      }),
+      line({
+        id: 'b',
+        rowNumber: 2,
+        vendor: 'Borealis Optics',
+        date: '2026-10-15',
+        amountCents: 80000,
+        files: [quote({ id: 'qb', fingerprint: 'qb' }), file({ id: 'rb', fileName: 'borealis-invoice.pdf', fingerprint: 'rb' })]
+      })
+    ];
+    // Acme is now $1,150.00, more than 10% above what was approved, so the request goes for approval again.
+    const roundTwo = prepareApprovalRequest(roundOne, bought, [], new Date(2026, 9, 20, 9, 0), jane, 2);
+    expect(roundTwo.sentGroups).toEqual([
+      { key: ACME, vendor: 'Acme Lab Supply', cents: 115000, bought: true },
+      { key: vendorKey('Borealis Optics'), vendor: 'Borealis Optics', cents: 80000, bought: false }
+    ]);
+    expect(roundTwo.submission.emailSummary).toContain('FLAG, bought before approval: Acme Lab Supply ($1,150.00).');
+    expect(roundTwo.submission.emailSummary).not.toMatch(/FLAG.*Borealis/);
+
+    // The approver approves round 2, and the employee submits.
+    const approvedAgain = request({
+      ...roundOne,
+      approvalRounds: 2,
+      boughtBeforeApproval: roundTwo.boughtBefore,
+      approval: { sent: roundTwo.sentGroups, approved: groupsForApproved(bought, roundTwo.sentGroups) },
+      approvedOn: '2026-10-21 10:00'
+    });
+    const package_ = prepareSubmission(approvedAgain, bought, [], new Date(2026, 9, 22, 9, 0), '', certified);
+    expect(package_.submission.boughtBeforeApproval).toBe(true);
+    expect(package_.submission.emailSummary).toContain('FLAG, bought before approval: Acme Lab Supply ($1,150.00).');
+    expect(package_.submission.emailSummary).not.toMatch(/FLAG.*Borealis/);
+    const rows = package_.csvContent.replace(/^\uFEFF/, '').split('\r\n');
+    expect(rows[1]).toContain('Acme Lab Supply');
+    expect(rows[1]).toContain('Approved,Yes,Max Wamsley');
+    expect(rows[2]).toContain('Borealis Optics');
+    expect(rows[2]).toContain('Approved,No,Max Wamsley');
   });
 });

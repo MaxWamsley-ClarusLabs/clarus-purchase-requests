@@ -42,7 +42,7 @@ const documents = [
     kind: 'quote',
     vendor: 'Harbor Software',
     date: '2026-09-27',
-    lines: [['Annual licence, analysis software, 5 seats', '870.00']],
+    lines: [['Annual license, analysis software, 5 seats', '870.00']],
     total: '870.00',
     footer: 'Valid for 30 days.'
   },
@@ -51,7 +51,7 @@ const documents = [
     kind: 'invoice',
     vendor: 'Harbor Software',
     date: '2026-10-06',
-    lines: [['Annual licence, analysis software, 5 seats', '870.00']],
+    lines: [['Annual license, analysis software, 5 seats', '870.00']],
     total: '870.00',
     footer: 'Terms: net 30.'
   },

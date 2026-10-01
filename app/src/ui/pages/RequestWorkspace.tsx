@@ -13,7 +13,6 @@ import {
   ApprovalState,
   categoryText,
   findPaidBy,
-  groupsForApproval,
   isSelfApproved,
   lineApprovals,
   mustSendForApproval
@@ -23,10 +22,22 @@ import { marksAfterEdit, readingChanges, shouldReadReceipt, vendorMemoryChanges 
 import { APPROVAL_STATE_DISPLAY, LINE_APPROVAL_DISPLAY, REQUEST_STATUS_DISPLAY, isEditable, submissionStatusDisplay } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
 import { FileKind, PurchaseLine, PurchaseRequest, Submission, TEXT_MAX_LENGTH } from '../../domain/types';
-import { Issue, RequestField, approvalStateOf, blockingIssues, issuePrefix, validateRequest, validationStage } from '../../domain/validation';
+import {
+  Issue,
+  RequestField,
+  approvalGroupsToSend,
+  approvalStateOf,
+  blockingIssues,
+  issuePrefix,
+  validateRequest,
+  validationStage
+} from '../../domain/validation';
 import { LineChanges, RequestChanges } from '../../data/PurchaseDataService';
 import { ApprovalRequiredError, SubmissionBlockedError } from '../../export/submission';
 import { useApp } from '../AppContext';
+import { errorText } from '../errors';
+import { useMountedRef } from '../hooks';
+import { ChangeSet, NO_CHANGES, SaveRecord, addChanges, forRows, hasChanges, savesNotYetRead, withChanges } from '../pendingChanges';
 import { Badge, Card, Dialog, HeaderCard, IssueLine, SavedIndicator, Tag, TotalsStrip } from '../components/common';
 import { DropZone } from '../components/DropZone';
 import { Icon } from '../components/Icon';
@@ -62,6 +73,10 @@ const inProgress = (s: Submission | undefined): boolean => !!s && s.packageStatu
 
 export function RequestWorkspace(props: { requestId: number; step: RequestStep }): React.ReactElement {
   const app = useApp();
+  // The app gives a new context each time it draws (the sidebar steps are set from this page),
+  // so the callbacks below read it from here: saving must not restart whenever it changes.
+  const appRef = React.useRef(app);
+  appRef.current = app;
   const { service } = app;
   const [request, setRequest] = React.useState<PurchaseRequest | null>(null);
   const [lines, setLines] = React.useState<PurchaseLine[]>([]);
@@ -86,47 +101,74 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
   // employee has chosen "Who paid" themselves, so vendor memory leaves it alone.
   const [readingLineIds, setReadingLineIds] = React.useState<ReadonlySet<string>>(new Set());
   const paidByChosen = React.useRef<Record<string, boolean>>({});
+  // The rows as on screen, updated with every change before React draws it, so code that
+  // runs after an await (receipt reading, saving, reading back) always has the latest rows.
   const linesRef = React.useRef<PurchaseLine[]>([]);
-  linesRef.current = lines;
+  const showLines = (next: PurchaseLine[]) => {
+    linesRef.current = next;
+    setLines(next);
+  };
   const othersRef = React.useRef<LineRef[]>([]);
   othersRef.current = others;
   // Reading stops if the employee leaves the request; rows already filled are saved.
-  const mounted = React.useRef(true);
-  React.useEffect(
-    () => () => {
-      mounted.current = false;
-    },
-    []
-  );
+  const mounted = useMountedRef();
 
-  // Automatic saving (travel D-033): changes are collected and written shortly after the last keystroke.
-  const requestChanges = React.useRef<RequestChanges>({});
-  const lineChanges = React.useRef<Record<string, LineChanges>>({});
+  // Automatic saving (travel D-033): changes are collected and written shortly after the last
+  // keystroke. Until what is read back holds them, they are put back on top of it, so the
+  // screen always shows what is saved or about to be (pendingChanges.ts).
+  const pending = React.useRef<ChangeSet>(NO_CHANGES);
+  const saves = React.useRef<SaveRecord[]>([]);
+  // One counter orders reads and finished saves; a read started before a save finished may not hold it.
+  const clock = React.useRef(0);
+  const runningReads = React.useRef<Set<number>>(new Set());
+  // The newest read on screen, so an older read that arrives late is not shown over it.
+  const readCount = React.useRef(0);
+  const shownRead = React.useRef(0);
   const timer = React.useRef<number | undefined>(undefined);
-  const inflight = React.useRef(0);
 
-  const load = React.useCallback(async () => {
-    try {
-      const [data, other, subs, approverNames] = await Promise.all([
-        service.getRequest(props.requestId),
-        service.getOwnerOtherLines(props.requestId),
-        service.listSubmissionsForRequest(props.requestId),
-        service.listApprovers().catch((): string[] => [])
-      ]);
-      if (sameEmail(data.request.ownerEmail, app.user.email)) {
-        const mine = await service.listMyRequests();
-        setDepartmentOptions(departmentSuggestions(mine.filter((r) => r.id !== props.requestId)));
+  const unsaved = (): boolean => hasChanges(pending.current) || saves.current.some((s) => s.finishedAt === null);
+  /** Forgets the saves that every read still running started after. */
+  const forgetReadSaves = () => {
+    const oldest = Math.min(...Array.from(runningReads.current), Infinity);
+    saves.current = saves.current.filter((s) => s.finishedAt === null || s.finishedAt > oldest);
+  };
+
+  /** Reads the request again. `quiet`: a failure leaves the page as it is, instead of showing the error in its place. */
+  const load = React.useCallback(
+    async (quiet = false): Promise<void> => {
+      const read = ++readCount.current;
+      const startedAt = ++clock.current;
+      runningReads.current.add(startedAt);
+      try {
+        const [data, other, subs, approverNames] = await Promise.all([
+          service.getRequest(props.requestId),
+          service.getOwnerOtherLines(props.requestId),
+          service.listSubmissionsForRequest(props.requestId),
+          service.listApprovers().catch((): string[] => [])
+        ]);
+        const mine = sameEmail(data.request.ownerEmail, appRef.current.user.email) ? await service.listMyRequests() : null;
+        if (!mounted.current || read < shownRead.current) return;
+        shownRead.current = read;
+        if (mine) setDepartmentOptions(departmentSuggestions(mine.filter((r) => r.id !== props.requestId)));
+        // What was typed meanwhile, being saved or still waiting, goes back on top. Changes to a
+        // row that has been deleted are dropped: there is nothing left to save them to.
+        pending.current = forRows(pending.current, new Set(data.lines.map((l) => l.id)));
+        const shown = withChanges(data.request, data.lines, [...savesNotYetRead(saves.current, startedAt), pending.current]);
+        setRequest(shown.request);
+        showLines(shown.lines);
+        setOthers(other);
+        setSubmissions(subs);
+        setApprovers(approverNames);
+        setSelectedLineId((current) => (current && data.lines.some((l) => l.id === current) ? current : data.lines[0] ? data.lines[0].id : null));
+      } catch (e) {
+        if (!quiet && mounted.current) setLoadError(e instanceof Error ? e.message : String(e));
+      } finally {
+        runningReads.current.delete(startedAt);
+        forgetReadSaves();
       }
-      setRequest(data.request);
-      setLines(data.lines);
-      setOthers(other);
-      setSubmissions(subs);
-      setApprovers(approverNames);
-      setSelectedLineId((current) => (current && data.lines.some((l) => l.id === current) ? current : data.lines[0] ? data.lines[0].id : null));
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e));
-    }
-  }, [service, props.requestId]);
+    },
+    [service, props.requestId]
+  );
 
   React.useEffect(() => {
     void load();
@@ -138,44 +180,77 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const flush = React.useCallback(async () => {
+  /** Writes what is waiting now. Never throws: a failure is shown, and the page goes back to what is saved. */
+  const flush = React.useCallback(async (): Promise<void> => {
     window.clearTimeout(timer.current);
-    const rc = requestChanges.current;
-    const lc = lineChanges.current;
-    requestChanges.current = {};
-    lineChanges.current = {};
-    const jobs: Promise<unknown>[] = [];
-    if (Object.keys(rc).length > 0) jobs.push(service.updateRequest(props.requestId, rc));
-    for (const [id, changes] of Object.entries(lc)) jobs.push(service.updateLine(id, changes));
-    if (jobs.length === 0) {
-      setSaving(inflight.current > 0);
+    const changes = pending.current;
+    pending.current = NO_CHANGES;
+    if (!hasChanges(changes)) {
+      if (mounted.current) setSaving(unsaved());
       return;
     }
-    inflight.current += 1;
-    try {
-      await Promise.all(jobs);
-    } catch (e) {
-      app.toast(`Could not save: ${e instanceof Error ? e.message : String(e)}`, 'warning');
-    } finally {
-      inflight.current -= 1;
-      setSaving(inflight.current > 0 || Object.keys(requestChanges.current).length > 0 || Object.keys(lineChanges.current).length > 0);
+    const save: SaveRecord = { changes, finishedAt: null };
+    saves.current = [...saves.current, save];
+    const jobs: Promise<unknown>[] = [];
+    if (Object.keys(changes.request).length > 0) jobs.push(service.updateRequest(props.requestId, changes.request));
+    for (const [id, c] of Object.entries(changes.lines)) jobs.push(service.updateLine(id, c));
+    // Every write is waited for, so a failure does not hide a write still running.
+    const failures = (
+      await Promise.all(
+        jobs.map((job) =>
+          job.then(
+            () => null,
+            (e: unknown) => e
+          )
+        )
+      )
+    ).filter((e) => e !== null);
+    save.finishedAt = ++clock.current;
+    forgetReadSaves();
+    if (failures.length > 0) {
+      appRef.current.toast(`Could not save: ${errorText(failures[0])} The page shows what is saved.`, 'warning');
+      if (mounted.current) void load(true);
     }
-  }, [service, props.requestId, app]);
+    if (mounted.current) setSaving(unsaved());
+  }, [service, props.requestId, load]);
+  const flushRef = React.useRef(flush);
+  flushRef.current = flush;
 
   const scheduleSave = () => {
     setSaving(true);
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
-      void flush();
+      void flushRef.current();
     }, SAVE_DELAY_MS);
   };
 
+  // Leaving the request saves what is waiting, once.
   React.useEffect(
     () => () => {
-      void flush();
+      void flushRef.current();
     },
-    [flush]
+    []
   );
+
+  // Closing or reloading the page saves what is waiting at once. While anything is not yet
+  // saved, the browser first asks whether to leave, so the save can finish.
+  React.useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!unsaved()) return;
+      void flushRef.current();
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    const onPageHide = () => {
+      void flushRef.current();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, []);
 
   // While an approval email or a package is being created, check its progress.
   const latestApproval = latestSubmission(submissions, 'approval');
@@ -185,7 +260,8 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     if (!waitingOnFlow) return;
     const t = window.setInterval(async () => {
       try {
-        setSubmissions(await service.listSubmissionsForRequest(props.requestId));
+        const subs = await service.listSubmissionsForRequest(props.requestId);
+        if (mounted.current) setSubmissions(subs);
       } catch {
         // Checked again on the next tick.
       }
@@ -262,8 +338,8 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
   if (!request) return <div className="ctx-empty">Loading</div>;
 
   const changeRequest = (changes: RequestChanges) => {
-    setRequest({ ...request, ...changes });
-    requestChanges.current = { ...requestChanges.current, ...changes };
+    setRequest((current) => (current ? { ...current, ...changes } : current));
+    pending.current = addChanges(pending.current, { request: changes, lines: {} });
     setTouchedFields((t) => ({ ...t, ...Object.fromEntries(Object.keys(changes).map((k) => [k, true])) }));
     scheduleSave();
   };
@@ -275,15 +351,15 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
 
   // Writes changes to a row on screen, and saves them shortly after.
   const applyLineChanges = (lineId: string, changes: LineChanges) => {
-    setLines((current) => current.map((l) => (l.id === lineId ? { ...l, ...changes } : l)));
-    lineChanges.current = { ...lineChanges.current, [lineId]: { ...lineChanges.current[lineId], ...changes } };
+    showLines(linesRef.current.map((l) => (l.id === lineId ? { ...l, ...changes } : l)));
+    pending.current = addChanges(pending.current, { request: {}, lines: { [lineId]: changes } });
     scheduleSave();
   };
 
   // A change the employee made. An edited value is theirs, so its Suggested
   // mark goes (travel D-078); a vendor they typed brings in vendor memory (travel D-074).
   const changeLine = (lineId: string, requested: LineChanges) => {
-    const current = lines.find((l) => l.id === lineId);
+    const current = linesRef.current.find((l) => l.id === lineId);
     if (!current) return;
     if (requested.paidBy !== undefined) paidByChosen.current[lineId] = true;
     let changes: LineChanges = { ...requested };
@@ -337,8 +413,9 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     return filled;
   };
 
-  // Runs a change that adds or removes rows or files, then reloads. Errors are
-  // shown to the employee; it never throws.
+  // Runs a change that adds or removes rows or files, then reloads. Anything typed
+  // meanwhile stays on screen and is saved (load). Errors are shown to the
+  // employee; it never throws.
   const structural = async (work: () => Promise<unknown>): Promise<void> => {
     setBusy(true);
     try {
@@ -348,7 +425,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     } catch (e) {
       app.reportError(e);
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
@@ -363,7 +440,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     let added: PurchaseLine[] = [];
     void structural(async () => {
       added = await service.addLinesFromFiles(request.id, accepted, kind);
-      if (added[0]) setSelectedLineId(added[0].id);
+      if (added[0] && mounted.current) setSelectedLineId(added[0].id);
       const noun = kind === 'quote' ? 'quote' : 'receipt';
       app.toast(added.length === 1 ? `1 ${noun} added as a new row.` : `${added.length} ${noun}s added as new rows.`);
     }).then(async () => {
@@ -403,7 +480,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
         app.toast(e.message, 'warning');
       } else app.reportError(e);
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
@@ -424,7 +501,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
         app.toast(e.message, 'warning');
       } else app.reportError(e);
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
@@ -503,11 +580,9 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
       </button>
     );
 
-  // What the send dialog lists: each vendor total that needs approval, flagged if it looks already bought (P-017).
-  const sentGroups = groupsForApproval(
-    lines.map((l) => ({ id: l.id, vendor: l.vendor, amountCents: l.amountCents, date: l.date, hasReceipt: hasReceipt(l, lines) })),
-    todayIso()
-  );
+  // What the send dialog lists: each vendor total that needs approval, flagged if it counts as bought
+  // before approval (P-017), worked out as sending will record it.
+  const sentGroups = approvalGroupsToSend(request, lines, todayIso());
 
   return (
     <>
@@ -587,6 +662,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
                   vendorOptions={vendorSuggestions(history)}
                   readingLineIds={readingLineIds}
                   onConfirm={confirmLine}
+                  onWarning={(text) => app.toast(text, 'warning')}
                 />
               )}
               {lines.some((l) => isFresh(l) && !touchedLines[l.id]) && !showAllIssues ? (
@@ -604,7 +680,10 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
                     <Icon name="plus" size={15} />
                     Add purchase without a file
                   </button>
-                  <span className="ctx-hint">Enter moves down a column. Ctrl+D copies the row above. You can paste several rows from a spreadsheet.</span>
+                  <span className="ctx-hint">
+                    Enter moves down a column. Ctrl+D copies the row above. You can paste rows from a spreadsheet, its columns in the grid&apos;s order (Date to
+                    Who paid), dates like 2026-10-14 or 10/14/2026.
+                  </span>
                 </div>
               ) : null}
             </Card>
@@ -740,8 +819,11 @@ function StatusBanner(props: {
   if (request.status === 'Returned') {
     const by =
       request.returnStage === 'approval' ? 'the approver' : request.returnStage === 'processing' ? 'the administrator' : 'the approver or administrator';
-    const next =
-      request.returnStage === 'approval' ? 'send it for approval again' : request.returnStage === 'processing' ? 'submit it again' : 'send or submit it again';
+    // What to do next follows the request as it is now, not the step it was returned at: a
+    // vendor total may have risen past what was approved since (P-019), or fallen under the threshold.
+    const next = mustSendForApproval(props.state)
+      ? `send it for approval${request.approvalRounds > 0 ? ' again' : ''}`
+      : `submit it${request.submissionCount > 0 ? ' again' : ''}`;
     return (
       <div className="ctx-banner amber">
         <Icon name="undo" />
@@ -1136,7 +1218,7 @@ function ReviewStep(props: {
                         <span className="ctx-strong">{total}</span>
                       </div>
                       <div className="ctx-hint">
-                        {rowsText(r.rows)}. Quote: {quoteText(r.quote) || 'not needed'}. Approval: {VENDOR_APPROVAL_LABEL[r.approval]}
+                        {rowsText(r.rows)}. Quote: {quoteText(r.quote) || 'not required'}. Approval: {VENDOR_APPROVAL_LABEL[r.approval]}
                         {r.approvedCents !== null ? ` (${formatCents(r.approvedCents)} approved)` : ''}.{' '}
                         {r.boughtBefore ? (
                           <Tag title="The purchase looked already made when the request was sent for approval">Bought before approval</Tag>

@@ -3,11 +3,12 @@
 // Every number and every piece of policy wording the app enforces is defined
 // here: the approval and quote thresholds, how vendor totals are counted, how
 // an approval is kept honest, the "bought before approval" test, the
-// categories and their suggested accounts, who paid, the project quick picks
-// and the certification sentence. Max will write a new purchasing policy after
-// the app is complete (the last stage in docs/STRATEGY.md); changing the
-// policy means changing this file, its tests (purchaseRules.test.ts) and the
-// wording in messages.ts and content/instructions.ts.
+// categories and their suggested accounts, who paid, the canned no-quote and
+// no-receipt reasons, the project quick picks and the certification sentence.
+// Max will write a new purchasing policy after the app is complete (the last
+// stage in docs/STRATEGY.md); changing the policy means changing this file,
+// its tests (purchaseRules.test.ts) and the wording in messages.ts and
+// content/instructions.ts.
 //
 // Status of each rule: docs/DECISIONS.md and docs/QUESTIONS_FOR_MAX.md.
 // Decided by Max: the $500 approval threshold (P-005), the certification
@@ -83,6 +84,8 @@ export interface Category {
   covers: string;
   /** Unverified, to confirm with Max. '' for Other: the administrator decides. */
   suggestedAccount: string;
+  /** The employee describes the category in their own words (the form's "Other: ____", P-024). */
+  needsDescription: boolean;
 }
 
 export const CATEGORIES: readonly Category[] = [
@@ -90,36 +93,50 @@ export const CATEGORIES: readonly Category[] = [
     id: 'rdMaterials',
     label: 'R&D Materials & Supplies / Equipment',
     covers: 'Materials, supplies and equipment for research and development work',
-    suggestedAccount: 'R&D Materials and Supplies'
+    suggestedAccount: 'R&D Materials and Supplies',
+    needsDescription: false
   },
   {
     id: 'advertising',
     label: 'Advertising/Marketing/Website',
     covers: 'Advertising, marketing materials, and website or domain costs',
-    suggestedAccount: 'Advertising and Marketing'
+    suggestedAccount: 'Advertising and Marketing',
+    needsDescription: false
   },
   {
     id: 'computer',
     label: 'Computer, H/W & S/W Supplies',
     covers: 'Computer hardware, software and related supplies',
-    suggestedAccount: 'Computer and Software'
+    suggestedAccount: 'Computer and Software',
+    needsDescription: false
   },
-  { id: 'office', label: 'Office Supplies', covers: 'Everyday office supplies', suggestedAccount: 'Office Supplies' },
-  { id: 'training', label: 'Training and Education', covers: 'Courses, training and educational materials', suggestedAccount: 'Training and Education' },
-  { id: 'shipping', label: 'Shipping/Postage', covers: 'Shipping and postage', suggestedAccount: 'Shipping and Postage' },
-  { id: 'insurance', label: 'Business Insurance', covers: 'Business insurance premiums', suggestedAccount: 'Insurance' },
-  { id: 'other', label: 'Other', covers: 'Anything that fits none of the above. Describe it', suggestedAccount: '' }
+  { id: 'office', label: 'Office Supplies', covers: 'Everyday office supplies', suggestedAccount: 'Office Supplies', needsDescription: false },
+  {
+    id: 'training',
+    label: 'Training and Education',
+    covers: 'Courses, training and educational materials',
+    suggestedAccount: 'Training and Education',
+    needsDescription: false
+  },
+  { id: 'shipping', label: 'Shipping/Postage', covers: 'Shipping and postage', suggestedAccount: 'Shipping and Postage', needsDescription: false },
+  { id: 'insurance', label: 'Business Insurance', covers: 'Business insurance premiums', suggestedAccount: 'Insurance', needsDescription: false },
+  { id: 'other', label: 'Other', covers: 'Anything that fits none of the above. Describe it', suggestedAccount: '', needsDescription: true }
 ];
 
 export function findCategory(id: string): Category | undefined {
   return CATEGORIES.find((c) => c.id === id);
 }
 
+/** Whether the category is one the employee must describe (Other). */
+export function categoryNeedsDescription(id: string): boolean {
+  return findCategory(id)?.needsDescription ?? false;
+}
+
 /** The category as written in the CSV and emails: "Other: Lab safety audit" for Other with a description. */
 export function categoryText(id: string, other: string): string {
   const category = findCategory(id);
   if (!category) return '';
-  return category.id === 'other' && other.trim() ? `${category.label}: ${other.trim()}` : category.label;
+  return category.needsDescription && other.trim() ? `${category.label}: ${other.trim()}` : category.label;
 }
 
 // ---- Who paid --------------------------------------------------------------
@@ -142,20 +159,37 @@ export function findPaidBy(id: string): PaidBy | undefined {
   return PAID_BY_OPTIONS.find((p) => p.id === id);
 }
 
-// ---- How vendor totals are counted (P-016) ---------------------------------
+// ---- Canned reasons --------------------------------------------------------
 
 /**
- * A vendor name for matching: capitals, spaces and punctuation ignored, so
- * "Amazon", "AMAZON." and "amazon" are one vendor, and "City Cab Co." matches
- * "CITY CAB CO".
+ * Quick picks for "No quote: say why" (P-015). Free text is still allowed.
+ * Policy, because a pick satisfies the quote rule in one click: "Already
+ * purchased" is the bought-before-approval case (P-017).
+ */
+export const NO_QUOTE_REASONS: readonly string[] = ['Already purchased'];
+
+/** Quick picks for "No receipt: say why". Free text is still allowed. */
+export const NO_RECEIPT_REASONS: readonly string[] = ['Receipt lost', 'No receipt given'];
+
+// ---- How vendor totals are counted (P-016) ---------------------------------
+
+// Built from strings: Unicode property escapes in a regular expression literal
+// need a newer TypeScript target than the SharePoint build uses.
+const COMBINING_MARKS = new RegExp('\\p{M}+', 'gu');
+const NOT_LETTER_OR_NUMBER = new RegExp('[^\\p{L}\\p{N}]+', 'gu');
+
+/**
+ * A vendor name for matching: capitals, accents, spaces and punctuation are
+ * ignored, in any alphabet, so "Digi-Key" and "DigiKey", "Thor Labs" and
+ * "Thorlabs", "Café" and "Cafe", and "O'Reilly" and "o reilly" are each one
+ * vendor. "Amazon" and "Amazon.com" are two. A name with no letter or digit
+ * at all (such as "-") is matched as typed, ignoring capitals and spaces.
+ * '' only for a blank name; such a line counts on its own (`vendorGroups`).
+ * Matching more names together only ever asks for more approval, never less.
  */
 export function vendorKey(vendor: string): string {
-  return vendor
-    .replace(/['’]/g, '')
-    .replace(/[^A-Za-z0-9À-ɏ\s]/g, ' ')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
+  const key = vendor.normalize('NFKD').replace(COMBINING_MARKS, '').toLowerCase().replace(NOT_LETTER_OR_NUMBER, '');
+  return key || vendor.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /** The part of a line the thresholds look at. */
@@ -208,7 +242,11 @@ export function groupsNeedingApproval(lines: readonly GroupLine[]): VendorGroup[
   return vendorGroups(lines).filter((g) => g.needsApproval);
 }
 
-/** Whether any vendor total in the request needs approval (P-005). */
+/**
+ * Whether any vendor total in the request needs approval (P-005). Used only
+ * by the tests, as a plain statement of the rule; the app itself works from
+ * `approvalState`.
+ */
 export function requiresApproval(lines: readonly GroupLine[]): boolean {
   return groupsNeedingApproval(lines).length > 0;
 }
@@ -261,24 +299,50 @@ export function isAlreadyBought(line: Pick<BoughtLine, 'date' | 'hasReceipt'>, s
   return line.hasReceipt || (isValidIsoDate(line.date) && line.date < sentOn);
 }
 
+/** Nothing sent, nothing approved: a request that has never been sent for approval. */
+export const EMPTY_APPROVAL: ApprovalRecord = { sent: [], approved: [] };
+
 /**
  * The vendor totals that need approval, as recorded when the request is sent
- * for approval, each flagged "bought" if any of its lines was already bought.
+ * for approval, each flagged "bought" (P-017) when:
+ * - an earlier round already flagged the same vendor (`previous`, the record
+ *   the request holds when it is sent): a flag, once set, stays, even if a
+ *   date is changed later; or
+ * - no earlier approval covers the vendor total (it was never approved, or it
+ *   has risen past the allowance) and one of its lines looks already bought.
+ * A vendor total an earlier approval still covers is never newly flagged: it
+ * was approved before it was bought.
  */
-export function groupsForApproval(lines: readonly BoughtLine[], sentOn: IsoDate): ApprovalGroup[] {
+export function groupsForApproval(lines: readonly BoughtLine[], sentOn: IsoDate, previous: ApprovalRecord = EMPTY_APPROVAL): ApprovalGroup[] {
   const byId = new Map(lines.map((l) => [l.id, l]));
-  return groupsNeedingApproval(lines).map((g) => ({
-    key: g.key,
-    vendor: g.vendor,
-    cents: g.totalCents,
-    bought: g.lineIds.some((id) => isAlreadyBought(byId.get(id)!, sentOn))
+  const flagged = new Set([...previous.sent, ...previous.approved].filter((g) => g.bought).map((g) => g.key));
+  return approvalCoverage(vendorGroups(lines), previous.approved).map(({ group, covered }) => ({
+    key: group.key,
+    vendor: group.vendor,
+    cents: group.totalCents,
+    bought: flagged.has(group.key) || (!covered && group.lineIds.some((id) => isAlreadyBought(byId.get(id)!, sentOn)))
   }));
 }
 
 /**
+ * Whether the vendor totals that need approval now are exactly the ones that
+ * were sent for approval: the same vendors, at the same amounts, nothing
+ * added and nothing taken away. The approver approves what was sent, so a
+ * request changed since (for example by an edit made directly in SharePoint,
+ * travel D-002) cannot be approved as it stands (P-019).
+ */
+export function matchesWhatWasSent(lines: readonly GroupLine[], sent: readonly ApprovalGroup[]): boolean {
+  const now = groupsNeedingApproval(lines);
+  if (now.length !== sent.length) return false;
+  const sentCents = new Map(sent.map((s) => [s.key, s.cents]));
+  return sentCents.size === sent.length && now.every((g) => sentCents.get(g.key) === g.totalCents);
+}
+
+/**
  * The totals the approver approves: each vendor total that needs approval, at
- * its current amount (the request is locked while it awaits approval), with
- * the bought flag carried over from when it was sent.
+ * its current amount (the request is locked while it awaits approval, and the
+ * services check that it still matches what was sent), with the bought flag
+ * carried over from when it was sent.
  */
 export function groupsForApproved(lines: readonly GroupLine[], sent: readonly ApprovalGroup[]): ApprovalGroup[] {
   return groupsNeedingApproval(lines).map((g) => ({
@@ -295,8 +359,6 @@ export function anyBoughtBefore(groups: readonly ApprovalGroup[]): boolean {
 }
 
 // ---- Approval covers what the approver saw (P-019) -------------------------
-
-export const EMPTY_APPROVAL: ApprovalRecord = { sent: [], approved: [] };
 
 /** The most a vendor total may reach, at this approved amount, without a new approval. */
 export function allowedCents(approvedCents: number): number {

@@ -10,7 +10,7 @@ import { defaultPaidBy, latestDepartment } from '../../domain/defaults';
 import { LineRef } from '../../domain/duplicates';
 import { messages } from '../../domain/messages';
 import { cleanFileName, requestNumber } from '../../domain/naming';
-import { groupsForApproved } from '../../domain/purchaseRules';
+import { groupsForApproved, matchesWhatWasSent } from '../../domain/purchaseRules';
 import { checkReceiptFile } from '../../domain/receipts';
 import { isEditable } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
@@ -29,9 +29,11 @@ import {
   canConfirmCategories,
   categoryUpdates,
   changesAfterDelete,
+  holdsApproval,
   nextRowNumber,
   notAllowed,
   previousFolderName,
+  retryRefusal,
   returnStageFor,
   sortSubmissionsForRequest,
   staleUploading
@@ -49,6 +51,13 @@ const SAMPLE_SITE = 'https://contoso.sharepoint.com/sites/FormsAndApps';
 
 /** Shared by every service made in this page, so two services on one store never make the same ID. */
 let idCounter = 0;
+
+/**
+ * The files attached in this page, by file ID. The store is kept as plain data
+ * when the preview switches person (which loads the page again), so a file
+ * itself lives only as long as the page that attached it.
+ */
+const uploaded = new Map<string, Blob>();
 
 export class MockDataService implements PurchaseDataService {
   /** Set to notSetUp() to show the set-up page in the preview. */
@@ -84,8 +93,17 @@ export class MockDataService implements PurchaseDataService {
     return this.setupStatus;
   }
 
+  /**
+   * A new address on every call, as the SharePoint service gives, because the
+   * screen releases the address when it closes the file. A sample file is
+   * served from /receipts; a file attached in this page is made into a new
+   * blob address; a file attached before the page was loaded again cannot be
+   * shown, which the screen says.
+   */
   async filePreviewUrl(_lineId: string, file: AttachedFile): Promise<string> {
-    return file.url ?? '';
+    const blob = uploaded.get(file.id);
+    if (blob) return typeof URL.createObjectURL === 'function' ? URL.createObjectURL(blob) : '';
+    return file.url && !file.url.startsWith('blob:') ? file.url : '';
   }
 
   async listApprovers(): Promise<string[]> {
@@ -103,8 +121,11 @@ export class MockDataService implements PurchaseDataService {
       libraryUrlName: 'Shared Documents',
       folders: mode === 'live' ? [...LIVE_DESTINATION.folders] : [...TEST_FOLDERS],
       adminEmail: this.user.email,
+      // The sample site's Owners group is Max, as on the real site today (P-020).
       approverEmails: [SAMPLE_USERS.admin.email],
-      appPageUrl
+      approverSource: 'owners',
+      // The preview runs on a local http address, which a flow package refuses: use a made-up SharePoint page then.
+      appPageUrl: appPageUrl.startsWith('https://') ? appPageUrl : `${SAMPLE_SITE}/SitePages/Purchase-Requests.aspx`
     };
   }
 
@@ -278,7 +299,10 @@ export class MockDataService implements PurchaseDataService {
     };
     this.store.submissions.push(submission);
     this.changed();
-    // 2. Lock the request, recording what was sent.
+    // 2. Lock the request, recording what was sent. As on SharePoint, an earlier approval or
+    // return is cleared only if there is one.
+    const clearApproval = holdsApproval(request);
+    const clearReturnStage = request.returnStage !== '';
     this.update(request, {
       status: 'Awaiting approval',
       approvalRounds: round,
@@ -286,13 +310,10 @@ export class MockDataService implements PurchaseDataService {
       boughtBeforeApproval: prepared.boughtBefore,
       approval: { sent: prepared.sentGroups, approved: [] },
       returnNote: '',
-      returnStage: '',
-      approvedOn: '',
-      approvedBy: '',
-      approvedByEmail: '',
-      approvalNote: '',
       lastChanged: prepared.sentOn
     });
+    if (clearApproval) this.update(request, { approvedOn: '', approvedBy: '', approvedByEmail: '', approvalNote: '' });
+    if (clearReturnStage) this.update(request, { returnStage: '' });
     this.changed();
     // 3. Hand it to the flow.
     submission.packageStatus = 'Ready';
@@ -330,14 +351,15 @@ export class MockDataService implements PurchaseDataService {
     this.store.csvBySubmission[submission.id] = prepared.csvContent;
     this.changed();
     // 2. Lock the request.
+    const clearReturnStage = request.returnStage !== '';
     this.update(request, {
       status: 'Submitted',
       submissionCount: number,
       submittedOn: submission.submittedOn,
       returnNote: '',
-      returnStage: '',
       lastChanged: submission.submittedOn
     });
+    if (clearReturnStage) this.update(request, { returnStage: '' });
     this.changed();
     // 3. Hand it to the flow.
     submission.packageStatus = 'Ready';
@@ -386,6 +408,9 @@ export class MockDataService implements PurchaseDataService {
     await this.pause();
     const request = this.mustFindRequest(requestId);
     if (request.status !== 'Awaiting approval') throw new NotAllowedError(notAllowed.approveWhen);
+    // The approver approves what was sent. A request changed since (an employee can edit their
+    // own items directly in SharePoint, travel D-002) is refused before anything is written (P-019).
+    if (!matchesWhatWasSent(this.linesOf(requestId), request.approval.sent)) throw new NotAllowedError(notAllowed.changedSinceSent);
     // Approving confirms every row's category as shown, with the changes given.
     const lines = this.confirmCategoriesOn(requestId, options.categories);
     const at = toLocalDateTime(this.now());
@@ -445,6 +470,10 @@ export class MockDataService implements PurchaseDataService {
   async retryPackaging(submissionId: number): Promise<Submission> {
     this.requireAdmin();
     const submission = this.mustFindSubmission(submissionId);
+    const request = this.mustFindRequest(submission.requestId);
+    // Only a failed or stuck one, the newest of its kind, while its request is still at that step (P-030).
+    const refusal = retryRefusal(submission, this.submissionsOf(request.id), request.status, this.now());
+    if (refusal) throw new NotAllowedError(refusal);
     submission.packageStatus = 'Ready';
     submission.errorMessage = '';
     this.changed();
@@ -471,7 +500,11 @@ export class MockDataService implements PurchaseDataService {
     return toLocalDateTime(this.now());
   }
 
-  /** Changes a stored request. The fields are checked, which a bare Object.assign would not do. */
+  /**
+   * Changes a stored request. Only the type checks the change: it can name
+   * only the request's own fields. The values are set as given, so the
+   * callers pass values the shared rules have already checked.
+   */
   private update(request: PurchaseRequest, changes: Partial<PurchaseRequest>): void {
     Object.assign(request, changes);
   }
@@ -501,17 +534,19 @@ export class MockDataService implements PurchaseDataService {
     }
   }
 
+  /** A file as the row keeps it. The file itself is kept for this page only, for `filePreviewUrl`. */
   private async toAttachment(f: File, kind: FileKind, existing: readonly AttachedFile[]): Promise<AttachedFile> {
     idCounter += 1;
+    const id = `upload-${Date.now()}-${idCounter}`;
     const name = uniqueName(cleanFileName(f.name), new Set(existing.map((x) => x.fileName.toLowerCase())));
+    uploaded.set(id, f);
     return {
-      id: `upload-${Date.now()}-${idCounter}`,
+      id,
       fileName: name,
       sizeBytes: f.size,
       fingerprint: await fingerprintFile(f),
       contentType: contentTypeFor(name),
-      kind,
-      url: URL.createObjectURL(f)
+      kind
     };
   }
 

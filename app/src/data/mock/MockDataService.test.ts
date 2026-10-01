@@ -4,12 +4,14 @@
 // store, saving after every change, the simulated flow, and the preview's
 // switching between people.
 
+import { toLocalDateTime } from '../../domain/dates';
 import { findCrossEmployeeDuplicates, findDuplicates } from '../../domain/duplicates';
 import { CERTIFICATION, approvalCoverage, groupsForApproval, vendorGroups } from '../../domain/purchaseRules';
 import { submissionStatusDisplay } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
 import { CurrentUser, PackageStatus, Submission } from '../../domain/types';
 import { approvalStateOf } from '../../domain/validation';
+import { checkFlowConfig } from '../../export/flowPackage';
 import { LISTS } from '../sharepoint/schema';
 import { NotAllowedError } from '../sharepoint/serviceRules';
 import { Harness, JANE, Person, describeDataServiceRules } from './dataServiceContract';
@@ -68,10 +70,17 @@ async function harness(): Promise<Harness & { store: SampleStore }> {
   return {
     store,
     as: (person: Person, now: Date = NOW) => new MockDataService(store, user(person), 0, undefined, () => now),
-    setSubmissionState: (id, status, errorMessage = '') => {
+    setSubmissionState: (id, status, errorMessage = '', madeAt) => {
       const submission = store.submissions.find((s) => s.id === id)!;
       submission.packageStatus = status;
       submission.errorMessage = errorMessage;
+      if (madeAt) submission.submittedOn = toLocalDateTime(madeAt);
+    },
+    editLineDirectly: (lineId, edit) => {
+      const line = store.lines.find((l) => l.id === lineId)!;
+      if (edit.amountCents !== undefined) line.amountCents = edit.amountCents;
+      if (edit.vendor !== undefined) line.vendor = edit.vendor;
+      if (edit.date !== undefined) line.date = edit.date;
     },
     addUploadingSubmission: (owner, request, type, number) => {
       const id = store.nextSubmissionId++;
@@ -134,7 +143,7 @@ describe('the sample data (P-031)', () => {
     expect(store.requests.every((r) => r.ownerEmail === (r.ownerName === 'Jane Doe' ? 'jane.doe@example.com' : 'sam.lee@example.com'))).toBe(true);
     expect(store.requests.map((r) => r.businessPurpose)).toEqual([
       'Lab supplies for the Phase 1 assay',
-      'Software licence for the analysis pipeline',
+      'Software license for the analysis pipeline',
       'Sensor kit for the Phase 1 prototype',
       'Website hosting and marketing',
       'Office supplies and postage',
@@ -285,16 +294,16 @@ describe('the sample data (P-031)', () => {
       );
       expect([r.requestNumber, r.approval.sent]).toEqual([r.requestNumber, wanted]);
     }
-    expect(request(40).approval.sent).toEqual([{ key: 'harbor software', vendor: 'Harbor Software', cents: 87000, bought: false }]);
+    expect(request(40).approval.sent).toEqual([{ key: 'harborsoftware', vendor: 'Harbor Software', cents: 87000, bought: false }]);
     expect(request(38).approval).toEqual({
-      sent: [{ key: 'kestrel instruments', vendor: 'Kestrel Instruments', cents: 115000, bought: false }],
-      approved: [{ key: 'kestrel instruments', vendor: 'Kestrel Instruments', cents: 115000, bought: false }]
+      sent: [{ key: 'kestrelinstruments', vendor: 'Kestrel Instruments', cents: 115000, bought: false }],
+      approved: [{ key: 'kestrelinstruments', vendor: 'Kestrel Instruments', cents: 115000, bought: false }]
     });
     expect(request(37).approval).toEqual({
-      sent: [{ key: 'blue fern web co', vendor: 'Blue Fern Web Co.', cents: 114000, bought: true }],
-      approved: [{ key: 'blue fern web co', vendor: 'Blue Fern Web Co.', cents: 114000, bought: true }]
+      sent: [{ key: 'bluefernwebco', vendor: 'Blue Fern Web Co.', cents: 114000, bought: true }],
+      approved: [{ key: 'bluefernwebco', vendor: 'Blue Fern Web Co.', cents: 114000, bought: true }]
     });
-    expect(request(33).approval).toEqual({ sent: [{ key: 'redwood fabrication', vendor: 'Redwood Fabrication', cents: 90000, bought: false }], approved: [] });
+    expect(request(33).approval).toEqual({ sent: [{ key: 'redwoodfabrication', vendor: 'Redwood Fabrication', cents: 90000, bought: false }], approved: [] });
     expect(request(32).approval.sent.map((g) => g.cents)).toEqual([130000]);
     expect(store.requests.filter((r) => r.approval.sent.length === 0).map((r) => r.requestNumber)).toEqual(['PR-0041', 'PR-0036', 'PR-0035', 'PR-0034']);
   });
@@ -476,7 +485,7 @@ describe('MockDataService on the sample data, as the preview uses it', () => {
     const lines = (await max.getRequest(41)).lines;
     const approved = await max.approveRequest(41, { note: 'OK, order it.', categories: { [lines[1].id]: { category: 'rdMaterials', categoryOther: '' } } });
     expect(approved).toMatchObject({ status: 'Approved', approvedBy: 'Max Wamsley', approvedOn: '2026-10-17 10:05' });
-    expect(approved.approval.approved).toEqual([{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 64000, bought: false }]);
+    expect(approved.approval.approved).toEqual([{ key: 'acmelabsupply', vendor: 'Acme Lab Supply', cents: 64000, bought: false }]);
 
     // Back to Jane, who buys, attaches the receipts and submits.
     store = reload(store);
@@ -536,7 +545,7 @@ describe('MockDataService on the sample data, as the preview uses it', () => {
     const max = asMax(store);
     const lines = (await max.getRequest(40)).lines;
     const approved = await max.approveRequest(40, { note: 'Fine.', categories: { [lines[1].id]: { category: 'other', categoryOther: 'Domain names' } } });
-    expect(approved.approval.approved).toEqual([{ key: 'harbor software', vendor: 'Harbor Software', cents: 87000, bought: false }]);
+    expect(approved.approval.approved).toEqual([{ key: 'harborsoftware', vendor: 'Harbor Software', cents: 87000, bought: false }]);
     expect((await max.getRequest(40)).lines.map((l) => [l.category, l.categoryOther, l.categoryConfirmedBy])).toEqual([
       ['computer', '', 'Max Wamsley'],
       ['other', 'Domain names', 'Max Wamsley']
@@ -819,9 +828,16 @@ describe('set-up and settings in the preview', () => {
       folders: ['Purchases_Test', 'Purchases_Test/Purchases_To_Process'],
       adminEmail: 'max.wamsley@example.com',
       approverEmails: ['max.wamsley@example.com'],
+      approverSource: 'owners',
       appPageUrl: page
     });
+    // The preview runs on a local http address, which a flow package refuses: the mock gives a made-up SharePoint page instead.
+    const preview = await asMax(store).getFlowSettings('test', 'http://127.0.0.1:5173/');
+    expect(preview.appPageUrl).toBe('https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx');
+    expect(() => checkFlowConfig(preview)).not.toThrow();
+    expect(() => checkFlowConfig(test)).not.toThrow();
     const live = await asMax(store).getFlowSettings('live', page);
+    expect(() => checkFlowConfig(live)).not.toThrow();
     expect(live).toMatchObject({
       mode: 'live',
       siteUrl: 'https://contoso.sharepoint.com/sites/FormsAndApps',
@@ -855,14 +871,26 @@ describe("the mock's own details", () => {
     expect((await jane.listMyRequests())[0].department).toBe('R&D');
   });
 
-  it('gives a file the address the screens can show it from', async () => {
+  it('gives a file the address the screens can show it from, a new one each time, as the SharePoint service does', async () => {
     const store = createSampleStore();
     const jane = asJane(store);
     const { lines } = await jane.getRequest(41);
     expect(await jane.filePreviewUrl(lines[0].id, lines[0].files[0])).toBe('/receipts/acme-lab-supply-quote.pdf');
-    const added = await jane.addFileToLine(lines[1].id, pdf('new.pdf'), 'quote');
-    expect((await jane.filePreviewUrl(lines[1].id, added.files[0])).startsWith('blob:')).toBe(true);
-    expect(await jane.filePreviewUrl(lines[1].id, { ...added.files[0], url: undefined })).toBe('');
+    const added = await jane.addFileToLine(lines[1].id, pdf('new.pdf', 'the new file'), 'quote');
+    expect(added.files[0].url).toBeUndefined();
+    const first = await jane.filePreviewUrl(lines[1].id, added.files[0]);
+    expect(first.startsWith('blob:')).toBe(true);
+    // The screen releases the address when the file is closed; opening the file again gets a new one that works.
+    URL.revokeObjectURL(first);
+    const second = await jane.filePreviewUrl(lines[1].id, added.files[0]);
+    expect(second.startsWith('blob:')).toBe(true);
+    expect(second).not.toBe(first);
+    URL.revokeObjectURL(second);
+    // A file attached before the page was loaded again (the store kept, the file not) cannot be shown.
+    const reloaded = reload(store);
+    const kept = reloaded.lines.find((l) => l.id === lines[1].id)!.files[0];
+    expect(await asJane(reloaded).filePreviewUrl(lines[1].id, { ...kept, id: 'upload-from-an-earlier-page' })).toBe('');
+    expect(await jane.filePreviewUrl(lines[1].id, { ...kept, id: 'gone', url: 'blob:http://localhost/old' })).toBe('');
   });
 
   it('never makes the same ID twice, even for services made at the same moment on one store', async () => {

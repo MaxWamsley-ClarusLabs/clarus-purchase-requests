@@ -79,7 +79,7 @@ export interface ApprovalGroup {
   key: string;
   vendor: string;
   cents: number;
-  /** Already bought when it was sent for approval (P-017). */
+  /** Bought before approval (P-017): already bought when it was sent, or flagged in an earlier round (`groupsForApproval`). */
   bought: boolean;
 }
 
@@ -87,7 +87,11 @@ export interface ApprovalGroup {
 export interface ApprovalRecord {
   /** The vendor totals of $500 or more when the request was last sent for approval. */
   sent: ApprovalGroup[];
-  /** The vendor totals the approver approved; empty until approved, and cleared by a return. */
+  /**
+   * The vendor totals the approver approved: empty until approved, and
+   * emptied again when the request is sent for approval again or returned at
+   * the approval step. A return at processing keeps it (P-027).
+   */
   approved: ApprovalGroup[];
 }
 

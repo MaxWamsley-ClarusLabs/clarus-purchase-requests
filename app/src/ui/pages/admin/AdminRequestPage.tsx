@@ -2,16 +2,27 @@ import * as React from 'react';
 import { dateRange } from '../../../domain/dates';
 import { messages } from '../../../domain/messages';
 import { formatCents } from '../../../domain/money';
-import { APPROVAL_THRESHOLD_TEXT, CATEGORIES, anyBoughtBefore, categoryText, findPaidBy, lineApprovals } from '../../../domain/purchaseRules';
-import { hasReceipt, quoteFiles } from '../../../domain/receipts';
+import {
+  APPROVAL_THRESHOLD_TEXT,
+  CATEGORIES,
+  anyBoughtBefore,
+  categoryNeedsDescription,
+  categoryText,
+  findCategory,
+  findPaidBy,
+  lineApprovals
+} from '../../../domain/purchaseRules';
+import { hasReceipt, quoteFiles, receiptFiles } from '../../../domain/receipts';
 import { APPROVAL_STATE_DISPLAY, LINE_APPROVAL_DISPLAY, REQUEST_STATUS_DISPLAY, canConfirmCategories, submissionStatusDisplay } from '../../../domain/statuses';
 import { CategoryId, PurchaseLine, PurchaseRequest, Submission } from '../../../domain/types';
 import { approvalStateOf } from '../../../domain/validation';
 import { CategoryChoice } from '../../../data/PurchaseDataService';
 import { CSV_COLUMNS, approverText } from '../../../export/csv';
 import { useApp } from '../../AppContext';
-import { Badge, Card, Dialog, HeaderCard } from '../../components/common';
+import { useMountedRef } from '../../hooks';
+import { Badge, Card, Dialog, FileChip, FullTextSelect, HeaderCard } from '../../components/common';
 import { Icon } from '../../components/Icon';
+import { ReceiptPreview } from '../../components/ReceiptPreview';
 import { VendorTotals } from '../../components/VendorTotals';
 import { changedMessages, vendorRows } from '../../vendorRows';
 import { latestSubmission } from './adminData';
@@ -83,20 +94,27 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
   const [edits, setEdits] = React.useState<Record<string, CategoryChoice>>({});
   const [busy, setBusy] = React.useState(false);
   const [loadError, setLoadError] = React.useState(false);
+  // The file the approver or administrator opened from the purchases table: a receipt or a quote (P-021).
+  const [preview, setPreview] = React.useState<{ lineId: string; fileId: string } | null>(null);
+  const mounted = useMountedRef();
 
   const load = React.useCallback(async (): Promise<void> => {
     const data = await app.service.getRequest(props.requestId);
     const subs = await app.service.listSubmissionsForRequest(props.requestId);
+    const pkg = latestSubmission(subs, 'package');
+    // A package whose files are not ready has no CSV to show yet; that is not a failure to load the request.
+    const csvText = pkg ? await app.service.getSubmissionCsv(pkg.id).catch(() => '') : '';
+    if (!mounted.current) return;
     setRequest(data.request);
     setLines(data.lines);
     setSubmissions(subs);
-    const pkg = latestSubmission(subs, 'package');
-    // A package whose files are not ready has no CSV to show yet; that is not a failure to load the request.
-    setCsv(pkg ? await app.service.getSubmissionCsv(pkg.id).catch(() => '') : '');
+    setCsv(csvText);
   }, [app.service, props.requestId]);
 
   React.useEffect(() => {
-    load().catch(() => setLoadError(true));
+    load().catch(() => {
+      if (mounted.current) setLoadError(true);
+    });
   }, [load]);
 
   // While an approval email or a package is being created, check its progress.
@@ -107,7 +125,8 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
     if (!waitingOnFlow) return;
     const t = window.setInterval(async () => {
       try {
-        setSubmissions(await app.service.listSubmissionsForRequest(props.requestId));
+        const subs = await app.service.listSubmissionsForRequest(props.requestId);
+        if (mounted.current) setSubmissions(subs);
       } catch {
         // Checked again on the next tick.
       }
@@ -148,7 +167,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
   }
   const changedCount = Object.keys(changes).length;
   const editProblems = lines
-    .filter((l) => changes[l.id] && changes[l.id].category === 'other' && !changes[l.id].categoryOther.trim())
+    .filter((l) => changes[l.id] && categoryNeedsDescription(changes[l.id].category) && !changes[l.id].categoryOther.trim())
     .map((l) => `Row ${l.rowNumber}: ${messages.categoryOtherRequired}`);
 
   const act = async (work: () => Promise<unknown>, done: string): Promise<void> => {
@@ -161,7 +180,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
     } catch (e) {
       app.reportError(e);
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
@@ -169,15 +188,17 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
     if (category === '') return;
     setEdits((current) => ({
       ...current,
-      [line.id]: { category, categoryOther: category === 'other' ? (current[line.id]?.categoryOther ?? line.categoryOther) : '' }
+      [line.id]: { category, categoryOther: categoryNeedsDescription(category) ? (current[line.id]?.categoryOther ?? line.categoryOther) : '' }
     }));
   };
-  const setCategoryOther = (line: PurchaseLine, text: string) => setEdits((current) => ({ ...current, [line.id]: { category: 'other', categoryOther: text } }));
+  const setCategoryOther = (line: PurchaseLine, category: CategoryId, text: string) =>
+    setEdits((current) => ({ ...current, [line.id]: { category, categoryOther: text } }));
 
   const approve = () => {
     setDialog(null);
     void act(async () => {
       await app.service.approveRequest(request.id, { note: approveNote.trim(), categories: changes });
+      if (!mounted.current) return;
       setEdits({});
       setApproveNote('');
     }, `${request.requestNumber} approved.`);
@@ -186,7 +207,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
   const confirmCategories = () =>
     act(async () => {
       await app.service.confirmCategories(request.id, changes);
-      setEdits({});
+      if (mounted.current) setEdits({});
     }, `Categories confirmed for ${request.requestNumber}.`);
 
   const returnStage = request.status === 'Awaiting approval' ? 'approval' : 'processing';
@@ -269,8 +290,8 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
         <div className="ctx-banner red">
           <Icon name="alert" />
           <div>
-            <strong>The approval email was not sent.</strong> {latestApproval.errorMessage} The request is still waiting under Approvals. Click Retry approval
-            email, or approve it here.
+            <strong>The approval email may not have been sent.</strong> {latestApproval.errorMessage} The request is still waiting under Approvals. Click Retry
+            approval email (the approvers may then get it twice), or approve it here.
           </div>
         </div>
       ) : null}
@@ -341,8 +362,8 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
         </div>
         {tab === 'purchases' ? (
           <>
-            <div className="ctx-grid-wrap">
-              <table className="ctx-table compact">
+            <div className="ctx-table-wrap">
+              <table className="ctx-table compact admin-purchases">
                 <thead>
                   <tr>
                     <th>#</th>
@@ -350,10 +371,8 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                     <th>Vendor</th>
                     <th>What was bought and why</th>
                     <th>Category</th>
-                    <th>Who paid</th>
                     <th>Approval</th>
-                    <th>Receipt</th>
-                    <th>Quote</th>
+                    <th>Files</th>
                     <th className="num">Amount</th>
                   </tr>
                 </thead>
@@ -362,18 +381,25 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                     const choice = choiceFor(l);
                     const approval = approvals.get(l.id);
                     const display = approval ? LINE_APPROVAL_DISPLAY[approval.status] : undefined;
-                    const otherEmpty = choice.category === 'other' && !choice.categoryOther.trim();
+                    const describe = categoryNeedsDescription(choice.category);
+                    const otherEmpty = describe && !choice.categoryOther.trim();
+                    const receipts = receiptFiles(l);
+                    const quotes = quoteFiles(l);
+                    const sharesReceipt = l.sameReceiptAsRow !== null && hasReceipt(l, lines);
+                    const open = (fileId: string) => setPreview({ lineId: l.id, fileId });
                     return (
                       <tr key={l.id}>
                         <td>{l.rowNumber}</td>
                         <td className="nowrap">{l.date}</td>
                         <td className="vendor-cell">{l.vendor}</td>
                         <td>{l.description}</td>
-                        <td>
+                        <td className="category-cell">
                           {canEditCategories ? (
                             <div className="ctx-category-edit">
-                              <select
-                                className="ctx-select"
+                              <FullTextSelect
+                                boxClassName="ctx-box"
+                                shownText={findCategory(choice.category)?.label ?? 'Choose'}
+                                nothingChosen={choice.category === ''}
                                 aria-label={`Row ${l.rowNumber} category`}
                                 value={choice.category}
                                 onChange={(e) => setCategory(l, e.target.value as CategoryId | '')}
@@ -384,15 +410,16 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                                     {c.label}
                                   </option>
                                 ))}
-                              </select>
-                              {choice.category === 'other' ? (
+                              </FullTextSelect>
+                              {describe ? (
                                 <input
                                   className={`ctx-input ${otherEmpty ? 'blocking' : ''}`}
                                   aria-label={`Row ${l.rowNumber} category description`}
                                   placeholder="Describe the category"
                                   title={otherEmpty ? messages.categoryOtherRequired : undefined}
                                   value={choice.categoryOther}
-                                  onChange={(e) => setCategoryOther(l, e.target.value)}
+                                  // The box is shown only for a category that needs a description, so one is chosen.
+                                  onChange={(e) => setCategoryOther(l, choice.category as CategoryId, e.target.value)}
                                 />
                               ) : null}
                             </div>
@@ -407,8 +434,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                                 : 'Suggested by the employee'}
                           </div>
                         </td>
-                        <td className="nowrap">{findPaidBy(l.paidBy)?.shortLabel ?? ''}</td>
-                        <td className="nowrap">
+                        <td className="approval-cell">
                           {display ? <Badge tone={display.tone}>{display.label}</Badge> : null}
                           {approval && approval.boughtBefore ? (
                             <span className="ctx-flag" role="img" aria-label="Bought before approval" title="Bought before approval">
@@ -416,29 +442,40 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                             </span>
                           ) : null}
                         </td>
-                        <td>
-                          {hasReceipt(l, lines) ? (
-                            l.sameReceiptAsRow !== null ? (
-                              `Row ${l.sameReceiptAsRow}'s`
+                        <td className="files-cell">
+                          <div className="ctx-files-cell">
+                            {sharesReceipt ? (
+                              <button
+                                type="button"
+                                className="ctx-receipt-chip shared"
+                                title={`Uses the receipt on row ${l.sameReceiptAsRow}`}
+                                onClick={() => open('')}
+                              >
+                                <Icon name="link" size={13} />
+                                <span>Receipt of row {l.sameReceiptAsRow}</span>
+                              </button>
                             ) : (
-                              'Yes'
-                            )
-                          ) : request.status === 'Submitted' || request.status === 'Processed' ? (
-                            <span style={{ color: 'var(--c-warning)' }}>None: {l.noReceiptReason}</span>
-                          ) : (
-                            <span className="ctx-muted">Not yet</span>
-                          )}
+                              receipts.map((f) => <FileChip key={f.id} file={f} showKind onOpen={() => open(f.id)} />)
+                            )}
+                            {quotes.map((f) => (
+                              <FileChip key={f.id} file={f} onOpen={() => open(f.id)} />
+                            ))}
+                            {hasReceipt(l, lines) ? null : request.status === 'Submitted' || request.status === 'Processed' ? (
+                              <span className="ctx-file-note" style={{ color: 'var(--c-warning)' }}>
+                                No receipt: {l.noReceiptReason}
+                              </span>
+                            ) : (
+                              <span className="ctx-file-note ctx-muted">No receipt yet</span>
+                            )}
+                            {quotes.length === 0 && l.noQuoteReason.trim() ? (
+                              <span className="ctx-file-note ctx-muted">No quote: {l.noQuoteReason}</span>
+                            ) : null}
+                          </div>
                         </td>
-                        <td className="quote-cell">
-                          {quoteFiles(l).length > 0 ? (
-                            'Yes'
-                          ) : l.noQuoteReason ? (
-                            <span className="ctx-muted">No quote: {l.noQuoteReason}</span>
-                          ) : (
-                            <span className="ctx-muted">-</span>
-                          )}
+                        <td className="num">
+                          {l.amountCents === null ? '' : formatCents(l.amountCents)}
+                          <div className="ctx-hint">{findPaidBy(l.paidBy)?.shortLabel ?? ''}</div>
                         </td>
-                        <td className="num">{l.amountCents === null ? '' : formatCents(l.amountCents)}</td>
                       </tr>
                     );
                   })}
@@ -640,6 +677,15 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
               : "After returning, delete this request's folder from Purchases_To_Process. The corrected request arrives as a new folder ending in _R2."}
           </div>
         </Dialog>
+      ) : null}
+      {preview ? (
+        <ReceiptPreview
+          overlay
+          line={lines.find((l) => l.id === preview.lineId)}
+          lines={lines}
+          focusFileId={preview.fileId || undefined}
+          onHide={() => setPreview(null)}
+        />
       ) : null}
     </>
   );

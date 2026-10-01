@@ -58,6 +58,13 @@ export interface RequestRecord {
   body?: string;
 }
 
+/** A request as `failWhen` sees it: the method, the address after /_api/ (decoded), and any JSON sent. */
+export interface FakeRequest {
+  method: string;
+  path: string;
+  body?: string;
+}
+
 const BUILT_IN_FIELDS = ['Title', 'Author', 'Editor', 'Created', 'Modified', 'ID', 'Attachments'];
 
 function response(status: number, body?: unknown, headers: Record<string, string> = {}): SpResponse {
@@ -79,6 +86,8 @@ export class FakeSharePoint {
   readonly log: RequestRecord[] = [];
   /** Answer this many requests with "busy" (429) before serving them. */
   busyReplies = 0;
+  /** Answers a request with this error status, changing nothing, when it returns one; for tests of a write that fails part-way. */
+  failWhen: ((request: FakeRequest) => number | undefined) | undefined;
   /** Makes list settings like ReadSecurity refuse to change, as a tenant might. */
   refuseItemLevelPermissions = false;
   /** Document libraries and folders that exist, by server-relative address, on any site. */
@@ -111,6 +120,8 @@ export class FakeSharePoint {
       const at = url.indexOf('/_api/');
       if (at < 0) return response(400, 'Unexpected address');
       const path = decodeURIComponent(url.slice(at + '/_api/'.length));
+      const failure = this.failWhen?.({ method, path, body: typeof init.body === 'string' ? init.body : undefined });
+      if (failure !== undefined) return response(failure, { 'odata.error': { message: { value: 'Failed by the test.' } } });
       const libraryOrFolder = this.handleLibraries(path);
       if (libraryOrFolder) return libraryOrFolder;
       if (url.slice(0, at) !== this.webUrl) return notFound();
@@ -122,7 +133,7 @@ export class FakeSharePoint {
   addOtherList(urlName: string, fieldNames: string[] = []): FakeList {
     this.listCounter++;
     const list: FakeList = {
-      id: `list-${this.listCounter}`,
+      id: this.listId(),
       urlName,
       info: { Title: urlName, Description: 'Another app', EnableVersioning: false, EnableAttachments: true, ReadSecurity: 1, WriteSecurity: 1 },
       fields: [...BUILT_IN_FIELDS, ...fieldNames].map((n) => ({ InternalName: n, Title: n, Indexed: false, Required: n === 'Title' })),
@@ -131,6 +142,11 @@ export class FakeSharePoint {
     };
     this.lists.set(list.id, list);
     return list;
+  }
+
+  /** A list ID in the form SharePoint gives: a GUID, here made from the counter. */
+  private listId(): string {
+    return `00000000-0000-4000-8000-${String(this.listCounter).padStart(12, '0')}`;
   }
 
   listByUrlName(urlName: string): FakeList | undefined {
@@ -162,7 +178,7 @@ export class FakeSharePoint {
       const data = JSON.parse(String(body));
       this.listCounter++;
       const list: FakeList = {
-        id: `list-${this.listCounter}`,
+        id: this.listId(),
         urlName: data.Title,
         info: { Title: data.Title, Description: data.Description ?? '', EnableVersioning: false, EnableAttachments: true, ReadSecurity: 1, WriteSecurity: 1 },
         fields: BUILT_IN_FIELDS.map((n) => ({ InternalName: n, Title: n, Indexed: false, Required: n === 'Title' })),

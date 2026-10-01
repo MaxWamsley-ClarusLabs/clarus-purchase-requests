@@ -2,7 +2,7 @@
 // copies (travel D-044, P-021) and the CSV file (travel D-045, P-026). The flow
 // cleans folder names again as a safety check, but the rule itself lives only here.
 
-import { fileExtension, receiptSourceRow } from './receipts';
+import { fileExtension, receiptFiles, receiptSourceRow } from './receipts';
 import { FileKind, PurchaseLine } from './types';
 
 export const PURPOSE_NAME_MAX = 40;
@@ -11,14 +11,27 @@ export function requestNumber(itemId: number): string {
   return `PR-${String(itemId).padStart(4, '0')}`;
 }
 
+// Control characters, zero-width characters, direction marks and overrides,
+// and the byte-order mark. They are invisible, and a direction override can
+// make a name read differently from what it is ("receipt\u202Efdp.exe" shows
+// as "receiptexe.pdf"), so they are removed from every name the app makes.
+// eslint-disable-next-line no-control-regex
+const INVISIBLE = /[\u0000-\u001f\u007f\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
+
+/** A name with its invisible and direction characters removed. */
+export function stripInvisible(text: string): string {
+  return text.replace(INVISIBLE, '');
+}
+
 /**
  * Letters, digits and hyphens only; spaces and other characters become hyphens;
- * accents are removed. "São Paulo trip #2" becomes "Sao-Paulo-trip-2".
+ * accents and invisible characters are removed. "Lab supplies, Zürich office
+ * #2" becomes "Lab-supplies-Zurich-office-2".
  */
 export function cleanNamePart(text: string): string {
-  return text
+  return stripInvisible(text)
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^A-Za-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
@@ -51,10 +64,11 @@ export function csvFileName(requestNo: string, submissionNumber: number): string
 const SHAREPOINT_UNSAFE = /["*:<>?/\\|#%\u0000-\u001f]/g;
 const FILE_BASE_MAX = 80;
 
-/** Removes characters SharePoint does not allow and shortens very long names. */
+/** Removes invisible characters and characters SharePoint does not allow, and shortens very long names. */
 export function cleanFileName(original: string): string {
-  const ext = fileExtension(original);
-  let base = ext ? original.slice(0, original.length - ext.length) : original;
+  const visible = stripInvisible(original);
+  const ext = fileExtension(visible);
+  let base = ext ? visible.slice(0, visible.length - ext.length) : visible;
   base = base
     .replace(SHAREPOINT_UNSAFE, '-')
     .replace(/\s+/g, ' ')
@@ -85,16 +99,23 @@ export interface PackageFile {
   packageName: string;
 }
 
+/** The copies of one row's own files of one kind, under the row's own number. */
+function ownCopyNames(line: PurchaseLine, kind: FileKind): string[] {
+  return line.files.filter((f) => f.kind === kind).map((f, index) => fileCopyName(kind, line.rowNumber, index, f.fileName));
+}
+
 /**
- * The file copies in a request folder. A receipt shared by several rows
- * ("Same receipt as row N") is copied once, under the row that holds it.
- * Quotes are never shared.
+ * The file copies in a request folder: every file each row holds, under that
+ * row's number. A receipt shared by several rows ("Same receipt as row N") is
+ * held by one row, so it is copied once, under that row. Quotes are never
+ * shared. A row that points at another row's receipt should hold no receipt
+ * of its own (the data services refuse it), but if it does, that file is
+ * copied too: nothing attached is ever left out of the package.
  */
 export function packageFiles(lines: readonly PurchaseLine[]): PackageFile[] {
   const result: PackageFile[] = [];
   for (const line of lines) {
     for (const kind of ['receipt', 'quote'] as const) {
-      if (kind === 'receipt' && line.sameReceiptAsRow !== null) continue;
       line.files
         .filter((f) => f.kind === kind)
         .forEach((f, index) => {
@@ -105,9 +126,15 @@ export function packageFiles(lines: readonly PurchaseLine[]): PackageFile[] {
   return result;
 }
 
-/** The package file names a row's receipts or quotes appear under (for the CSV). */
+/**
+ * The package file names a row's receipts or quotes appear under (for the
+ * CSV): its own files, and for a row that shares another row's receipt, that
+ * row's receipt copies first.
+ */
 export function fileNamesForRow(line: PurchaseLine, lines: readonly PurchaseLine[], kind: FileKind): string[] {
-  const source = kind === 'receipt' ? receiptSourceRow(line, lines) : line;
-  if (!source) return [];
-  return source.files.filter((f) => f.kind === kind).map((f, index) => fileCopyName(kind, source.rowNumber, index, f.fileName));
+  const own = ownCopyNames(line, kind);
+  if (kind !== 'receipt' || line.sameReceiptAsRow === null) return own;
+  const source = receiptSourceRow(line, lines);
+  const shared = source ? receiptFiles(source).map((f, index) => fileCopyName('receipt', source.rowNumber, index, f.fileName)) : [];
+  return [...shared, ...own];
 }

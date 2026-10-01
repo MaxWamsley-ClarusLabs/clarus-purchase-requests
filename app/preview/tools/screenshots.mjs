@@ -46,6 +46,47 @@ async function open(user, hash, width = 1440, height = 900, extra = '') {
   return page;
 }
 
+/**
+ * Opens a page for a check that depends on timing (saving, reading back), on
+ * the real clock: a fixed clock changes the order of timers. The preview's
+ * writes to its sample data are counted in window.__storeWrites.
+ */
+async function openLive(user, hash, width = 1440, height = 900) {
+  const context = await browser.newContext({ viewport: { width, height } });
+  await context.addInitScript(() => {
+    window.__storeWrites = 0;
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'purchase-requests-preview-store') window.__storeWrites += 1;
+      return setItem.call(this, key, value);
+    };
+  });
+  const page = await context.newPage();
+  page.setDefaultTimeout(20000);
+  page.on('console', (m) => m.type() === 'error' && problems.push(`${user} ${hash}: ${m.text()}`));
+  page.on('pageerror', (e) => problems.push(`${user} ${hash}: ${e.message}`));
+  await page.goto(`${BASE}?user=${user}&shot=1${hash}`);
+  await page.waitForSelector('.ctx-main');
+  await page.waitForTimeout(700);
+  return page;
+}
+
+/** The rows of a request as the preview has stored them. */
+async function storedLines(page, requestId) {
+  const store = await page.evaluate(() => JSON.parse(window.sessionStorage.getItem('purchase-requests-preview-store')));
+  return store.lines.filter((l) => l.requestId === requestId).sort((a, b) => a.rowNumber - b.rowNumber);
+}
+
+/** Pastes text into a cell as a spreadsheet puts it on the clipboard. */
+async function paste(locator, text) {
+  await locator.focus();
+  await locator.evaluate((el, value) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', value);
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, text);
+}
+
 /** Goes to another address in the same page, so the sample data kept in the session carries over. */
 async function goTo(page, user, hash) {
   await page.goto(`${BASE}?user=${user}&shot=1${hash}`);
@@ -286,7 +327,7 @@ try {
   await shot(p, '21-admin-approve-dialog', false);
   await p.keyboard.press('Escape');
   await p.getByRole('button', { name: 'Return with a note' }).click();
-  await p.getByLabel('What needs correcting? The employee sees this note.').fill('Please add a second quote for the software licence.');
+  await p.getByLabel('What needs correcting? The employee sees this note.').fill('Please add a second quote for the software license.');
   await shot(p, '22-admin-return-dialog', false);
   await p.keyboard.press('Escape');
   await p.getByRole('tab', { name: 'Approval email' }).click();
@@ -334,6 +375,12 @@ try {
   check(file.suggestedFilename() === 'PurchaseRequests_Flow_Test.zip', 'The test flow package has its name', file.suggestedFilename());
   await p.getByText('downloaded.').waitFor();
   check(await p.getByText(/Approval emails go to/).isVisible(), 'Set-up says where the approval emails go');
+  // The earlier message ("The lists are ready.") would sit over the card in the picture: wait for it to go.
+  await p
+    .locator('.ctx-toast')
+    .first()
+    .waitFor({ state: 'detached', timeout: 15000 })
+    .catch(() => undefined);
   await shot(p, '32-admin-flow-package');
   await p.close();
 
@@ -342,6 +389,125 @@ try {
   check(await p.getByText('Purchase Requests is not set up on this site yet').isVisible(), 'An employee on a new site sees the not-set-up message');
   await shot(p, '33-employee-site-not-set-up', false);
   await p.close();
+
+  // ---- Regression checks, no screenshots ------------------------------------------
+
+  // What is typed while a row is added shows on screen and is what is saved.
+  p = await openLive('jane', '#/request/41/purchases');
+  await p.getByRole('button', { name: 'Add purchase without a file' }).click();
+  await p.waitForTimeout(150);
+  await p.getByLabel('Row 2 amount', exact).fill('123.45');
+  await p.waitForTimeout(1600);
+  await p.locator('.ctx-page-title').click();
+  const typedLines = await storedLines(p, 41);
+  const storedTotal = typedLines.reduce((sum, l) => sum + (l.amountCents ?? 0), 0);
+  const shownTotal = await p.locator('.ctx-metric').filter({ hasText: 'Request total' }).locator('.ctx-metric-value').innerText();
+  check(
+    (await p.getByLabel('Row 2 amount', exact).inputValue()) === '123.45' && typedLines[1].amountCents === 12345 && typedLines.length === 3,
+    'An amount typed while a row is added shows on screen and is saved'
+  );
+  check(shownTotal.trim() === `$${(storedTotal / 100).toFixed(2)}`, 'The request total on screen matches what is saved', `${shownTotal} / ${storedTotal}`);
+  // Saving waits for a pause in typing: 30 characters typed one by one are written once or twice.
+  await p.getByLabel('Row 2 what was bought and why', exact).click();
+  await p.keyboard.press('Control+A');
+  await p.keyboard.press('Delete');
+  await p.waitForTimeout(1200);
+  const writesBefore = await p.evaluate(() => window.__storeWrites);
+  await p.keyboard.type('Thirty characters typed slowly', { delay: 80 });
+  await p.waitForTimeout(1500);
+  const writes = (await p.evaluate(() => window.__storeWrites)) - writesBefore;
+  check(writes <= 2, 'Typing 30 characters saves at most twice, not on every keystroke', `${writes} writes`);
+  await p.close();
+
+  // Pasting rows from a spreadsheet: quoted cells, dates, rows that do not fit, cells that cannot be used.
+  p = await openLive('jane', '#/request/41/purchases');
+  await paste(
+    p.getByLabel('Row 1 date', exact),
+    '10/15/2026\tAcme Lab Supply\t"Tips,\r\n""sterile"" pack"\tR&D Materials & Supplies / Equipment\t$1,234.5\tCompany\r\n' +
+      '14/10/2026\tNorthwind Office Supply\tLabels\tStationery\t12,50\tEmployee\r\n' +
+      '2026-10-17\tQuickShip Postage\tPostage\tShipping/Postage\t24.60\tCompany\r\n'
+  );
+  await p.waitForTimeout(1500);
+  const pasted = await storedLines(p, 41);
+  check(
+    pasted[0].date === '2026-10-15' && pasted[0].description === 'Tips, "sterile" pack' && pasted[0].amountCents === 123450,
+    'A pasted row is read: a US date, a quoted cell with a line break, an amount',
+    JSON.stringify([pasted[0].date, pasted[0].description, pasted[0].amountCents])
+  );
+  check(pasted[1].date === '2026-10-14' && pasted[1].amountCents === null, 'A pasted date that cannot be read is not used; a bad amount empties the amount');
+  const pasteToasts = (await p.locator('.ctx-toast').allInnerTexts()).join(' ');
+  check(
+    pasteToasts.includes('1 row was not pasted') && pasteToasts.includes('3 cells were not pasted'),
+    'One warning says which rows and cells were not pasted, and why',
+    pasteToasts
+  );
+  // A date box takes no year outside the app's range: the date is emptied and the cell says why.
+  await p.getByLabel('Row 2 date', exact).fill('0026-10-14');
+  await p.getByLabel('Row 2 vendor', exact).click();
+  await p.waitForTimeout(1200);
+  check(
+    (await storedLines(p, 41))[1].date === '' && (await p.getByText('Enter a date between 2000 and 2099').count()) > 0,
+    'A date with a year like 0026 is not saved, and the cell says why'
+  );
+  await p.close();
+
+  // The keyboard: dialogs take the focus and give it back, the row menu closes on Escape, list rows open with Enter.
+  p = await openLive('jane', '#/request/41/review');
+  await p.getByRole('button', { name: 'Send for approval', exact: true }).focus();
+  await p.keyboard.press('Enter');
+  await p.getByRole('dialog', { name: 'Send PR-0041 for approval?' }).waitFor();
+  const inDialog = () => p.evaluate(() => !!document.activeElement?.closest('[role="dialog"]'));
+  let kept = await inDialog();
+  for (let i = 0; i < 4; i++) {
+    await p.keyboard.press('Tab');
+    kept = kept && (await inDialog());
+  }
+  check(kept, 'A dialog takes the focus and keeps Tab inside it');
+  await p.keyboard.press('Escape');
+  check(
+    await p.evaluate(() => document.activeElement?.textContent?.trim() === 'Send for approval' && !document.activeElement.closest('[role="dialog"]')),
+    'Escape closes the dialog and the focus returns to the button that opened it'
+  );
+  await goTo(p, 'jane', '#/request/41/purchases');
+  await p.getByLabel('Row 1 menu', exact).focus();
+  await p.keyboard.press('Enter');
+  await p.getByRole('menu').waitFor();
+  await p.keyboard.press('Escape');
+  check(
+    (await p.getByRole('menu').count()) === 0 && (await p.evaluate(() => document.activeElement?.getAttribute('aria-label'))) === 'Row 1 menu',
+    'Escape closes the row menu and the focus returns to its button'
+  );
+  await goTo(p, 'admin', '#/admin/approvals');
+  await p.getByRole('row', { name: 'Open PR-0040' }).focus();
+  await p.keyboard.press('Enter');
+  await header(p).getByText('PR-0040').waitFor();
+  check(true, 'A row of the Approvals list opens with Enter');
+  // The approver opens the quote the approval rests on.
+  await p.getByRole('button', { name: 'Quote harbor-software-quote.pdf' }).click();
+  await p.getByRole('dialog', { name: 'Files' }).locator('iframe[title="Quote harbor-software-quote.pdf"]').waitFor();
+  check(true, 'The approver opens the Harbor quote of PR-0040 in the preview');
+  await p.keyboard.press('Escape');
+  await p.close();
+
+  // Laptop and phone widths: no sideways scrolling of the page, and nothing outside its card.
+  for (const [width, user, hash] of [
+    [1024, 'admin', '#/admin/process'],
+    [1024, 'admin', '#/admin/request/40'],
+    [1024, 'jane', '#/'],
+    [375, 'jane', '#/request/41/purchases'],
+    [375, 'admin', '#/admin/request/37'],
+    [375, 'sam', '#/request/33/review']
+  ]) {
+    p = await openLive(user, hash, width, 800);
+    const layout = await p.evaluate(() => ({
+      sideways: document.documentElement.scrollWidth - window.innerWidth,
+      outside: Array.from(document.querySelectorAll('.ctx-main .ctx-card, .ctx-main .ctx-header, .ctx-main .ctx-banner, .ctx-main .ctx-drop'))
+        .filter((box) => box.scrollWidth > box.clientWidth + 1)
+        .map((box) => box.className)
+    }));
+    check(layout.sideways <= 0 && layout.outside.length === 0, `At ${width} wide, ${hash} fits its cards`, JSON.stringify(layout));
+    await p.close();
+  }
 } catch (e) {
   problems.push(`The run stopped early: ${e instanceof Error ? e.message : String(e)}`);
 }

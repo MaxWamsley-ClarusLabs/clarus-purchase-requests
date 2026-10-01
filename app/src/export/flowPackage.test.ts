@@ -2,12 +2,16 @@ import {
   FLOW_NAMES,
   FlowConfig,
   LIVE_DESTINATION,
+  MAX_APPROVERS,
   TEST_FOLDERS,
+  TEST_LIBRARY_URL_NAME,
   UNSAFE_FOLDER_CHARACTERS,
   buildFlowDefinition,
   buildFlowPackage,
+  checkFlowConfig,
   cleanExpression,
   htmlTextExpression,
+  isSafeEmailAddress,
   lit
 } from './flowPackage';
 import { LISTS, PACKAGE_STATUSES, SUBMISSION_TYPE_LABELS } from '../data/sharepoint/schema';
@@ -22,6 +26,7 @@ const live: FlowConfig = {
   folders: [...LIVE_DESTINATION.folders],
   adminEmail: 'admin@example.com',
   approverEmails: ['approver.one@example.com', 'approver.two@example.com'],
+  approverSource: 'owners',
   appPageUrl: 'https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx'
 };
 const testSite: FlowConfig = { ...live, mode: 'test', destinationSiteUrl: live.siteUrl, libraryUrlName: 'Shared Documents', folders: [...TEST_FOLDERS] };
@@ -79,6 +84,55 @@ function groupsOf(json: string, pattern: RegExp): string[] {
 const build = (config: FlowConfig): FlowDefinition => buildFlowDefinition(config) as unknown as FlowDefinition;
 const approvalMailOf = (config: FlowConfig): FlowAction =>
   inside(inside(build(config).actions.If_this_is_an_approval_request).Approval_email).Send_approval_email;
+
+/** Every text value in a definition, at any depth, keys included (an If's operands sit in arrays). */
+function textsIn(value: unknown, found: string[] = []): string[] {
+  if (typeof value === 'string') found.push(value);
+  else if (Array.isArray(value)) value.forEach((v) => textsIn(v, found));
+  else if (value && typeof value === 'object')
+    for (const [k, v] of Object.entries(value)) {
+      found.push(k);
+      textsIn(v, found);
+    }
+  return found;
+}
+
+/**
+ * The expressions in a text value, as Power Automate reads them: the whole value
+ * when it starts with "@" (but not "@{" or "@@"), otherwise each "@{...}" in it,
+ * which ends at the first "}" outside a quoted string.
+ */
+function expressionsIn(value: string): string[] {
+  if (value.startsWith('@@')) return [];
+  if (value.startsWith('@') && !value.startsWith('@{')) return [value.slice(1)];
+  const found: string[] = [];
+  for (let start = value.indexOf('@{'); start !== -1; start = value.indexOf('@{', start)) {
+    let end = start + 2;
+    for (let quoted = false; end < value.length; end++) {
+      if (value[end] === "'") quoted = !quoted;
+      else if (value[end] === '}' && !quoted) break;
+    }
+    found.push(value.slice(start + 2, end));
+    start = end;
+  }
+  return found;
+}
+
+/** What is wrong with an expression's quotes and brackets, or "" if they are balanced. A doubled quote inside a string is a quote. */
+function balanceProblem(expression: string): string {
+  const open: string[] = [];
+  let quoted = false;
+  for (const ch of expression) {
+    if (ch === "'") quoted = !quoted;
+    else if (quoted) continue;
+    else if (ch === '(' || ch === '[') open.push(ch);
+    else if (ch === ')' || ch === ']') {
+      if (open.pop() !== (ch === ')' ? '(' : '[')) return `unexpected ${ch} in ${expression}`;
+    } else if (ch === '{' || ch === '}') return `brace outside a string in ${expression}`;
+  }
+  if (quoted) return `unclosed string in ${expression}`;
+  return open.length > 0 ? `unclosed ${open.join('')} in ${expression}` : '';
+}
 
 describe('flow expressions', () => {
   it('writes string literals with doubled single quotes', () => {
@@ -140,6 +194,8 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
     const send = inside(scope).Send_approval_email;
     const sendBody = param(send, 'emailMessage/Body');
     const failure = approvalBranch.On_approval_failure;
+    // The error expression stored in the item, without its "@{" and "}".
+    const approvalError = param(inside(failure).Mark_approval_failed, 'item/ErrorMessage').slice(2, -1);
 
     it('is an approval scope and its own failure scope, nothing else', () => {
       expect(Object.keys(approvalBranch)).toEqual(['Approval_email', 'On_approval_failure']);
@@ -171,9 +227,11 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
     });
 
     it('falls back to the administrator when the package has no approver address', () => {
-      expect(param(approvalMailOf({ ...live, approverEmails: [] }), 'emailMessage/To')).toBe('admin@example.com');
-      expect(param(approvalMailOf({ ...live, approverEmails: ['', '  '] }), 'emailMessage/To')).toBe('admin@example.com');
-      expect(param(approvalMailOf({ ...live, approverEmails: [' approver.one@example.com ', ''] }), 'emailMessage/To')).toBe('approver.one@example.com');
+      expect(param(approvalMailOf({ ...live, approverEmails: [], approverSource: 'administrator' }), 'emailMessage/To')).toBe('admin@example.com');
+      expect(param(approvalMailOf({ ...live, approverEmails: ['approver.one@example.com'] }), 'emailMessage/To')).toBe('approver.one@example.com');
+      // Blank or padded entries are not tidied here: the data layer filters the addresses first, and anything else is refused.
+      expect(() => build({ ...live, approverEmails: ['', '  '] })).toThrow('approver address');
+      expect(() => build({ ...live, approverEmails: [' approver.one@example.com ', ''] })).toThrow('approver address');
     });
 
     it('says when approval is needed again', () => {
@@ -215,18 +273,38 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
       expect(steps.Failed_approval_steps.inputs).toEqual({ from: "@result('Approval_email')", where: "@equals(item()?['status'], 'Failed')" });
       expect(steps.Mark_approval_failed.runAfter).toEqual({ Failed_approval_steps: ['Succeeded'] });
       expect(param(steps.Mark_approval_failed, 'item/PackageStatus/Value')).toBe('Failed');
-      expect(param(steps.Mark_approval_failed, 'item/ErrorMessage')).toContain("first(body('Failed_approval_steps'))?['error']?['message']");
-      expect(steps.Send_approval_failure_email.runAfter).toEqual({ Mark_approval_failed: ['Succeeded', 'Failed'] });
+      expect(param(steps.Mark_approval_failed, 'item/ErrorMessage')).toMatch(/^@\{coalesce\(.*\)\}$/);
+      // The administrator is told even if recording the failure failed or timed out.
+      expect(steps.Send_approval_failure_email.runAfter).toEqual({ Mark_approval_failed: ['Succeeded', 'Failed', 'TimedOut'] });
       const mail = steps.Send_approval_failure_email;
       expect(param(mail, 'emailMessage/To')).toBe('admin@example.com');
       expect(param(mail, 'emailMessage/Subject')).toBe("Purchase approval email failed: @{coalesce(triggerBody()?['Title'], 'a purchase request')}");
       const body = param(mail, 'emailMessage/Body');
-      // The error text is escaped; the links are to the flow run and to Needs attention.
-      expect(body).toContain(
-        htmlTextExpression("coalesce(first(body('Failed_approval_steps'))?['error']?['message'], 'The approval email was not sent. See the flow run.')")
-      );
+      // It does not claim the email was not sent: only the status update may have failed. The error text is escaped;
+      // the links are to the flow run and to Needs attention.
+      expect(body).toContain(`<p>Sending the approval email, or recording that it was sent, failed: @{${htmlTextExpression(approvalError)}}</p>`);
+      expect(body).not.toMatch(/approval email failed|was not sent/i);
       expect(body).toContain("workflow()?['run']?['name']");
       expect(body).toContain(`<a href="${live.appPageUrl}#/admin/attention">Open Needs attention</a>`);
+    });
+
+    it('stores the error from wherever the failed step put it, or a fixed sentence', () => {
+      // A connector failure may carry its message in the step's outputs rather than in its error.
+      expect(approvalError).toBe(
+        "coalesce(first(body('Failed_approval_steps'))?['error']?['message'], " +
+          "first(body('Failed_approval_steps'))?['outputs']?['body']?['error']?['message'], " +
+          "first(body('Failed_approval_steps'))?['outputs']?['body']?['message'], " +
+          "'Sending the approval email, or recording that it was sent, failed. See the flow run.')"
+      );
+      expect(balanceProblem(approvalError)).toBe('');
+    });
+
+    it('leaves the packaging failure scope exactly as in the travel flow', () => {
+      const steps = inside(packagingBranch.On_failure);
+      expect(param(steps.Mark_failed, 'item/ErrorMessage')).toBe(
+        "@{coalesce(first(body('Failed_steps'))?['error']?['message'], 'Packaging stopped. See the flow run.')}"
+      );
+      expect(steps.Send_failure_email.runAfter).toEqual({ Mark_failed: ['Succeeded', 'Failed'] });
     });
 
     it('creates no folder, creates no file and does not touch the destination', () => {
@@ -352,6 +430,21 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
       }
     });
 
+    it('writes every expression with balanced quotes and brackets, in both packages', () => {
+      for (const config of [live, testSite]) {
+        const expressions = textsIn(build(config)).flatMap(expressionsIn);
+        expect(expressions.length).toBeGreaterThan(40);
+        expect(expressions.map(balanceProblem).filter((problem) => problem !== '')).toEqual([]);
+      }
+      // The checker itself finds the mistakes it is there for.
+      expect(expressionsIn("x @{coalesce(a, 'b}c')} y @{d}")).toEqual(["coalesce(a, 'b}c')", 'd']);
+      expect(expressionsIn("@equals(item()?['status'], 'Failed')")).toEqual(["equals(item()?['status'], 'Failed')"]);
+      expect(balanceProblem("coalesce(a, 'O''Brien')")).toBe('');
+      expect(balanceProblem("coalesce(a, 'O'Brien')")).toContain('unclosed string');
+      expect(balanceProblem("first(body('x')?['error']")).toContain('unclosed (');
+      expect(balanceProblem("body('x'))")).toContain('unexpected )');
+    });
+
     it('nests actions five levels deep, one more than the travel flow (flow/FLOW.md point 1)', () => {
       expect(Math.max(...all.map((f) => f.depth))).toBe(5);
       expect(all.find((f) => f.depth === 5)?.name).toBe('Get_attachment_content');
@@ -403,12 +496,14 @@ describe('the fixed destinations (P-008)', () => {
     expect(LIVE_DESTINATION.siteUrl).toBe('https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam');
     expect(LIVE_DESTINATION.libraryUrlName).toBe('Shared Documents');
     expect(LIVE_DESTINATION.folders).toEqual(['01_Company Documents/Accounting/Purchases', '01_Company Documents/Accounting/Purchases/Purchases_To_Process']);
-    // Set-up checks that this folder exists, read only; the flow never creates it.
+    // Set-up checks that this folder exists, read only, when it makes a live package; the flow neither checks nor creates it.
     expect(LIVE_DESTINATION.existingParent).toBe('01_Company Documents/Accounting');
+    expect(JSON.stringify(build(live))).not.toContain("Accounting')/Exists");
   });
 
   it('has the test destination folders exactly, in the test site itself', () => {
     expect(TEST_FOLDERS).toEqual(['Purchases_Test', 'Purchases_Test/Purchases_To_Process']);
+    expect(TEST_LIBRARY_URL_NAME).toBe('Shared Documents');
   });
 
   it('names the flow for the test site and for the live site', () => {
@@ -457,6 +552,26 @@ describe('the import package', () => {
     expect(JSON.parse(test.files['manifest.json']).details.displayName).toBe('Purchase Requests flow (test site)');
   });
 
+  it('says who the approval email goes to, as fixed in the package, so Set-up can show it', () => {
+    expect(pkg.approvalRecipients).toEqual(['approver.one@example.com', 'approver.two@example.com']);
+    const fallback = buildFlowPackage({ ...testSite, approverEmails: [], approverSource: 'administrator' }, ids);
+    expect(fallback.approvalRecipients).toEqual(['admin@example.com']);
+    const definition = Object.entries(fallback.files).find(([path]) => path.endsWith('/definition.json'))![1];
+    expect(definition).toContain('"emailMessage/To": "admin@example.com"');
+    expect(definition).not.toContain('approver.one@example.com');
+  });
+
+  it('is not made at all from settings the generator refuses', () => {
+    let made = 0;
+    const counted = () => {
+      made++;
+      return ids();
+    };
+    expect(() => buildFlowPackage({ ...live, approverEmails: ["@{triggerBody()?['SubmitterEmail']}"] }, counted)).toThrow('The flow package was not made');
+    expect(() => buildFlowPackage({ ...live, folders: [] }, counted)).toThrow('The flow package was not made');
+    expect(made).toBe(0);
+  });
+
   it('is a valid zip of those files', () => {
     const view = new DataView(pkg.zip.buffer, pkg.zip.byteOffset, pkg.zip.byteLength);
     const end = pkg.zip.byteLength - 22;
@@ -470,5 +585,188 @@ describe('the import package', () => {
 
   it('computes standard CRC-32 values', () => {
     expect(crc32(new TextEncoder().encode('123456789')).toString(16)).toBe('cbf43926');
+  });
+});
+
+describe('the generator refuses settings it cannot use safely (strategy section 7, P-008, P-018)', () => {
+  const refused = 'The flow package was not made';
+  const json = (config: FlowConfig): string => JSON.stringify(buildFlowDefinition(config));
+
+  describe('email addresses', () => {
+    it('accepts one plain address of at most 254 characters', () => {
+      for (const address of ['approver.one@example.com', "o'brien@example.co.uk", 'first+tag@mail.example.com', 'a_b-c%d@ex-ample.org', 'MAX@EXAMPLE.COM']) {
+        expect(isSafeEmailAddress(address)).toBe(true);
+      }
+      const local = (length: number) => 'a'.repeat(length - '@example.com'.length);
+      expect(isSafeEmailAddress(`${local(254)}@example.com`)).toBe(true);
+      expect(isSafeEmailAddress(`${local(255)}@example.com`)).toBe(false);
+    });
+
+    it('refuses anything the flow could read as an expression, markup or a second address', () => {
+      const hostile = [
+        "@{triggerBody()?['SubmitterEmail']}",
+        '@example.com',
+        "@concat('a@example.com')",
+        'a@b.com;c@d.com',
+        'a@b.com,c@d.com',
+        'approver one@example.com',
+        ' approver.one@example.com',
+        'approver.one@example.com ',
+        'approver.one@example.com\n',
+        'a"b@example.com',
+        'a\\b@example.com',
+        'a`b@example.com',
+        '<b>@example.com',
+        'x@exa{mple}.com',
+        'x@{outputs(1)}.com',
+        'jöhn@example.com',
+        'a@example',
+        'a@b..com',
+        'no-at-sign.example.com',
+        ''
+      ];
+      for (const address of hostile) expect(isSafeEmailAddress(address)).toBe(false);
+      expect(isSafeEmailAddress(undefined as unknown as string)).toBe(false);
+    });
+
+    it('refuses an approver address that is not plain, rather than tidying it', () => {
+      const hostile = [
+        "@{triggerBody()?['SubmitterEmail']}",
+        'a@b.com;c@d.com',
+        '@example.com',
+        'approver one@example.com',
+        'a"b@example.com',
+        'a\\b@example.com'
+      ];
+      for (const address of hostile) {
+        expect(() => buildFlowDefinition({ ...live, approverEmails: ['approver.one@example.com', address] })).toThrow(`${refused}: the approver address`);
+      }
+    });
+
+    it("refuses an administrator's address that is not plain", () => {
+      for (const adminEmail of ['', 'max@example.com;evil@example.com', "@{triggerBody()?['SubmitterEmail']}", '@example.com']) {
+        expect(() => buildFlowDefinition({ ...live, adminEmail })).toThrow(`${refused}: the administrator's email address`);
+      }
+    });
+
+    it('refuses to make a package with no one to email: no approvers and no administrator address', () => {
+      expect(() => buildFlowDefinition({ ...live, approverEmails: [], approverSource: 'administrator', adminEmail: '' })).toThrow(refused);
+    });
+
+    it(`emails at most ${MAX_APPROVERS} approvers, so the To line has a sane length`, () => {
+      const people = (count: number, length = 30) =>
+        Array.from({ length: count }, (_, i) => `${String(i).padStart(length - '@example.com'.length, 'p')}@example.com`);
+      const twenty = people(MAX_APPROVERS);
+      expect(param(approvalMailOf({ ...live, approverEmails: twenty }), 'emailMessage/To')).toBe(twenty.join(';'));
+      expect(MAX_APPROVERS).toBe(20);
+      expect(() => buildFlowDefinition({ ...live, approverEmails: people(21) })).toThrow(`${refused}: the approval email can go to at most 20 addresses`);
+      expect(() => buildFlowDefinition({ ...live, approverEmails: people(200, 254) })).toThrow('at most 20 addresses, and there are 200');
+    });
+  });
+
+  describe('web addresses', () => {
+    it('uses only the origin and path of the page address, so a query string or fragment cannot reach the five email links', () => {
+      const clean = json(live);
+      for (const appPageUrl of [
+        `${live.appPageUrl}?x=@{triggerBody().EmailSummary}`,
+        `${live.appPageUrl}?x=@{triggerBody()?['EmailSummary']}#frag`,
+        `${live.appPageUrl}#frag`,
+        `${live.appPageUrl}#/admin/request/@{triggerBody()?['Title']}`,
+        `${live.appPageUrl}?`,
+        'https://CONTOSO.sharepoint.com:443/sites/FormsAndApps/SitePages/Purchase-Requests.aspx?web=1'
+      ]) {
+        expect(json({ ...live, appPageUrl })).toBe(clean);
+      }
+      expect(checkFlowConfig({ ...live, appPageUrl: `${live.appPageUrl}?x=1#y` }).appPageUrl).toBe(live.appPageUrl);
+      // The links are the page address followed by the app's own route only.
+      const links = groupsOf(clean, /href=\\"([^\\"]*)\\"/g).filter((link) => link.startsWith('https://contoso'));
+      expect(links.sort()).toEqual([`${live.appPageUrl}#/admin/attention`, `${live.appPageUrl}#/admin/request/@{triggerBody()?['RequestId']}`]);
+    });
+
+    it('refuses a page address that is not a plain https address', () => {
+      for (const appPageUrl of [
+        'http://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx',
+        'http://127.0.0.1:5173/',
+        // A script address, written in two parts so the lint rule against script addresses does not flag the test.
+        ['javascript', 'alert(1)'].join(':'),
+        '/sites/FormsAndApps/SitePages/Purchase-Requests.aspx',
+        'https://contoso.sharepoint.com/sites/{FormsAndApps}/SitePages/Purchase-Requests.aspx',
+        "https://contoso.sharepoint.com/sites/O'Brien/SitePages/Purchase-Requests.aspx",
+        'https://contoso.sharepoint.com/sites/Forms And Apps/SitePages/Purchase-Requests.aspx',
+        'https://contoso.sharepoint.com/sites/a"b/SitePages/Purchase-Requests.aspx',
+        'https://contoso.sharepoint.com/sites/a\\b/SitePages/Purchase-Requests.aspx',
+        'https://user:secret@contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx',
+        ''
+      ]) {
+        expect(() => buildFlowDefinition({ ...live, appPageUrl })).toThrow(`${refused}: the address of the Purchase Requests page`);
+      }
+    });
+
+    it('refuses a site address that is not a plain https address, or that has a query string or fragment', () => {
+      for (const siteUrl of [
+        'https://contoso.sharepoint.com/sites/{FormsAndApps}',
+        "https://contoso.sharepoint.com/sites/@{triggerBody()?['Title']}",
+        'https://contoso.sharepoint.com/sites/FormsAndApps?x=1',
+        'https://contoso.sharepoint.com/sites/FormsAndApps#x',
+        'http://contoso.sharepoint.com/sites/FormsAndApps',
+        'https://user:secret@contoso.sharepoint.com/sites/FormsAndApps',
+        'https://contoso.sharepoint.com/sites/Forms And Apps',
+        "https://contoso.sharepoint.com/sites/O'Brien",
+        'https://contoso.sharepoint.com/sites/a<b>',
+        'https://contoso.sharepoint.com/sites/a`b',
+        'https://contoso.sharepoint.com/sites/a\\b',
+        'https://contoso.sharepoint.com/sites/a\u0007b',
+        'not an address',
+        ''
+      ]) {
+        expect(() => buildFlowDefinition({ ...live, siteUrl })).toThrow(`${refused}: the site address`);
+        // On the test site the destination is the same site, so it is refused too.
+        expect(() => buildFlowDefinition({ ...testSite, siteUrl, destinationSiteUrl: siteUrl })).toThrow(refused);
+      }
+    });
+
+    it('refuses a list ID that is not in the form SharePoint gives it', () => {
+      for (const submissionsListId of ["@{triggerBody()?['ID']}", 'list-3', '', '{11111111-2222-3333-4444-555555555555}']) {
+        expect(() => buildFlowDefinition({ ...live, submissionsListId })).toThrow(`${refused}: the ID of the Purchase Submissions list`);
+      }
+    });
+  });
+
+  describe('destinations (P-008)', () => {
+    it('refuses a live package that would write anywhere but the fixed Accounting folders', () => {
+      const elsewhere: Partial<FlowConfig>[] = [
+        { destinationSiteUrl: 'https://claruslabsusa.sharepoint.com/sites/Other' },
+        { destinationSiteUrl: `${LIVE_DESTINATION.siteUrl}/` },
+        { destinationSiteUrl: live.siteUrl },
+        { libraryUrlName: 'Documents' },
+        { folders: [] },
+        { folders: ['01_Company Documents/Accounting/Receipts_To_Process'] },
+        { folders: [...LIVE_DESTINATION.folders].reverse() },
+        { folders: [...LIVE_DESTINATION.folders, '01_Company Documents/Accounting/Purchases/Purchases_To_Process/2026'] },
+        { folders: [...TEST_FOLDERS] }
+      ];
+      for (const change of elsewhere) {
+        expect(() => buildFlowDefinition({ ...live, ...change })).toThrow(`${refused}: a Live package can only send folders to Accounting`);
+      }
+    });
+
+    it("refuses a test package that would write anywhere but this site's own Purchases_Test folders", () => {
+      const elsewhere: Partial<FlowConfig>[] = [
+        { folders: [...LIVE_DESTINATION.folders] },
+        { folders: [] },
+        { folders: ['Purchases_Test'] },
+        { destinationSiteUrl: LIVE_DESTINATION.siteUrl },
+        { destinationSiteUrl: 'https://contoso.sharepoint.com/sites/Other' },
+        { libraryUrlName: LIVE_DESTINATION.libraryUrlName + '/01_Company Documents/Accounting' },
+        { libraryUrlName: 'Documents' }
+      ];
+      for (const change of elsewhere) {
+        expect(() => buildFlowDefinition({ ...testSite, ...change })).toThrow(`${refused}: a Test package can only send folders`);
+      }
+    });
+
+    it('refuses an unknown kind of package', () => {
+      expect(() => buildFlowDefinition({ ...live, mode: 'production' as FlowConfig['mode'] })).toThrow(`${refused}: it must be a Test or a Live package.`);
+    });
   });
 });

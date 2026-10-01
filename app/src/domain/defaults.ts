@@ -4,6 +4,9 @@
 import { vendorKey } from './purchaseRules';
 import { CategoryId, PaidById, PurchaseLine, PurchaseRequest, SuggestedField } from './types';
 
+/** The quick picks for "No quote" and "No receipt" are policy, kept in purchaseRules.ts (P-004); exported here as well for the screens. */
+export { NO_QUOTE_REASONS, NO_RECEIPT_REASONS } from './purchaseRules';
+
 /**
  * "Who paid" for the first row of a request (P-023, Provisional). Max has not
  * said which is more common for purchases; in travel, company card was by far
@@ -65,9 +68,12 @@ export function knownVendorName(vendor: string, history: readonly PurchaseLine[]
   return found;
 }
 
-/** Vendors the employee has used before, most used first, for autocomplete. */
+/** Vendors the employee has used before, most used first, for autocomplete. Spellings of one vendor (`vendorKey`) are listed once. */
 export function vendorSuggestions(history: readonly PurchaseLine[]): string[] {
-  return mostUsed(history.map((l) => l.vendor));
+  return mostUsed(
+    history.map((l) => l.vendor),
+    vendorKey
+  );
 }
 
 /** Departments on the employee's earlier requests, most used first. */
@@ -81,16 +87,10 @@ export function latestDepartment(requests: readonly PurchaseRequest[]): string {
   return sorted.length > 0 ? sorted[0].department.trim() : '';
 }
 
-/** Quick picks for "No receipt: say why". Free text is still allowed. */
-export const NO_RECEIPT_REASONS: readonly string[] = ['Receipt lost', 'No receipt given'];
-
-/** Quick picks for "No quote: say why". Free text is still allowed. */
-export const NO_QUOTE_REASONS: readonly string[] = ['Already purchased'];
-
-function mostUsed(values: readonly string[]): string[] {
+function mostUsed(values: readonly string[], keyOf: (text: string) => string = normalise): string[] {
   const counts = new Map<string, { text: string; count: number }>();
   for (const v of values) {
-    const key = normalise(v);
+    const key = keyOf(v);
     if (!key) continue;
     const entry = counts.get(key);
     if (entry) entry.count += 1;

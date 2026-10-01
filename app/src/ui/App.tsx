@@ -20,6 +20,7 @@ import { injectTheme } from './theme';
 import { errorText } from './errors';
 import { messages } from '../domain/messages';
 import { ReceiptReader } from '../reading/ReceiptReader';
+import { NotAllowedError } from '../data/sharepoint/serviceRules';
 
 const COLLAPSE_KEY = 'ctx-sidebar-collapsed';
 const NARROW_WIDTH = 1280;
@@ -125,7 +126,11 @@ export function App(props: { service: PurchaseDataService; logoUrl: string; read
     [navigate]
   );
 
-  const reportError = React.useCallback((e: unknown) => toast(messages.actionFailed(errorText(e)), 'warning'), [toast]);
+  // A refusal by the app's own rules already says what to do, so it is shown as it is; anything else is a failure to try again.
+  const reportError = React.useCallback(
+    (e: unknown) => toast(e instanceof NotAllowedError ? errorText(e) : messages.actionFailed(errorText(e)), 'warning'),
+    [toast]
+  );
 
   const openInstructions = React.useCallback(() => setInstructionsOpen(true), []);
 

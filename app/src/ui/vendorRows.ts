@@ -30,9 +30,9 @@ export interface VendorRow {
   boughtBefore: boolean;
 }
 
-/** The approval column's words in the vendor totals table. */
+/** The approval column's words in the vendor totals table: the grid's and the CSV's words for "not needed" (LINE_APPROVAL_DISPLAY). */
 export const VENDOR_APPROVAL_LABEL: Record<LineApprovalStatus, string> = {
-  notRequired: 'Not needed',
+  notRequired: 'Not required',
   needed: 'Needed',
   pending: 'Awaiting approval',
   approved: 'Approved',

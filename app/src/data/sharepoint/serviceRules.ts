@@ -4,7 +4,9 @@
 // SharePoint calls and no stored state.
 
 import { messages } from '../../domain/messages';
-import { findCategory, findPaidBy } from '../../domain/purchaseRules';
+import { categoryNeedsDescription, categoryText, findCategory, findPaidBy } from '../../domain/purchaseRules';
+import { receiptFiles } from '../../domain/receipts';
+import { PACKAGE_ATTENTION_MINUTES, STATUS_FOR_SUBMISSION, submissionNeedsAttention } from '../../domain/statuses';
 import { CategoryId, PurchaseLine, PurchaseRequest, RequestStatus, Submission, SubmissionType } from '../../domain/types';
 import { CategoryChoice, LineChanges, RequestChanges } from '../PurchaseDataService';
 import { line255, parseSuggested } from './mapping';
@@ -22,9 +24,14 @@ export const notAllowed = {
   administratorsOnly: 'Administrators only.',
   draftsOnly: 'Only drafts can be deleted.',
   approveWhen: 'Only a request that is awaiting approval can be approved.',
+  changedSinceSent:
+    'This request was changed after it was sent for approval, so it cannot be approved as it stands. Return it with a note; the employee can correct it and send it again.',
   returnWhen: 'Only a request that is awaiting approval or submitted can be returned.',
   confirmWhen: 'Categories can be confirmed only on a request that is awaiting approval, approved or submitted.',
-  processWhen: 'Only submitted requests can be marked processed.'
+  processWhen: 'Only submitted requests can be marked processed.',
+  sharedReceiptHasOwn: 'This row has a receipt of its own. Remove it first, then choose the row whose receipt this row uses.',
+  retryNotStuck: `Only an approval email or a package that failed, or that has not finished after ${PACKAGE_ATTENTION_MINUTES} minutes, can be tried again.`,
+  retryMovedOn: 'The request has moved on since this was sent, so it cannot be tried again.'
 } as const;
 
 /**
@@ -102,15 +109,29 @@ export interface AppliedLineChanges {
 }
 
 /**
- * Applies the employee's change to a row. Changing the category or its
- * description makes the category the employee's own suggestion again, so who
- * confirmed it is cleared (P-024).
+ * Applies the employee's change to a row.
+ * - Only a category that needs a description (Other) keeps one: a change to
+ *   the category or its description that leaves another category clears the
+ *   description (P-024).
+ * - A change to the category as written (the category, or the description of
+ *   Other) makes it the employee's own suggestion again, so who confirmed it
+ *   is cleared (P-024).
+ * - A row holds its own receipt files or uses another row's, never both
+ *   (travel D-038): pointing a row that holds a receipt at another row is
+ *   refused with NotAllowedError, before anything is written.
  */
 export function applyLineChanges(line: PurchaseLine, changes: LineChanges): AppliedLineChanges {
   const written: Partial<PurchaseLine> = normalizeLineChanges(changes);
-  const categoryChanged = written.category !== undefined && written.category !== line.category;
-  const otherChanged = written.categoryOther !== undefined && written.categoryOther !== line.categoryOther;
-  if ((categoryChanged || otherChanged) && line.categoryConfirmedBy !== '') written.categoryConfirmedBy = '';
+  if (written.sameReceiptAsRow !== undefined && written.sameReceiptAsRow !== null && receiptFiles(line).length > 0) {
+    throw new NotAllowedError(notAllowed.sharedReceiptHasOwn);
+  }
+  if (written.category !== undefined || written.categoryOther !== undefined) {
+    const category = written.category ?? line.category;
+    if (!categoryNeedsDescription(category) && (written.categoryOther ?? line.categoryOther) !== '') written.categoryOther = '';
+    const before = categoryText(line.category, line.categoryOther);
+    const after = categoryText(category, written.categoryOther ?? line.categoryOther);
+    if (after !== before && line.categoryConfirmedBy !== '') written.categoryConfirmedBy = '';
+  }
   return { line: { ...line, ...written }, written };
 }
 
@@ -159,9 +180,10 @@ export function categoryUpdates(lines: readonly PurchaseLine[], choices: Record<
     const choice = chosen.get(line.id);
     if (!choice) continue;
     const other = typeof choice.categoryOther === 'string' ? choice.categoryOther.trim() : '';
+    const describe = categoryNeedsDescription(choice.category);
     if (!findCategory(choice.category)) problems.push(`Row ${line.rowNumber}: ${messages.categoryRequired}`);
-    else if (choice.category === 'other' && !other) problems.push(`Row ${line.rowNumber}: ${messages.categoryOtherRequired}`);
-    else valid.set(line.id, { category: choice.category, categoryOther: choice.category === 'other' ? line255(other) : '' });
+    else if (describe && !other) problems.push(`Row ${line.rowNumber}: ${messages.categoryOtherRequired}`);
+    else valid.set(line.id, { category: choice.category, categoryOther: describe ? line255(other) : '' });
   }
   if (problems.length > 0) throw new Error(problems.join(' '));
 
@@ -178,12 +200,39 @@ export function categoryUpdates(lines: readonly PurchaseLine[], choices: Record<
   return updates;
 }
 
+// ---- Sending for approval ----------------------------------------------------
+
+/**
+ * Whether a request holds an approval that sending it for approval again must
+ * take back (P-019). A request that never had one (a Draft being sent for the
+ * first time) has nothing to clear, so no person or date column is written.
+ */
+export function holdsApproval(request: Pick<PurchaseRequest, 'approvedOn' | 'approvedBy' | 'approvedByEmail' | 'approvalNote'>): boolean {
+  return request.approvedOn !== '' || request.approvedBy !== '' || request.approvedByEmail !== '' || request.approvalNote !== '';
+}
+
 // ---- Submissions ------------------------------------------------------------
 
 /** Approval requests first, then packages, each newest first (PurchaseDataService.listSubmissionsForRequest). */
 export function sortSubmissionsForRequest(submissions: readonly Submission[]): Submission[] {
   const rank = (s: Submission) => (s.type === 'approval' ? 0 : 1);
   return [...submissions].sort((a, b) => rank(a) - rank(b) || b.submissionNumber - a.submissionNumber || b.id - a.id);
+}
+
+/**
+ * Why a submission may not be set back to Ready, or '' when it may (P-030).
+ * It may when the request is still at the step the submission is for (an
+ * approval request while the request awaits approval, a package while it is
+ * submitted), it is the newest of its type for the request, and it failed or
+ * has not been finished within PACKAGE_ATTENTION_MINUTES. Anything else could
+ * email the approver about a request that has moved on, or make a folder for
+ * a package that has been replaced. `all` is every submission of the request.
+ */
+export function retryRefusal(submission: Submission, all: readonly Submission[], status: RequestStatus, now: Date): string {
+  const newest = sortSubmissionsForRequest(all.filter((s) => s.type === submission.type))[0];
+  if (status !== STATUS_FOR_SUBMISSION[submission.type] || !newest || newest.id !== submission.id) return notAllowed.retryMovedOn;
+  if (!submissionNeedsAttention(submission, now)) return notAllowed.retryNotStuck;
+  return '';
 }
 
 /**

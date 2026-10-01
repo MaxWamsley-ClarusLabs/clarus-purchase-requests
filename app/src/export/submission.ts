@@ -7,10 +7,10 @@ import { LineRef } from '../domain/duplicates';
 import { messages } from '../domain/messages';
 import { csvFileName, folderName, packageFiles, PackageFile } from '../domain/naming';
 import { hasReceipt, quoteFiles } from '../domain/receipts';
-import { CERTIFICATION, anyBoughtBefore, groupsForApproval, mustSendForApproval } from '../domain/purchaseRules';
+import { CERTIFICATION, anyBoughtBefore, mustSendForApproval } from '../domain/purchaseRules';
 import { computeTotals } from '../domain/totals';
 import { ApprovalGroup, PurchaseLine, PurchaseRequest, Submission } from '../domain/types';
-import { Issue, approvalStateOf, blockingIssues, validateRequest } from '../domain/validation';
+import { Issue, approvalGroupsToSend, approvalStateOf, blockingIssues, validateRequest } from '../domain/validation';
 import { buildPurchasesCsv } from './csv';
 import { approvalEmailSubject, buildApprovalEmailSummary, buildSubmissionEmailSummary, submissionEmailSubject } from './email';
 
@@ -157,7 +157,7 @@ export interface PreparedApproval {
   /** The approval request item: no files, only the email for the flow to send. */
   submission: SubmissionFields;
   warnings: Issue[];
-  /** The vendor totals sent, each flagged if already bought (P-017); stored on the request. */
+  /** The vendor totals sent, each flagged if bought before approval (P-017); stored on the request. */
   sentGroups: ApprovalGroup[];
   boughtBefore: boolean;
   sentOn: string;
@@ -166,6 +166,10 @@ export interface PreparedApproval {
 /**
  * The approval request for a request with a vendor total at or over the
  * threshold (P-005, P-018). No certification is needed at this step (P-028).
+ * Each vendor total is flagged bought before approval against the approval
+ * record the request holds now (`request.approval`), so a flag from an
+ * earlier round stays, and a total an earlier approval still covers is not
+ * newly flagged (`groupsForApproval`).
  */
 export function prepareApprovalRequest(
   request: PurchaseRequest,
@@ -176,8 +180,9 @@ export function prepareApprovalRequest(
   round: number
 ): PreparedApproval {
   const state = approvalStateOf(request, lines);
+  // Why it cannot be sent now: nothing needs approval, it is with the approver, or what was approved still covers it.
   if (!mustSendForApproval(state))
-    throw new Error(state === 'notRequired' ? messages.approvalNotNeeded : messages.actionFailed('It is already with the approver.'));
+    throw new Error(state === 'notRequired' ? messages.approvalNotNeeded : state === 'pending' ? messages.alreadyWithApprover : messages.alreadyApproved);
   const today = toIsoDate(now);
   const issues = validateRequest(request, lines, otherLines, today);
   const blocking = blockingIssues(issues);
@@ -185,10 +190,7 @@ export function prepareApprovalRequest(
   const warnings = issues.filter((i) => i.severity === 'warning');
 
   const sentOn = toLocalDateTime(now);
-  const sentGroups = groupsForApproval(
-    lines.map((l) => ({ id: l.id, vendor: l.vendor, amountCents: l.amountCents, date: l.date, hasReceipt: hasReceipt(l, lines) })),
-    today
-  );
+  const sentGroups = approvalGroupsToSend(request, lines, today);
   const totals = computeTotals(lines);
   return {
     warnings,

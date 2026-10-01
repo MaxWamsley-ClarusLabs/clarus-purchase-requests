@@ -1,4 +1,5 @@
-import { CSV_COLUMNS, approverText, buildPurchasesCsv, csvCell } from './csv';
+import { CSV_COLUMNS, SUGGESTED_ACCOUNT_COLUMN, approverText, buildPurchasesCsv, csvCell } from './csv';
+import { QUICKBOOKS_MAPPING_STATUS, vendorKey } from '../domain/purchaseRules';
 import { ApprovalRecord } from '../domain/types';
 import { file, line, quote, request } from '../testing/builders';
 
@@ -47,8 +48,8 @@ describe('csvCell', () => {
 
 // Acme's vendor total is $1,000.00: approved, and bought before approval. Borealis is small.
 const approval: ApprovalRecord = {
-  sent: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 100000, bought: true }],
-  approved: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 100000, bought: true }]
+  sent: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 100000, bought: true }],
+  approved: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 100000, bought: true }]
 };
 
 describe('buildPurchasesCsv', () => {
@@ -120,7 +121,7 @@ describe('buildPurchasesCsv', () => {
   const cellOf = (rowIndex: number, name: string) => rows[rowIndex][header.indexOf(name)];
 
   it('starts with a byte-order mark and uses CRLF line endings', () => {
-    expect(csv.startsWith('﻿')).toBe(true);
+    expect(csv.startsWith('\uFEFF')).toBe(true);
     expect(csv.endsWith('\r\n')).toBe(true);
   });
 
@@ -131,13 +132,29 @@ describe('buildPurchasesCsv', () => {
     expect(rows.every((r) => r.length === CSV_COLUMNS.length)).toBe(true);
   });
 
+  it('says in the header that the suggested QuickBooks account is unverified (P-025), in the eighth column', () => {
+    expect(SUGGESTED_ACCOUNT_COLUMN).toBe(`Suggested QuickBooks account (${QUICKBOOKS_MAPPING_STATUS})`);
+    expect(rows[0][7]).toBe('Suggested QuickBooks account (Unverified, to confirm with Max)');
+    expect(csv.slice(1).split('\r\n')[0]).toContain(',"Suggested QuickBooks account (Unverified, to confirm with Max)",Amount,');
+    expect(rows[0].slice(0, 8)).toEqual([
+      'Request',
+      'Row',
+      'Date',
+      'Vendor',
+      'What was bought and why',
+      'Category',
+      'Category confirmed by',
+      SUGGESTED_ACCOUNT_COLUMN
+    ]);
+  });
+
   it('has the category, the suggested account, the grant code, the approval status and the approver (P-009)', () => {
     const at = (name: string) => cellOf(1, name);
     expect(at('Request')).toBe('PR-0042');
     expect(at('What was bought and why')).toBe('Pipette tips, 10 boxes');
     expect(at('Category')).toBe('R&D Materials & Supplies / Equipment');
     expect(at('Category confirmed by')).toBe('Max Wamsley');
-    expect(at('Suggested QuickBooks account')).toBe('R&D Materials and Supplies');
+    expect(at(SUGGESTED_ACCOUNT_COLUMN)).toBe('R&D Materials and Supplies');
     expect(at('Project or grant code')).toBe('NSF SBIR Phase 1 (Award # 2528301)');
     expect(at('Approval status')).toBe('Approved');
     expect(at('Approved by')).toBe('Max Wamsley');
@@ -173,7 +190,7 @@ describe('buildPurchasesCsv', () => {
 
   it('writes Other with its description, and no account for it', () => {
     expect(cellOf(4, 'Category')).toBe('Other: Lab safety audit');
-    expect(cellOf(4, 'Suggested QuickBooks account')).toBe('');
+    expect(cellOf(4, SUGGESTED_ACCOUNT_COLUMN)).toBe('');
     expect(cellOf(3, 'Category confirmed by')).toBe('');
   });
 

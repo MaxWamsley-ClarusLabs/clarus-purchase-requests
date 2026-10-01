@@ -11,9 +11,9 @@ import { LineRef, findDuplicates } from './duplicates';
 import { messages } from './messages';
 import { formatCents } from './money';
 import { hasReceipt, receiptSourceRow } from './receipts';
-import { ApprovalState, approvalState, groupsForApproval, mustSendForApproval, quoteGaps, vendorGroups } from './purchaseRules';
+import { ApprovalState, approvalState, categoryNeedsDescription, groupsForApproval, mustSendForApproval, quoteGaps, vendorGroups } from './purchaseRules';
 import { suggestedFieldsText } from './suggestions';
-import { IsoDate, PurchaseLine, PurchaseRequest } from './types';
+import { ApprovalGroup, IsoDate, PurchaseLine, PurchaseRequest } from './types';
 
 export type Severity = 'blocking' | 'warning';
 
@@ -52,6 +52,20 @@ export function validationStage(request: Pick<PurchaseRequest, 'status' | 'appro
 }
 
 /**
+ * The vendor totals that sending the request for approval on `sentOn` would
+ * record, each flagged when it counts as bought before approval (P-017),
+ * judged against the approval record the request holds now. What the send
+ * dialog lists and what the data services record are both this.
+ */
+export function approvalGroupsToSend(request: Pick<PurchaseRequest, 'approval'>, lines: readonly PurchaseLine[], sentOn: IsoDate): ApprovalGroup[] {
+  return groupsForApproval(
+    lines.map((l) => ({ id: l.id, vendor: l.vendor, amountCents: l.amountCents, date: l.date, hasReceipt: hasReceipt(l, lines) })),
+    sentOn,
+    request.approval
+  );
+}
+
+/**
  * Checks a request. `today` is the day it is being checked, which is also the
  * day it would be sent for approval (the bought-before-approval test, P-017).
  */
@@ -69,12 +83,14 @@ export function validateRequest(request: RequestFields, lines: readonly Purchase
     const row = (severity: Severity, field: LineField, message: string) =>
       issues.push({ severity, scope: 'row', field, lineId: line.id, rowNumber: line.rowNumber, message });
 
-    if (!isValidIsoDate(line.date)) row('blocking', 'date', messages.dateRequired);
+    if (!line.date.trim()) row('blocking', 'date', messages.dateRequired);
+    else if (!isValidIsoDate(line.date)) row('blocking', 'date', messages.dateInvalid);
     if (!line.vendor.trim()) row('blocking', 'vendor', messages.vendorRequired);
     if (!line.description.trim()) row('blocking', 'description', messages.descriptionRequired);
     if (!line.category) row('blocking', 'category', messages.categoryRequired);
-    else if (line.category === 'other' && !line.categoryOther.trim()) row('blocking', 'categoryOther', messages.categoryOtherRequired);
-    if (line.amountCents === null || line.amountCents <= 0) row('blocking', 'amount', messages.amountRequired);
+    else if (categoryNeedsDescription(line.category) && !line.categoryOther.trim()) row('blocking', 'categoryOther', messages.categoryOtherRequired);
+    if (line.amountCents === null) row('blocking', 'amount', messages.amountRequired);
+    else if (line.amountCents <= 0) row('blocking', 'amount', messages.amountNotPositive);
     if (!line.paidBy) row('blocking', 'paidBy', messages.paidByRequired);
     if (line.suggested.length > 0) row('blocking', 'suggested', messages.suggestionsNotConfirmed(suggestedFieldsText(line.suggested)));
 
@@ -100,10 +116,7 @@ export function validateRequest(request: RequestFields, lines: readonly Purchase
     }
     // A purchase that looks already made can still be sent, flagged (P-017).
     const groups = vendorGroups(ordered);
-    const flagged = groupsForApproval(
-      ordered.map((l) => ({ id: l.id, vendor: l.vendor, amountCents: l.amountCents, date: l.date, hasReceipt: hasReceipt(l, ordered) })),
-      today
-    ).filter((g) => g.bought);
+    const flagged = approvalGroupsToSend(request, ordered, today).filter((g) => g.bought);
     for (const group of flagged) {
       const first = ordered.find((l) => l.id === groups.find((g) => g.key === group.key)?.lineIds[0]);
       if (!first) continue;

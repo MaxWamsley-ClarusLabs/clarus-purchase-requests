@@ -4,15 +4,19 @@ import {
   CATEGORIES,
   CERTIFICATION,
   EMPTY_APPROVAL,
+  NO_QUOTE_REASONS,
+  NO_RECEIPT_REASONS,
   OVERRUN_TOLERANCE_PERCENT,
   PAID_BY_OPTIONS,
   PROJECT_QUICK_PICKS,
   QUICKBOOKS_MAPPING_STATUS,
   QUOTE_THRESHOLD_CENTS,
+  QUOTE_THRESHOLD_TEXT,
   allowedCents,
   anyBoughtBefore,
   approvalCoverage,
   approvalState,
+  categoryNeedsDescription,
   categoryText,
   findCategory,
   findPaidBy,
@@ -22,6 +26,7 @@ import {
   isAlreadyBought,
   isSelfApproved,
   lineApprovals,
+  matchesWhatWasSent,
   mustSendForApproval,
   quoteGaps,
   requiresApproval,
@@ -38,6 +43,20 @@ describe('the policy numbers and wording (P-004, P-005, P-010, P-012)', () => {
     expect(APPROVAL_THRESHOLD_CENTS).toBe(50000);
     expect(QUOTE_THRESHOLD_CENTS).toBe(50000);
     expect(APPROVAL_THRESHOLD_TEXT).toBe('$500');
+    expect(QUOTE_THRESHOLD_TEXT).toBe('$500');
+  });
+
+  it('offers the canned no-quote and no-receipt reasons, which are policy (P-015, P-017)', () => {
+    expect(NO_QUOTE_REASONS).toEqual(['Already purchased']);
+    expect(NO_RECEIPT_REASONS).toEqual(['Receipt lost', 'No receipt given']);
+  });
+
+  it('asks for a description of the category for Other only (P-024)', () => {
+    expect(CATEGORIES.filter((c) => c.needsDescription).map((c) => c.id)).toEqual(['other']);
+    expect(categoryNeedsDescription('other')).toBe(true);
+    expect(categoryNeedsDescription('office')).toBe(false);
+    expect(categoryNeedsDescription('')).toBe(false);
+    expect(categoryNeedsDescription('snacks')).toBe(false);
   });
 
   it("the certification is the F2 form's sentence, exactly", () => {
@@ -63,7 +82,7 @@ describe('the policy numbers and wording (P-004, P-005, P-010, P-012)', () => {
   it('suggests an account name for every category except Other, and marks the mapping unverified (P-025)', () => {
     expect(QUICKBOOKS_MAPPING_STATUS).toBe('Unverified, to confirm with Max');
     for (const c of CATEGORIES) {
-      if (c.id === 'other') expect(c.suggestedAccount).toBe('');
+      if (c.needsDescription) expect(c.suggestedAccount).toBe('');
       else expect(c.suggestedAccount.length).toBeGreaterThan(0);
       // No invented account numbers.
       expect(c.suggestedAccount).not.toMatch(/\d/);
@@ -95,10 +114,67 @@ describe('the policy numbers and wording (P-004, P-005, P-010, P-012)', () => {
 
 describe('how vendor totals are counted (P-016)', () => {
   it('matches vendors ignoring capitals, spaces and punctuation', () => {
-    expect(vendorKey(" Joe's  Diner, Inc. ")).toBe('joes diner inc');
+    expect(vendorKey(" Joe's  Diner, Inc. ")).toBe('joesdinerinc');
     expect(vendorKey('AMAZON.')).toBe(vendorKey('amazon'));
     expect(vendorKey('City Cab Co.')).toBe(vendorKey('CITY CAB CO'));
+    expect(vendorKey('Digi-Key')).toBe(vendorKey('DigiKey'));
+    expect(vendorKey('Thor Labs')).toBe(vendorKey('Thorlabs'));
+    expect(vendorKey("O'Reilly")).toBe('oreilly');
+    expect(vendorKey('OReilly')).toBe('oreilly');
+    expect(vendorKey('o reilly')).toBe('oreilly');
+    expect(vendorKey('O’Reilly')).toBe('oreilly');
+    expect(vendorKey('Amazon.com')).toBe(vendorKey('Amazon.com'));
+    expect(vendorKey('Amazon.com')).toBe(vendorKey('AMAZON COM'));
+    // Different names stay different vendors.
+    expect(vendorKey('Amazon')).not.toBe(vendorKey('Amazon.com'));
     expect(vendorKey('Amazon')).not.toBe(vendorKey('Amazon Web Services'));
+  });
+
+  it('ignores accents and width, in any alphabet', () => {
+    expect(vendorKey('Café')).toBe(vendorKey('Cafe'));
+    expect(vendorKey('CAFÉ ZÜRICH')).toBe('cafezurich');
+    expect(vendorKey('Ｄｉｇｉ－Ｋｅｙ')).toBe('digikey');
+    // Names in other alphabets are kept, not thrown away.
+    expect(vendorKey('株式会社テスト')).toBe('株式会社テスト');
+    expect(vendorKey('Acme 株式会社')).not.toBe(vendorKey('Acme 有限会社'));
+    expect(vendorKey('Ελληνική Εταιρεία')).toBe(vendorKey('ελληνικη εταιρεια'));
+  });
+
+  it('matches a name with no letter or digit as typed, and gives nothing only for a blank name', () => {
+    expect(vendorKey('-')).toBe('-');
+    expect(vendorKey(' - ')).toBe('-');
+    expect(vendorKey('-')).not.toBe(vendorKey('--'));
+    expect(vendorKey('🙂  🙂')).toBe('🙂 🙂');
+    expect(vendorKey('')).toBe('');
+    expect(vendorKey('   ')).toBe('');
+  });
+
+  it('adds up two lines of one vendor in another alphabet, and keeps different names apart', () => {
+    const same = vendorGroups([l('a', '株式会社テスト', 30000), l('b', '株式会社テスト', 30000)]);
+    expect(same.map((g) => [g.totalCents, g.lineIds, g.needsApproval])).toEqual([[60000, ['a', 'b'], true]]);
+    const apart = vendorGroups([l('a', 'Acme 株式会社', 30000), l('b', 'Acme 有限会社', 30000)]);
+    expect(apart.map((g) => g.needsApproval)).toEqual([false, false]);
+    // A vendor with no letter or digit still adds up with itself, and is not a line on its own.
+    expect(vendorGroups([l('a', '-', 30000), l('b', ' - ', 30000)]).map((g) => [g.key, g.totalCents])).toEqual([['-', 60000]]);
+  });
+
+  it('adds up respellings of one vendor, so $300 and $300 at "Digi-Key" and "DigiKey" need approval and a quote', () => {
+    const lines = [l('a', 'Digi-Key', 30000), l('b', 'DigiKey', 30000)];
+    expect(groupsNeedingApproval(lines).map((g) => [g.vendor, g.totalCents, g.needsQuote])).toEqual([['Digi-Key', 60000, true]]);
+    const gaps = quoteGaps(lines.map((x) => ({ ...x, noQuoteReason: '', files: [] })));
+    expect(gaps.map((g) => [g.firstLineId, g.group.totalCents])).toEqual([['a', 60000]]);
+    expect(approvalState('Draft', vendorGroups(lines), EMPTY_APPROVAL)).toBe('needed');
+  });
+
+  it('does not let a respelling get round the 10% allowance (P-019)', () => {
+    // $1,000.00 approved for "Thor Labs"; a "Thorlabs" line of $499.00 makes the one vendor total $1,499.00.
+    const approved: ApprovalRecord = { sent: [], approved: [{ key: vendorKey('Thor Labs'), vendor: 'Thor Labs', cents: 100000, bought: false }] };
+    const lines = [l('a', 'Thor Labs', 100000), l('b', 'Thorlabs', 49900)];
+    const groups = vendorGroups(lines);
+    expect(groups.map((g) => [g.vendor, g.totalCents])).toEqual([['Thor Labs', 149900]]);
+    expect(approvalCoverage(groups, approved.approved)).toMatchObject([{ approvedCents: 100000, covered: false }]);
+    expect(approvalState('Approved', groups, approved)).toBe('changed');
+    expect(mustSendForApproval(approvalState('Approved', groups, approved))).toBe(true);
   });
 
   it('adds up the same vendor across lines, so a purchase cannot be split to avoid approval', () => {
@@ -120,7 +196,7 @@ describe('how vendor totals are counted (P-016)', () => {
   });
 
   it('counts a line with no vendor yet on its own, and lines with no amount as nothing', () => {
-    const groups = vendorGroups([l('a', '', 60000), l('b', '', 60000), l('c', 'Acme', null)]);
+    const groups = vendorGroups([l('a', '', 60000), l('b', '  ', 60000), l('c', 'Acme', null)]);
     expect(groups.map((g) => [g.key, g.totalCents, g.needsApproval])).toEqual([
       ['line:a', 60000, true],
       ['line:b', 60000, true],
@@ -203,6 +279,78 @@ describe('bought before approval (P-017)', () => {
       { key: 'acme', vendor: 'Acme', cents: 61000, bought: true },
       { key: 'borealis', vendor: 'Borealis', cents: 70000, bought: false }
     ]);
+  });
+
+  it('keeps a flag from an earlier round, even after the date is moved to the future', () => {
+    const first = groupsForApproval([{ ...l('a', 'Acme', 60000), date: '2026-10-01', hasReceipt: false }], '2026-10-12');
+    expect(first[0].bought).toBe(true);
+    // Returned at the approval step: what was sent stays on record, nothing is approved.
+    const returned: ApprovalRecord = { sent: first, approved: [] };
+    const again = groupsForApproval([{ ...l('a', 'Acme', 60000), date: '2026-12-01', hasReceipt: false }], '2026-10-14', returned);
+    expect(again).toEqual([{ key: 'acme', vendor: 'Acme', cents: 60000, bought: true }]);
+    // The flag stays after an approval too.
+    const afterApproval: ApprovalRecord = { sent: [], approved: [{ ...first[0], cents: 60000 }] };
+    expect(groupsForApproval([{ ...l('a', 'Acme', 90000), date: '2026-12-01', hasReceipt: false }], '2026-10-20', afterApproval)[0].bought).toBe(true);
+  });
+
+  it('flags only the vendor total that rose past what was approved, not one an earlier approval still covers', () => {
+    // Round 1 approved Acme at $1,000.00 and Borealis at $800.00, with quotes; both were bought afterwards.
+    const approved: ApprovalRecord = {
+      sent: [
+        { key: 'acme', vendor: 'Acme', cents: 100000, bought: false },
+        { key: 'borealis', vendor: 'Borealis', cents: 80000, bought: false }
+      ],
+      approved: [
+        { key: 'acme', vendor: 'Acme', cents: 100000, bought: false },
+        { key: 'borealis', vendor: 'Borealis', cents: 80000, bought: false }
+      ]
+    };
+    const bought = [
+      { ...l('a', 'Acme', 115000), date: '2026-10-15', hasReceipt: true },
+      { ...l('b', 'Borealis', 80000), date: '2026-10-15', hasReceipt: true }
+    ];
+    // Acme is now $1,150.00, more than 10% above $1,000.00, so it is sent again, and it was bought before that approval.
+    expect(groupsForApproval(bought, '2026-10-20', approved)).toEqual([
+      { key: 'acme', vendor: 'Acme', cents: 115000, bought: true },
+      { key: 'borealis', vendor: 'Borealis', cents: 80000, bought: false }
+    ]);
+    // Within the allowance, a receipt does not flag it either.
+    expect(groupsForApproval([{ ...bought[0], amountCents: 110000 }], '2026-10-20', approved)[0].bought).toBe(false);
+    // A vendor total that was never approved is flagged as before.
+    expect(groupsForApproval([{ ...l('c', 'Cedar', 60000), date: '2026-10-21', hasReceipt: true }], '2026-10-20', approved)[0].bought).toBe(true);
+  });
+
+  it('judges the first round against nothing approved', () => {
+    expect(groupsForApproval(lines, '2026-10-12', EMPTY_APPROVAL)).toEqual(groupsForApproval(lines, '2026-10-12'));
+  });
+});
+
+describe('the approver approves what was sent (P-019)', () => {
+  const sent = [
+    { key: 'acme', vendor: 'Acme', cents: 100000, bought: false },
+    { key: 'borealis', vendor: 'Borealis', cents: 60000, bought: true }
+  ];
+  const lines = [l('a', 'Acme', 70000), l('b', 'Acme', 30000), l('c', 'Borealis', 60000), l('d', 'Cedar', 1000)];
+
+  it('matches when the vendor totals that need approval are the ones sent, at the same amounts', () => {
+    expect(matchesWhatWasSent(lines, sent)).toBe(true);
+    // The same vendor spelt another way is the same vendor.
+    expect(matchesWhatWasSent([l('a', 'ACME.', 100000), l('c', 'Borealis', 60000)], sent)).toBe(true);
+    // A small vendor total that needs no approval does not matter.
+    expect(matchesWhatWasSent([...lines, l('e', 'Dune', 49999)], sent)).toBe(true);
+    expect(matchesWhatWasSent([l('d', 'Cedar', 1000)], [])).toBe(true);
+  });
+
+  it('does not match an amount changed, a vendor total added or one taken away', () => {
+    expect(matchesWhatWasSent([l('a', 'Acme', 70001), l('b', 'Acme', 30000), l('c', 'Borealis', 60000)], sent)).toBe(false);
+    expect(matchesWhatWasSent([...lines, l('e', 'Dune', 50000)], sent)).toBe(false);
+    expect(matchesWhatWasSent([l('a', 'Acme', 100000), l('c', 'Borealis', 49999)], sent)).toBe(false);
+    expect(matchesWhatWasSent([l('a', 'Acme Inc', 100000), l('c', 'Borealis', 60000)], sent)).toBe(false);
+    expect(matchesWhatWasSent(lines, [])).toBe(false);
+  });
+
+  it('does not match a record that lists a vendor twice', () => {
+    expect(matchesWhatWasSent([l('a', 'Acme', 100000)], [sent[0], sent[0]])).toBe(false);
   });
 });
 

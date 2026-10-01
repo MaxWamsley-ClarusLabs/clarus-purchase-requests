@@ -1,6 +1,7 @@
-import { blockingIssues, approvalStateOf, validateRequest, validationStage } from './validation';
+import { approvalGroupsToSend, blockingIssues, approvalStateOf, validateRequest, validationStage } from './validation';
 import { LineRef } from './duplicates';
 import { messages } from './messages';
+import { vendorKey } from './purchaseRules';
 import { ApprovalRecord, PurchaseLine, PurchaseRequest } from './types';
 import { file, line, quote, request } from '../testing/builders';
 
@@ -10,9 +11,10 @@ const check = (r: PurchaseRequest, lines: PurchaseLine[], others: LineRef[] = []
 
 // A vendor total of $600, so the request needs approval.
 const big = (overrides: Partial<PurchaseLine> = {}) => line({ id: 'big', amountCents: 60000, vendor: 'Acme Lab Supply', ...overrides });
+const ACME = vendorKey('Acme Lab Supply');
 const approved = (cents: number): ApprovalRecord => ({
-  sent: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents, bought: false }],
-  approved: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents, bought: false }]
+  sent: [{ key: ACME, vendor: 'Acme Lab Supply', cents, bought: false }],
+  approved: [{ key: ACME, vendor: 'Acme Lab Supply', cents, bought: false }]
 });
 
 describe('validateRequest: a request with no approval needed', () => {
@@ -28,6 +30,23 @@ describe('validateRequest: a request with no approval needed', () => {
   it('blocks missing row fields and zero amounts', () => {
     const issues = check(request(), [line({ date: '', vendor: '', description: ' ', category: '', amountCents: 0, paidBy: '' })]);
     expect(blockingIssues(issues).map((i) => i.field)).toEqual(['date', 'vendor', 'description', 'category', 'amount', 'paidBy']);
+  });
+
+  it('tells a missing date from one that is not a date between 2000 and 2099', () => {
+    const message = (date: string) => blockingIssues(check(request(), [line({ date })])).map((i) => [i.field, i.message]);
+    expect(message('')).toEqual([['date', messages.dateRequired]]);
+    expect(message('0026-10-14')).toEqual([['date', messages.dateInvalid]]);
+    expect(message('2026-02-30')).toEqual([['date', messages.dateInvalid]]);
+    expect(message('2026-10-14')).toEqual([]);
+    expect(messages.dateInvalid).toBe('Enter a date between 2000 and 2099, like 2026-10-14.');
+  });
+
+  it('tells an amount that is missing or not an amount from one that is zero or less', () => {
+    const message = (amountCents: number | null) => blockingIssues(check(request(), [line({ amountCents })])).map((i) => [i.field, i.message]);
+    expect(message(null)).toEqual([['amount', messages.amountRequired]]);
+    expect(message(0)).toEqual([['amount', messages.amountNotPositive]]);
+    expect(message(-100)).toEqual([['amount', messages.amountNotPositive]]);
+    expect(messages.amountRequired).toBe('Enter an amount like 45.10: digits, and at most two decimals.');
   });
 
   it('needs a description of the category for Other, and nothing extra for the other categories', () => {
@@ -87,6 +106,24 @@ describe('validateRequest: a request with no approval needed', () => {
     const cross = check(request(), [c], [elsewhere]);
     expect(cross.map((i) => i.message)).toEqual([messages.duplicateEntryElsewhere('PR-0031', 4)]);
     expect(blockingIssues(cross)).toEqual([]);
+  });
+
+  it('matches vendors for duplicates as the thresholds do (P-016)', () => {
+    const a = line({ id: 'a', rowNumber: 1, vendor: 'Digi-Key', files: [file({ fingerprint: 'r1' })] });
+    const b = line({ id: 'b', rowNumber: 2, vendor: 'DIGIKEY', files: [file({ id: 'f2', fingerprint: 'r2' })] });
+    expect(check(request(), [a, b]).map((i) => i.message)).toEqual([messages.duplicateEntryInRequest(2), messages.duplicateEntryInRequest(1)]);
+  });
+
+  it("compares a receipt a row holds itself even when it also points at another row's receipt", () => {
+    const a = line({ id: 'a', rowNumber: 1, files: [file({ fingerprint: 'shared' })] });
+    const b = line({ id: 'b', rowNumber: 2, vendor: 'Other vendor', files: [file({ id: 'f2', fingerprint: 'own' })], sameReceiptAsRow: 1 });
+    const elsewhere = {
+      line: line({ id: 'z', rowNumber: 4, vendor: 'Third', files: [file({ fingerprint: 'own' })] }),
+      requestNumber: 'PR-0031',
+      ownerEmail: ''
+    };
+    const warnings = check(request(), [a, b], [elsewhere]).filter((i) => i.severity === 'warning');
+    expect(warnings.map((i) => [i.rowNumber, i.message])).toEqual([[2, messages.duplicateFileElsewhere('PR-0031', 4)]]);
   });
 
   it('does not treat a quote file used on two rows as a duplicate', () => {
@@ -164,6 +201,26 @@ describe('validateRequest: after approval', () => {
     ];
     expect(validationStage(r, lines)).toBe('approval');
     expect(blockingIssues(check(r, lines)).map((i) => [i.rowNumber, i.field])).toEqual([[2, 'quote']]);
+  });
+
+  it('warns about bought before approval only for what an earlier approval does not cover (P-017)', () => {
+    const r = request({ status: 'Approved', approval: approved(60000) });
+    const lines = [
+      big({ files: [quote(), file()] }),
+      line({
+        id: 'new',
+        rowNumber: 2,
+        vendor: 'Borealis',
+        amountCents: 55000,
+        files: [quote({ id: 'q2', fingerprint: 'q2' }), file({ id: 'f2', fingerprint: 'b' })]
+      })
+    ];
+    const warnings = check(r, lines).filter((i) => i.severity === 'warning');
+    expect(warnings.map((i) => [i.rowNumber, i.message])).toEqual([[2, messages.boughtBeforeWarning('Borealis', '$550.00')]]);
+    expect(approvalGroupsToSend(r, lines, TODAY).map((g) => [g.vendor, g.bought])).toEqual([
+      ['Acme Lab Supply', false],
+      ['Borealis', true]
+    ]);
   });
 
   it('is checked as awaiting approval while it is with the approver', () => {

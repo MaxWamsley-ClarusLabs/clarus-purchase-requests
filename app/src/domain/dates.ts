@@ -1,9 +1,17 @@
 // Dates are plain YYYY-MM-DD text (D-043). Comparing such strings compares dates.
 
+/**
+ * The years a purchase date may be in. A check that the date was typed as
+ * meant: a date box typed as 101426 can hold year 0026 or 1014, not a policy limit.
+ */
+export const FIRST_YEAR = 2000;
+export const LAST_YEAR = 2099;
+
+/** A real calendar date, YYYY-MM-DD, in the years FIRST_YEAR to LAST_YEAR. */
 export function isValidIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [y, m, d] = value.split('-').map(Number);
-  if (m < 1 || m > 12 || d < 1) return false;
+  if (y < FIRST_YEAR || y > LAST_YEAR || m < 1 || m > 12 || d < 1) return false;
   const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
   return d <= daysInMonth;
 }

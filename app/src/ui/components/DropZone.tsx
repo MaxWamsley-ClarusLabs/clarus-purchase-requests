@@ -49,7 +49,7 @@ export function DropZone(props: { onFiles: (files: File[], kind: FileKind) => vo
       <div className="ctx-drop-icon">
         <Icon name="upload" size={22} />
       </div>
-      <div style={{ flex: 1 }}>
+      <div className="ctx-drop-body">
         <div className="ctx-drop-title">Drop receipts, invoices or quotes here</div>
         <div className="ctx-hint">Each file becomes a row. PDF, JPG, PNG or HEIC, up to 15 MB each.</div>
         <div className="ctx-drop-kind">
@@ -75,7 +75,7 @@ export function DropZone(props: { onFiles: (files: File[], kind: FileKind) => vo
           <div className="ctx-hint ctx-drop-note">A vendor total of {QUOTE_THRESHOLD_TEXT} or more needs a quote. Choose Quotes for a quote.</div>
         ) : null}
       </div>
-      <button className="ctx-btn ctx-btn-secondary" disabled={props.disabled} onClick={() => inputRef.current?.click()}>
+      <button type="button" className="ctx-btn ctx-btn-secondary" disabled={props.disabled} onClick={() => inputRef.current?.click()}>
         Choose files
       </button>
       <input

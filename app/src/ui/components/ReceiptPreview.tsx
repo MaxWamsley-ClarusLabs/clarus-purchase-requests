@@ -2,6 +2,7 @@ import * as React from 'react';
 import { canPreview, quoteFiles, receiptFiles, receiptSourceRow } from '../../domain/receipts';
 import { AttachedFile, PurchaseLine } from '../../domain/types';
 import { useApp } from '../AppContext';
+import { useDialogFocus } from '../hooks';
 import { Card } from './common';
 import { Icon } from './Icon';
 
@@ -86,21 +87,19 @@ export function ReceiptPreview(props: {
     } else caption = `Row ${line.rowNumber}${line.vendor ? `: ${line.vendor}` : ''}`;
   }
 
-  React.useEffect(() => {
-    if (!props.overlay) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') props.onHide();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [props.overlay, props.onHide]);
+  // Over the page, the panel takes the keyboard like a dialog: Escape closes it, and focus returns to the file clicked.
+  const ref = React.useRef<HTMLDivElement>(null);
+  useDialogFocus(ref, props.onHide, !!props.overlay);
 
   const label = current && current.file.kind === 'quote' ? 'Quote' : 'Receipt';
   const panel = (
     <div
+      ref={ref}
       className={props.overlay ? 'ctx-preview-overlay' : 'ctx-preview'}
       role={props.overlay ? 'dialog' : undefined}
+      aria-modal={props.overlay ? true : undefined}
       aria-label={props.overlay ? 'Files' : undefined}
+      tabIndex={props.overlay ? -1 : undefined}
     >
       <Card
         title="Files"

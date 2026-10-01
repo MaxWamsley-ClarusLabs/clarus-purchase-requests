@@ -1,7 +1,8 @@
 import * as React from 'react';
 import { NO_QUOTE_REASONS, NO_RECEIPT_REASONS } from '../../domain/defaults';
+import { FIRST_YEAR, LAST_YEAR, isValidIsoDate } from '../../domain/dates';
 import { centsToPlain, parseAmountToCents } from '../../domain/money';
-import { CATEGORIES, LineApproval, PAID_BY_OPTIONS, vendorGroups } from '../../domain/purchaseRules';
+import { CATEGORIES, LineApproval, PAID_BY_OPTIONS, categoryNeedsDescription, findCategory, vendorGroups } from '../../domain/purchaseRules';
 import { ACCEPT_ATTRIBUTE, hasReceipt, quoteFiles, receiptFiles, receiptSourceRow } from '../../domain/receipts';
 import { LINE_APPROVAL_DISPLAY } from '../../domain/statuses';
 import { messages } from '../../domain/messages';
@@ -9,8 +10,9 @@ import { suggestedFieldsText } from '../../domain/suggestions';
 import { FileKind, PurchaseLine, SuggestedField, TEXT_MAX_LENGTH } from '../../domain/types';
 import { Issue, LineField, ValidationStage, issueForCell, issuesForLine } from '../../domain/validation';
 import { LineChanges } from '../../data/PurchaseDataService';
+import { PASTE_COLUMNS, PasteColumn, parseClipboardTable, pasteWarning, planPaste } from '../pasteParse';
 import { Icon } from './Icon';
-import { Badge, IssueLine, Tag } from './common';
+import { Badge, FileChip, FullTextSelect, IssueLine, Tag } from './common';
 
 interface Props {
   lines: PurchaseLine[];
@@ -34,12 +36,18 @@ interface Props {
   readingLineIds: ReadonlySet<string>;
   /** Confirms a row's suggested values (travel D-078). */
   onConfirm: (lineId: string) => void;
+  /** Tells the employee about part of a paste that was not used. */
+  onWarning: (text: string) => void;
 }
 
 const SUGGESTED_TITLE = 'Filled in by the app. Check it against the receipt.';
 
 /** About as tall as the open row menu: a menu that would not fit below its button opens above it. */
 const MENU_HEIGHT_PX = 340;
+
+/** The dates the date box offers (`isValidIsoDate` accepts no others). */
+const MIN_DATE = `${FIRST_YEAR}-01-01`;
+const MAX_DATE = `${LAST_YEAR}-12-31`;
 
 /** Where an open row menu sits: fixed to the window, so the grid's own scrolling cannot cut it off. */
 interface OpenMenu {
@@ -49,42 +57,48 @@ interface OpenMenu {
   bottom?: number;
 }
 
-// Columns that take typed or chosen values, in grid order. Used for Enter,
-// Ctrl+D and multi-row paste.
-type EditableColumn = 'date' | 'vendor' | 'description' | 'category' | 'amount' | 'paidBy';
-const EDITABLE: EditableColumn[] = ['date', 'vendor', 'description', 'category', 'amount', 'paidBy'];
-
-/** Turns pasted or copied text into a change for one cell, or null if it does not fit. */
-function valueToChange(column: EditableColumn, text: string): LineChanges | null {
-  const value = text.trim();
-  switch (column) {
-    case 'date':
-      return /^\d{4}-\d{2}-\d{2}$/.test(value) ? { date: value } : null;
-    case 'amount': {
-      const cents = parseAmountToCents(value);
-      return cents === null ? null : { amountCents: cents };
-    }
-    case 'category': {
-      const c = CATEGORIES.find((x) => x.label.toLowerCase() === value.toLowerCase() || x.id === value);
-      return c ? { category: c.id } : null;
-    }
-    case 'paidBy': {
-      const p = PAID_BY_OPTIONS.find((x) => [x.label, x.shortLabel, x.id].some((v) => v.toLowerCase() === value.toLowerCase()));
-      return p ? { paidBy: p.id } : null;
-    }
-    case 'vendor':
-      return { vendor: value };
-    case 'description':
-      return { description: value };
-  }
+/** The menu's place next to its button: below it, or above it near the bottom of the window. */
+function placeMenu(lineId: string, button: HTMLElement): OpenMenu {
+  const rect = button.getBoundingClientRect();
+  const below = window.innerHeight - rect.bottom;
+  const opensUp = below < MENU_HEIGHT_PX && rect.top > below;
+  return {
+    lineId,
+    right: Math.max(8, window.innerWidth - rect.right),
+    ...(opensUp ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 })
+  };
 }
 
-function cellValue(line: PurchaseLine, column: EditableColumn): string {
+/** Whether the button can still be seen: in the window, and not scrolled out of the grid's own area. */
+function inView(button: HTMLElement): boolean {
+  const rect = button.getBoundingClientRect();
+  const area = button.closest('.ctx-grid-wrap')?.getBoundingClientRect();
+  const inWindow = rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
+  return inWindow && (!area || (rect.right > area.left && rect.left < area.right));
+}
+
+// Columns that take typed or chosen values, in grid order. Used for Enter,
+// Ctrl+D and pasting from a spreadsheet (pasteParse.ts).
+type EditableColumn = PasteColumn;
+const EDITABLE = PASTE_COLUMNS;
+
+/** The change that copies a cell from the row above (Ctrl+D), or null when there is nothing to copy. */
+function copyFromAbove(column: EditableColumn, above: PurchaseLine): LineChanges | null {
   switch (column) {
+    case 'date':
+      return above.date ? { date: above.date } : null;
     case 'amount':
-      return line.amountCents === null ? '' : centsToPlain(line.amountCents);
-    default:
-      return line[column];
+      return above.amountCents === null ? null : { amountCents: above.amountCents };
+    case 'category':
+      if (!above.category) return null;
+      // A category the employee describes ("Other") means nothing without its description, so it is copied with it.
+      return categoryNeedsDescription(above.category) ? { category: above.category, categoryOther: above.categoryOther } : { category: above.category };
+    case 'paidBy':
+      return above.paidBy ? { paidBy: above.paidBy } : null;
+    case 'vendor':
+      return { vendor: above.vendor };
+    case 'description':
+      return { description: above.description };
   }
 }
 
@@ -108,37 +122,70 @@ function quoteReasonRows(lines: readonly PurchaseLine[], stage: ValidationStage)
   return rows;
 }
 
+/** Copies of a record without one key. */
+function without(record: Record<string, string>, key: string): Record<string, string> {
+  if (!(key in record)) return record;
+  const next = { ...record };
+  delete next[key];
+  return next;
+}
+
 export function PurchaseGrid(props: Props): React.ReactElement {
   const { lines, issues, readOnly } = props;
   const tableRef = React.useRef<HTMLTableElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+  // The button that opened the row menu, which gets the focus back when the menu closes.
+  const menuButton = React.useRef<HTMLElement | null>(null);
   const [menu, setMenu] = React.useState<OpenMenu | null>(null);
   const menuFor = menu ? menu.lineId : null;
   const setMenuFor = (lineId: string | null, button?: HTMLElement) => {
     if (lineId === null || !button) return setMenu(null);
-    const rect = button.getBoundingClientRect();
-    const below = window.innerHeight - rect.bottom;
-    const opensUp = below < MENU_HEIGHT_PX && rect.top > below;
-    setMenu({
-      lineId,
-      right: Math.max(8, window.innerWidth - rect.right),
-      ...(opensUp ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 })
-    });
+    menuButton.current = button;
+    setMenu(placeMenu(lineId, button));
+  };
+  /** Closes the row menu after a choice in it, and gives the focus back to its button. */
+  const closeMenu = () => {
+    setMenu(null);
+    menuButton.current?.focus();
   };
   // Amount text as typed, so a half-typed or invalid amount is not lost.
   const [amountText, setAmountText] = React.useState<Record<string, string>>({});
+  // A date as typed in the date box. A date the app does not accept (such as year 0026, which a
+  // date box allows) is not stored: while it is typed the last good date stays, and once the
+  // box is left the date is emptied and the cell says why.
+  const [dateText, setDateText] = React.useState<Record<string, string>>({});
   const askQuoteReason = quoteReasonRows(lines, props.stage);
+
+  // The keyboard goes into the menu as soon as it shows, so its choices can be reached with Tab.
+  React.useLayoutEffect(() => {
+    if (menuFor) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
+  }, [menuFor]);
 
   React.useEffect(() => {
     if (!menuFor) return;
     const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      setMenu(null);
+      menuButton.current?.focus();
+    };
+    // Scrolling the page or the grid moves the row: the menu follows its button, and closes once
+    // the button is out of sight. (The browser also scrolls a clicked button fully into view.)
+    const onScroll = () => {
+      const button = menuButton.current;
+      if (!button || !inView(button)) close();
+      else setMenu((current) => (current ? placeMenu(current.lineId, button) : current));
+    };
     window.addEventListener('click', close);
     window.addEventListener('resize', close);
-    // Scrolling the page or the grid moves the row away from the menu, so the menu closes.
-    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, true);
     return () => {
       window.removeEventListener('click', close);
       window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [menuFor]);
 
@@ -154,48 +201,61 @@ export function PurchaseGrid(props: Props): React.ReactElement {
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && rowIndex > 0) {
       e.preventDefault();
       const above = lines[rowIndex - 1];
-      const change = valueToChange(column, cellValue(above, column));
-      if (change) {
-        if (column === 'amount') setAmountText((t) => ({ ...t, [lines[rowIndex].id]: cellValue(above, column) }));
-        // "Other" is meaningless without its description, so it is copied with it.
-        props.onChange(lines[rowIndex].id, column === 'category' && above.category === 'other' ? { ...change, categoryOther: above.categoryOther } : change);
-      }
+      const lineId = lines[rowIndex].id;
+      const change = copyFromAbove(column, above);
+      if (!change) return;
+      if (column === 'amount') setAmountText((t) => without(t, lineId));
+      if (column === 'date') setDateText((t) => without(t, lineId));
+      props.onChange(lineId, change);
     }
   };
 
-  // Pasting several rows (or columns) from a spreadsheet fills the cells below and to the right.
+  // Pasting from a spreadsheet fills the cells below and to the right (pasteParse.ts). One
+  // plain cell pasted into a box where text is typed is left to the browser, which puts it at
+  // the cursor; a date box or a drop-down cannot take pasted text itself, so the app reads it.
   const onPaste = (e: React.ClipboardEvent, rowIndex: number, column: EditableColumn) => {
     const text = e.clipboardData.getData('text/plain');
-    if (!/[\t\n]/.test(text.trim())) return;
+    const table = parseClipboardTable(text);
+    if (table.length === 0) return;
+    const typedBox = column === 'vendor' || column === 'description' || column === 'amount';
+    const plainOneCell = table.length === 1 && table[0].length === 1 && !/[\t\n\r]/.test(text.replace(/\r?\n$/, ''));
+    if (typedBox && plainOneCell) return;
     e.preventDefault();
-    const rows = text
-      .replace(/\r/g, '')
-      .replace(/\n$/, '')
-      .split('\n')
-      .map((r) => r.split('\t'));
-    const startCol = EDITABLE.indexOf(column);
-    rows.forEach((cells, r) => {
-      const line = lines[rowIndex + r];
-      if (!line) return;
-      let changes: LineChanges = {};
-      cells.forEach((cellText, c) => {
-        const col = EDITABLE[startCol + c];
-        if (!col) return;
-        const change = valueToChange(col, cellText);
-        if (change) changes = { ...changes, ...change };
-        if (col === 'amount') setAmountText((t) => ({ ...t, [line.id]: cellText.trim() }));
-      });
-      if (Object.keys(changes).length > 0) props.onChange(line.id, changes);
-    });
+    const plan = planPaste(
+      table,
+      lines.map((l) => l.id),
+      rowIndex,
+      EDITABLE.indexOf(column)
+    );
+    for (const row of plan.rows) {
+      if (row.amountText !== undefined) {
+        // An amount that is not an amount shows as pasted, with the error; a good one shows as stored.
+        const pasted = row.amountText;
+        setAmountText((t) => (row.changes.amountCents === null ? { ...t, [row.lineId]: pasted } : without(t, row.lineId)));
+      }
+      if (row.changes.date !== undefined) setDateText((t) => without(t, row.lineId));
+      props.onChange(row.lineId, row.changes);
+    }
+    const warning = pasteWarning(plan);
+    if (warning) props.onWarning(warning);
   };
+
+  /** The date typed in a row's date box is one the app does not accept. */
+  const badDateTyped = (line: PurchaseLine): boolean => {
+    const typed = dateText[line.id];
+    return typed !== undefined && typed !== '' && !isValidIsoDate(typed);
+  };
+  // A date the app does not accept is not stored, so the check finds the date empty; the cell says why instead.
+  const issueShown = (line: PurchaseLine, issue: Issue | undefined): Issue | undefined =>
+    issue && issue.field === 'date' && !line.date && badDateTyped(line) ? { ...issue, message: messages.dateInvalid } : issue;
+  const issueFor = (line: PurchaseLine, field: LineField) => issueShown(line, issueForCell(issues, line.id, field));
 
   const isSuggested = (line: PurchaseLine, field: LineField) => line.suggested.includes(field as SuggestedField);
   const cellClass = (line: PurchaseLine, field: LineField, extra = '') => {
-    const issue = issueForCell(issues, line.id, field);
+    const issue = issueFor(line, field);
     return `ctx-cell ${extra} ${isSuggested(line, field) ? 'suggested' : ''} ${issue ? issue.severity : ''}`;
   };
-  const cellTitle = (line: PurchaseLine, field: LineField) =>
-    issueForCell(issues, line.id, field)?.message ?? (isSuggested(line, field) ? SUGGESTED_TITLE : undefined);
+  const cellTitle = (line: PurchaseLine, field: LineField) => issueFor(line, field)?.message ?? (isSuggested(line, field) ? SUGGESTED_TITLE : undefined);
   const common = (rowIndex: number, column: EditableColumn) => ({
     'data-row': rowIndex,
     'data-col': column,
@@ -240,21 +300,25 @@ export function PurchaseGrid(props: Props): React.ReactElement {
         <tbody>
           {lines.map((line, i) => {
             // Unconfirmed suggestions get their own note with a Confirm button, below.
-            const rowIssues = issuesForLine(issues, line.id).filter((issue) => issue.field !== 'suggested');
+            const rowIssues = issuesForLine(issues, line.id)
+              .filter((issue) => issue.field !== 'suggested')
+              .map((issue) => issueShown(line, issue) as Issue);
             const showSuggestNote = line.suggested.length > 0 && !readOnly;
             const source = receiptSourceRow(line, lines);
             const shared = line.sameReceiptAsRow !== null;
             const receipts = receiptFiles(line);
             const quotes = quoteFiles(line);
-            const receiptIssue = issueForCell(issues, line.id, 'receipt');
-            const quoteIssue = issueForCell(issues, line.id, 'quote');
+            const receiptIssue = issueFor(line, 'receipt');
+            const quoteIssue = issueFor(line, 'quote');
             const askReceiptReason = props.stage === 'submit' && !hasReceipt(line, lines);
             const showQuoteReason = askQuoteReason.has(line.id) && (!readOnly || line.noQuoteReason.trim() !== '');
             const showReceiptReason = askReceiptReason && (!readOnly || line.noReceiptReason.trim() !== '');
             const approval = props.approvals.get(line.id);
             const approvalDisplay = approval ? LINE_APPROVAL_DISPLAY[approval.status] : undefined;
             const selected = props.selectedLineId === line.id;
+            // A row either holds its own receipt or uses another row's (travel D-038), so a row with its own receipt is not offered the choice.
             const otherRowsWithReceipts = lines.filter((l) => l.id !== line.id && l.sameReceiptAsRow === null && receiptFiles(l).length > 0);
+            const category = findCategory(line.category);
             return (
               <React.Fragment key={line.id}>
                 <tr
@@ -266,6 +330,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                     <div className="ctx-files-cell">
                       {shared ? (
                         <button
+                          type="button"
                           className="ctx-receipt-chip shared"
                           title={source ? `Uses the receipt on row ${line.sameReceiptAsRow}` : receiptIssue?.message}
                           onClick={() => props.onOpenFile(line.id, '')}
@@ -274,18 +339,10 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                           <span>Same as row {line.sameReceiptAsRow}</span>
                         </button>
                       ) : (
-                        receipts.map((f) => (
-                          <button key={f.id} className="ctx-receipt-chip" title={f.fileName} onClick={() => props.onOpenFile(line.id, f.id)}>
-                            <Icon name="file" size={13} />
-                            <span>{f.fileName}</span>
-                          </button>
-                        ))
+                        receipts.map((f) => <FileChip key={f.id} file={f} onOpen={() => props.onOpenFile(line.id, f.id)} />)
                       )}
                       {quotes.map((f) => (
-                        <button key={f.id} className="ctx-receipt-chip quote" title={`Quote: ${f.fileName}`} onClick={() => props.onOpenFile(line.id, f.id)}>
-                          <strong>Quote</strong>
-                          <span>{f.fileName}</span>
-                        </button>
+                        <FileChip key={f.id} file={f} onOpen={() => props.onOpenFile(line.id, f.id)} />
                       ))}
                       {props.readingLineIds.has(line.id) ? (
                         <span className="ctx-reading" role="status">
@@ -325,11 +382,22 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                   <td>
                     <input
                       type="date"
+                      min={MIN_DATE}
+                      max={MAX_DATE}
                       className={cellClass(line, 'date')}
                       title={cellTitle(line, 'date')}
                       aria-label={`Row ${line.rowNumber} date`}
-                      value={line.date}
-                      onChange={(e) => props.onChange(line.id, { date: e.target.value })}
+                      value={dateText[line.id] ?? line.date}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setDateText((t) => ({ ...t, [line.id]: value }));
+                        if (value === '' || isValidIsoDate(value)) props.onChange(line.id, { date: value });
+                      }}
+                      onBlur={(e) => {
+                        const value = e.currentTarget.value;
+                        if (value === '' || isValidIsoDate(value)) setDateText((t) => without(t, line.id));
+                        else if (line.date !== '') props.onChange(line.id, { date: '' });
+                      }}
                       {...common(i, 'date')}
                     />
                   </td>
@@ -357,8 +425,10 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                     />
                   </td>
                   <td>
-                    <select
-                      className={cellClass(line, 'category')}
+                    <FullTextSelect
+                      boxClassName={cellClass(line, 'category')}
+                      shownText={category ? category.label : 'Choose'}
+                      nothingChosen={!category}
                       title={cellTitle(line, 'category')}
                       aria-label={`Row ${line.rowNumber} category`}
                       value={line.category}
@@ -371,8 +441,8 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                           {c.label}
                         </option>
                       ))}
-                    </select>
-                    {line.category === 'other' ? (
+                    </FullTextSelect>
+                    {categoryNeedsDescription(line.category) ? (
                       <input
                         className={cellClass(line, 'categoryOther', 'category-other')}
                         title={cellTitle(line, 'categoryOther')}
@@ -402,13 +472,9 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                         setAmountText((t) => ({ ...t, [line.id]: text }));
                         props.onChange(line.id, { amountCents: parseAmountToCents(text) });
                       }}
-                      onBlur={() =>
-                        setAmountText((t) => {
-                          const next = { ...t };
-                          if (line.amountCents !== null) delete next[line.id];
-                          return next;
-                        })
-                      }
+                      onBlur={() => {
+                        if (line.amountCents !== null) setAmountText((t) => without(t, line.id));
+                      }}
                       {...common(i, 'amount')}
                     />
                   </td>
@@ -441,7 +507,8 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                     {readOnly ? null : (
                       <div className="ctx-menu-wrap">
                         <button
-                          className="ctx-btn ctx-btn-ghost ctx-btn-small"
+                          type="button"
+                          className="ctx-btn ctx-btn-ghost ctx-btn-small ctx-row-menu-button"
                           aria-label={`Row ${line.rowNumber} menu`}
                           aria-haspopup="menu"
                           aria-expanded={menuFor === line.id}
@@ -454,8 +521,10 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                         </button>
                         {menu && menu.lineId === line.id ? (
                           <div
+                            ref={menuRef}
                             className="ctx-menu"
                             role="menu"
+                            aria-label={`Row ${line.rowNumber}`}
                             style={{ right: menu.right, top: menu.top, bottom: menu.bottom }}
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -465,7 +534,16 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                                 ['quote', 'Attach a quote']
                               ] as [FileKind, string][]
                             ).map(([kind, label]) => (
-                              <label key={kind} role="menuitem">
+                              <label
+                                key={kind}
+                                role="menuitem"
+                                tabIndex={0}
+                                onKeyDown={(e) => {
+                                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                                  e.preventDefault();
+                                  e.currentTarget.querySelector('input')?.click();
+                                }}
+                              >
                                 <Icon name="plus" size={15} />
                                 {label}
                                 <input
@@ -475,53 +553,57 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                                   onChange={(e) => {
                                     const f = e.target.files?.[0];
                                     if (f) props.onAddFile(line.id, f, kind);
-                                    setMenuFor(null);
+                                    closeMenu();
                                   }}
                                 />
                               </label>
                             ))}
-                            <div style={{ padding: '6px 10px' }}>
-                              <div className="ctx-label" style={{ marginBottom: 4 }}>
-                                Same receipt as row
+                            {receipts.length === 0 ? (
+                              <div style={{ padding: '6px 10px' }}>
+                                <div className="ctx-label" style={{ marginBottom: 4 }}>
+                                  Same receipt as row
+                                </div>
+                                <select
+                                  className="ctx-select"
+                                  aria-label={`Row ${line.rowNumber} same receipt as row`}
+                                  value={line.sameReceiptAsRow ?? ''}
+                                  onChange={(e) => {
+                                    props.onChange(line.id, { sameReceiptAsRow: e.target.value === '' ? null : Number(e.target.value) });
+                                    closeMenu();
+                                  }}
+                                >
+                                  <option value="">No, this row has its own</option>
+                                  {otherRowsWithReceipts.map((l) => (
+                                    <option key={l.id} value={l.rowNumber}>
+                                      Row {l.rowNumber}: {l.vendor || receiptFiles(l)[0].fileName}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
-                              <select
-                                className="ctx-select"
-                                aria-label={`Row ${line.rowNumber} same receipt as row`}
-                                value={line.sameReceiptAsRow ?? ''}
-                                onChange={(e) => {
-                                  props.onChange(line.id, { sameReceiptAsRow: e.target.value === '' ? null : Number(e.target.value) });
-                                  setMenuFor(null);
-                                }}
-                              >
-                                <option value="">No, this row has its own</option>
-                                {otherRowsWithReceipts.map((l) => (
-                                  <option key={l.id} value={l.rowNumber}>
-                                    Row {l.rowNumber}: {l.vendor || receiptFiles(l)[0].fileName}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
+                            ) : null}
                             {line.files.length > 0 ? <hr /> : null}
                             {line.files.map((f) => (
                               <button
+                                type="button"
                                 key={f.id}
                                 role="menuitem"
                                 onClick={() => {
                                   props.onRemoveFile(line.id, f.id);
-                                  setMenuFor(null);
+                                  closeMenu();
                                 }}
                               >
                                 <Icon name="x" size={15} />
-                                Remove {f.fileName}
+                                Remove the {f.kind === 'quote' ? 'quote' : 'receipt'} {f.fileName}
                               </button>
                             ))}
                             <hr />
                             <button
+                              type="button"
                               role="menuitem"
                               className="danger"
                               onClick={() => {
                                 props.onDelete(line.id);
-                                setMenuFor(null);
+                                closeMenu();
                               }}
                             >
                               <Icon name="trash" size={15} />
@@ -540,6 +622,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                         <div className="ctx-suggest-note">
                           <span>{messages.suggestionsNotConfirmed(suggestedFieldsText(line.suggested))}</span>
                           <button
+                            type="button"
                             className="ctx-btn ctx-btn-secondary ctx-btn-small"
                             aria-label={`Confirm row ${line.rowNumber}`}
                             onClick={(e) => {

@@ -1,18 +1,28 @@
 // Amounts are handled in whole cents so totals always agree with rows (D-043).
 
 /**
+ * The largest amount the app accepts, $10,000,000.00. Not a policy limit: a
+ * check that an amount was typed as meant (a slipped key, a pasted account
+ * number).
+ */
+export const MAX_AMOUNT_CENTS = 1000000000;
+
+/**
  * Reads an amount typed by a person, such as "452.3", "$1,234.56" or "12".
  * Returns whole cents, or null if the text is not a valid amount.
- * Negative amounts and more than two decimals are not valid.
+ * A comma is accepted only between groups of three digits ("1,234.56"), so a
+ * decimal comma ("12,50") is refused rather than read as 1,250.00. Negative
+ * amounts, more than two decimals and amounts over MAX_AMOUNT_CENTS are not valid.
  */
 export function parseAmountToCents(input: string): number | null {
-  const text = input.trim().replace(/^\$/, '').replace(/,/g, '').trim();
-  if (!/^\d+(\.\d{0,2})?$/.test(text) && !/^\.\d{1,2}$/.test(text)) {
-    return null;
-  }
-  const [whole, fraction = ''] = text.split('.');
+  const text = input.trim().replace(/^\$\s*/, '');
+  let plain: string;
+  if (/^\d{1,3}(,\d{3})+(\.\d{0,2})?$/.test(text)) plain = text.replace(/,/g, '');
+  else if (/^\d+(\.\d{0,2})?$/.test(text) || /^\.\d{1,2}$/.test(text)) plain = text;
+  else return null;
+  const [whole, fraction = ''] = plain.split('.');
   const cents = Number(whole || '0') * 100 + Number((fraction + '00').slice(0, 2));
-  return Number.isSafeInteger(cents) ? cents : null;
+  return Number.isSafeInteger(cents) && cents <= MAX_AMOUNT_CENTS ? cents : null;
 }
 
 /** "$1,234.56" for display. */

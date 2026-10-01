@@ -60,7 +60,7 @@ export interface ApprovalEmailInput {
   totals: Totals;
   submitterName: string;
   submitterEmail: string;
-  /** 1 for the first time it is sent for approval, 2 after a return, and so on. */
+  /** 1 for the first time it is sent for approval, 2 the next time (after a return, or after a rise past what was approved), and so on. */
   round: number;
   sentOn: string;
   /** The vendor totals that need approval, flagged when already bought (P-017). */
@@ -78,7 +78,7 @@ export function buildApprovalEmailSummary(input: ApprovalEmailInput): string {
   const out: string[] = [];
   out.push(`Requested by: ${input.submitterName} (${input.submitterEmail})`);
   header(out, request, lines);
-  out.push(`Sent for approval: ${input.sentOn}${input.round > 1 ? ` (round ${input.round}, after a return)` : ''}`);
+  out.push(`Sent for approval: ${input.sentOn}${input.round > 1 ? ` (round ${input.round}, sent again)` : ''}`);
   out.push('');
   out.push(`Needs your approval (vendor totals of ${APPROVAL_THRESHOLD_TEXT} or more):`);
   for (const group of input.groups) {

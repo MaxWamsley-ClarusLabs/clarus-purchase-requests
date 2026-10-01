@@ -3,7 +3,8 @@ import { formatCents } from '../../domain/money';
 import { REQUEST_STATUS_DISPLAY, isEditable } from '../../domain/statuses';
 import { PurchaseRequest } from '../../domain/types';
 import { useApp } from '../AppContext';
-import { Badge, Card, HeaderCard, Tag } from '../components/common';
+import { useMountedRef } from '../hooks';
+import { Badge, Card, DateTime, HeaderCard, Tag, openRowProps } from '../components/common';
 import { Icon } from '../components/Icon';
 
 /** Who sent a request back, from the step the return came at (docs/DATA_MODEL.md). */
@@ -15,9 +16,15 @@ export function MyRequestsPage(): React.ReactElement {
   const app = useApp();
   const [requests, setRequests] = React.useState<PurchaseRequest[] | null>(null);
   const [creating, setCreating] = React.useState(false);
+  const mounted = useMountedRef();
 
   React.useEffect(() => {
-    app.service.listMyRequests().then(setRequests).catch(app.reportError);
+    app.service
+      .listMyRequests()
+      .then((mine) => {
+        if (mounted.current) setRequests(mine);
+      })
+      .catch(app.reportError);
   }, [app.service]);
 
   const create = async (): Promise<void> => {
@@ -26,7 +33,7 @@ export function MyRequestsPage(): React.ReactElement {
       const request = await app.service.createRequest();
       app.navigate({ name: 'request', requestId: request.id, step: 'details' });
     } catch (e) {
-      setCreating(false);
+      if (mounted.current) setCreating(false);
       app.reportError(e);
     }
   };
@@ -93,41 +100,45 @@ export function MyRequestsPage(): React.ReactElement {
             Click New request to start your first purchase request.
           </div>
         ) : (
-          <table className="ctx-table">
-            <thead>
-              <tr>
-                <th>Request</th>
-                <th>Business purpose</th>
-                <th>Status</th>
-                <th className="num">To reimburse</th>
-                <th className="num">Request total</th>
-                <th>Last change</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((r) => {
-                const s = REQUEST_STATUS_DISPLAY[r.status];
-                return (
-                  <tr key={r.id} className="clickable" onClick={() => open(r)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && open(r)}>
-                    <td className="ctx-strong nowrap">{r.requestNumber}</td>
-                    <td>{r.businessPurpose || <span className="ctx-muted">Untitled draft</span>}</td>
-                    <td>
-                      <Badge tone={s.tone}>{s.label}</Badge>
-                      {r.boughtBeforeApproval ? (
-                        <>
-                          {' '}
-                          <Tag>Bought before approval</Tag>
-                        </>
-                      ) : null}
-                    </td>
-                    <td className="num">{formatCents(r.totalReimburseCents)}</td>
-                    <td className="num">{formatCents(r.totalRequestCents)}</td>
-                    <td className="ctx-muted">{r.lastChanged}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="ctx-table-wrap">
+            <table className="ctx-table">
+              <thead>
+                <tr>
+                  <th>Request</th>
+                  <th>Business purpose</th>
+                  <th>Status</th>
+                  <th className="num">To reimburse</th>
+                  <th className="num">Request total</th>
+                  <th>Last change</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.map((r) => {
+                  const s = REQUEST_STATUS_DISPLAY[r.status];
+                  return (
+                    <tr key={r.id} {...openRowProps(`Open ${r.requestNumber}`, () => open(r))}>
+                      <td className="ctx-strong nowrap">{r.requestNumber}</td>
+                      <td>{r.businessPurpose || <span className="ctx-muted">Untitled draft</span>}</td>
+                      <td>
+                        <Badge tone={s.tone}>{s.label}</Badge>
+                        {r.boughtBeforeApproval ? (
+                          <>
+                            {' '}
+                            <Tag>Bought before approval</Tag>
+                          </>
+                        ) : null}
+                      </td>
+                      <td className="num">{formatCents(r.totalReimburseCents)}</td>
+                      <td className="num">{formatCents(r.totalRequestCents)}</td>
+                      <td className="ctx-muted">
+                        <DateTime value={r.lastChanged} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </>

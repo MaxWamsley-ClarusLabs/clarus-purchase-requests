@@ -1,4 +1,6 @@
 import {
+  NO_QUOTE_REASONS,
+  NO_RECEIPT_REASONS,
   defaultPaidBy,
   departmentSuggestions,
   knownVendorName,
@@ -7,7 +9,7 @@ import {
   suggestPaidByForVendor,
   vendorSuggestions
 } from './defaults';
-import { vendorKey } from './purchaseRules';
+import { NO_QUOTE_REASONS as POLICY_NO_QUOTE_REASONS, NO_RECEIPT_REASONS as POLICY_NO_RECEIPT_REASONS, vendorKey } from './purchaseRules';
 import { line, request } from '../testing/builders';
 
 describe('defaults (travel D-057, P-023)', () => {
@@ -29,22 +31,31 @@ describe('defaults (travel D-057, P-023)', () => {
   });
 
   it('matches vendors whatever their capitals, spaces and punctuation', () => {
-    expect(vendorKey(" Joe's  Diner, Inc. ")).toBe('joes diner inc');
+    expect(vendorKey(" Joe's  Diner, Inc. ")).toBe('joesdinerinc');
     const history = [line({ id: 'a', vendor: 'Blue Fern Web Co.', category: 'advertising', paidBy: 'employee' })];
     expect(suggestCategoryForVendor('BLUE FERN WEB CO', history)).toBe('advertising');
     expect(suggestPaidByForVendor('blue fern web co', history)).toBe('employee');
+    expect(suggestCategoryForVendor('BlueFern WebCo', history)).toBe('advertising');
     expect(knownVendorName('BLUE FERN WEB CO', history)).toBe('Blue Fern Web Co.');
     expect(knownVendorName('Other Co', history)).toBeUndefined();
   });
 
-  it('lists vendors most used first, without duplicates', () => {
+  it('lists vendors most used first, without duplicates, counting the spellings of one vendor together', () => {
     const history = [
       line({ id: 'a', vendor: 'Acme' }),
       line({ id: 'b', vendor: 'Borealis' }),
       line({ id: 'c', vendor: 'acme' }),
-      line({ id: 'd', vendor: '' })
+      line({ id: 'd', vendor: '' }),
+      line({ id: 'e', vendor: 'Digi-Key' }),
+      line({ id: 'f', vendor: 'DigiKey' }),
+      line({ id: 'g', vendor: 'DIGI KEY' })
     ];
-    expect(vendorSuggestions(history)).toEqual(['Acme', 'Borealis']);
+    expect(vendorSuggestions(history)).toEqual(['Digi-Key', 'Acme', 'Borealis']);
+  });
+
+  it('offers the canned reasons from the policy file (P-004)', () => {
+    expect(NO_QUOTE_REASONS).toBe(POLICY_NO_QUOTE_REASONS);
+    expect(NO_RECEIPT_REASONS).toBe(POLICY_NO_RECEIPT_REASONS);
   });
 
   it('suggests departments most used first, and fills a new request from the latest one (P-022)', () => {

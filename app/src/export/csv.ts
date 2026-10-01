@@ -1,15 +1,19 @@
 // The purchases CSV in each request folder (travel D-045, D-048; P-009, P-026).
 // UTF-8 with a byte-order mark, commas, CRLF line endings, one header row,
 // YYYY-MM-DD dates and plain two-decimal amounts. The suggested QuickBooks
-// account is UNVERIFIED, TO CONFIRM WITH MAX (purchaseRules.ts, P-025).
+// account is UNVERIFIED, TO CONFIRM WITH MAX (purchaseRules.ts, P-025), and
+// its column header says so.
 
 import { dateRangeText } from '../domain/dates';
 import { centsToPlain } from '../domain/money';
 import { fileNamesForRow } from '../domain/naming';
 import { LINE_APPROVAL_DISPLAY } from '../domain/statuses';
-import { categoryText, findCategory, findPaidBy, isSelfApproved, lineApprovals } from '../domain/purchaseRules';
+import { QUICKBOOKS_MAPPING_STATUS, categoryText, findCategory, findPaidBy, isSelfApproved, lineApprovals } from '../domain/purchaseRules';
 import { Issue } from '../domain/validation';
 import { PurchaseLine, PurchaseRequest } from '../domain/types';
+
+/** "Suggested QuickBooks account (Unverified, to confirm with Max)": the mapping's status is part of the header wherever the CSV is opened. */
+export const SUGGESTED_ACCOUNT_COLUMN = `Suggested QuickBooks account (${QUICKBOOKS_MAPPING_STATUS})` as const;
 
 // Purchase columns come first so the useful part is visible when the file is
 // opened in Excel; the request columns repeat on every row after them (travel D-048).
@@ -21,7 +25,7 @@ export const CSV_COLUMNS = [
   'What was bought and why',
   'Category',
   'Category confirmed by',
-  'Suggested QuickBooks account',
+  SUGGESTED_ACCOUNT_COLUMN,
   'Amount',
   'Who paid',
   'Reimbursable',
@@ -94,7 +98,7 @@ export function buildPurchasesCsv(input: CsvInput): string {
       'What was bought and why': line.description,
       Category: categoryText(line.category, line.categoryOther),
       'Category confirmed by': line.categoryConfirmedBy,
-      'Suggested QuickBooks account': category ? category.suggestedAccount : '',
+      [SUGGESTED_ACCOUNT_COLUMN]: category ? category.suggestedAccount : '',
       Amount: line.amountCents === null ? '' : centsToPlain(line.amountCents),
       'Who paid': paidBy ? paidBy.label : '',
       Reimbursable: paidBy ? (paidBy.reimbursable ? 'Yes' : 'No') : '',
@@ -118,5 +122,5 @@ export function buildPurchasesCsv(input: CsvInput): string {
     };
     rows.push(CSV_COLUMNS.map((c) => values[c]));
   }
-  return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+  return '\uFEFF' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }

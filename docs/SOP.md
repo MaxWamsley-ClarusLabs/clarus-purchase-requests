@@ -30,11 +30,12 @@ This app replaces the Word purchase request form and posting it in the Purchasin
 
 ### Adding purchases
 
-- On the Purchases step, add one row for each purchase: date, vendor, what was bought and why, category, amount and who paid. Press Enter to move down a column. Ctrl+D copies the value from the row above. You can paste several rows from a spreadsheet.
+- On the Purchases step, add one row for each purchase: date, vendor, what was bought and why, category, amount and who paid. Press Enter to move down a column. Ctrl+D copies the value from the row above.
+- You can paste several rows from a spreadsheet. Put its columns in the order of the grid (date, vendor, what was bought and why, category, amount, who paid), add enough rows first, click the cell where the first value goes, and paste. Write dates like 2026-10-14, 10/14/2026 or Oct 14, 2026, categories and who paid as they are named in the lists, and amounts like 45.10. A value the app cannot read is not used, and a message says how many there were and why.
 - Have the files? Drop receipts, invoices or quotes into the box at once (PDF, JPG, PNG or HEIC, up to 15 MB each). Each file becomes a row. The switch above the box says whether the files are receipts or invoices, or quotes.
 - The app reads each receipt or invoice and fills in the date, amount and vendor it finds. For a vendor you have used before, typed or read, it also fills in the category and who paid last time. Values taken from the receipt, and a "Who paid" changed this way, are highlighted: check each one against the receipt, correct anything wrong, then click Confirm on the row. A row with highlighted values cannot be sent or submitted until you confirm it.
 - The app only fills in empty boxes: anything you typed stays as you typed it. Quotes, unclear photos and HEIC files are not read; type those rows yourself. Receipts are read on your own computer; nothing is sent anywhere else to read them.
-- One receipt for several purchases (for example one invoice for two items)? Add a row for each purchase, then use the row menu (the three dots) and choose "Same receipt as row".
+- One receipt for several purchases (for example one invoice for two items)? Add a row for each purchase, then use the row menu (the three dots) and choose "Same receipt as row". A row that holds its own receipt file cannot also use another row's.
 - Another file for a row, such as a quote or a second page? Use the row menu and choose "Attach a receipt or invoice" or "Attach a quote".
 
 ### Approval and quotes
@@ -102,13 +103,15 @@ Both roles are held today by the site Owners (people with SharePoint's "Manage w
 
 ### B2. Approving or returning a request
 
-1. In **Approvals**, open the request. Check the vendor totals, the lines, and the attached quotes or no-quote reasons.
+1. In **Approvals**, open the request. Check the vendor totals, the lines, and the attached quotes or no-quote reasons. Click a file name on the Purchases tab to open the quote or receipt.
 2. Confirm or change each category in the grid. The employee only suggested them.
 3. Choose **Approve**. Approving confirms the categories shown and records each vendor total as approved at its current amount. You can add a note.
 4. Or choose **Return with a note** and say what needs correcting. The employee sees the note and sends the request again.
 5. If the request is flagged **Bought before approval**, the purchase was already made. Approving it is your decision; the flag stays on the request and is passed to the administrator's email and the CSV.
 6. You may approve your own request. It is recorded as self-approved.
 7. If a vendor total later rises more than 10% above the amount you approved, or a new vendor total of $500 or more appears, the employee has to send the request for approval again (strategy section 4).
+8. You approve what was sent. If the request was changed after it was sent (for example edited directly in SharePoint), Approve is refused with "This request was changed after it was sent for approval...". Return it with a note instead; the employee corrects it and sends it again.
+9. After approval the employee can still change the business purpose and the project or grant code, and remove a quote, without a new approval (a known gap, `docs/QUESTIONS_FOR_MAX.md` question 22). The submission email shows the purpose and code as submitted; compare them with what you approved.
 
 ### B3. When a request is submitted
 
@@ -132,13 +135,13 @@ The app and the flow never change, move or delete anything else in the Accountin
 
 ### B6. Returning a request for correction
 
-1. In the app, open the request, choose **Return**, and write what needs correcting. The employee sees the note.
+1. In the app, open the request, choose **Return with a note**, write what needs correcting, and choose **Return request**. The employee sees the note.
 2. Delete that request's folder from `Purchases_To_Process`. The corrected request arrives as a new folder ending in `_R2`.
 
 ### B7. Needs attention and failed packages (checkpoint)
 
 - **Needs attention** in the app lists submissions whose folder was not created within 30 minutes, approval emails that were not sent within 30 minutes, and anything that failed. It also lists possible duplicates between two employees' requests, which only you can see.
-- A failure also sends you an email. Open the request and choose **Retry packaging** (or **Retry approval email** for an approval).
+- A failure also sends you an email. Open the request (from Needs attention) and choose **Retry packaging** (or **Retry approval email** for an approval). Retry works only on a submission that failed or has not finished within 30 minutes, while its request is still waiting for approval (an approval email) or submitted (a package). If an approval email had been sent before the failure, the approvers may get it twice.
 - If it keeps failing, the flow is usually off or its connection needs signing in again. Steps for checking the flow are added at the checkpoint.
 
 ### B8. Adding an employee or an approver (checkpoint)
@@ -160,7 +163,16 @@ Done once per site: the test site first, the production site at the pilot. Exact
 
 ## Part C. Troubleshooting and support
 
-Written from the test-site runs at the checkpoint.
+To be completed from the test-site runs at the checkpoint. These messages are written from the code and are confirmed at the checkpoint.
+
+| What you see | What it means | What to do |
+|---|---|---|
+| "This request was changed after it was sent for approval, so it cannot be approved as it stands." (approver) | The vendor totals no longer match what was sent | Return the request with a note; the employee sends it again |
+| "Only an approval email or a package that failed, or that has not finished after 30 minutes, can be tried again." (administrator) | Retry was chosen too early | Wait 30 minutes, then check the flow is on (B7) |
+| "The request has moved on since this was sent, so it cannot be tried again." (administrator) | The request was approved, returned or processed in the meantime | Nothing to retry |
+| "This request needs approval first." (employee, at Submit) | A vendor total is over what was approved | Send the request for approval again |
+| "Row N has no receipt of its own to share." (employee) | The row points at a row that has no receipt | Choose a row that has one, or attach a receipt |
+| "This row has a receipt of its own." (employee) | A row cannot hold its own receipt and also use another row's | Remove its own receipt first |
 
 ---
 
@@ -169,3 +181,4 @@ Written from the test-site runs at the checkpoint.
 | Date | Stage | Change |
 |---|---|---|
 | 2026-09-30 | 1 | Started. Part B drafted from decisions P-001 to P-031; Part A is generated from the in-app Instructions at Stage 7 |
+| 2026-10-01 | 5 to 9 | Part A generated from the Instructions (Stage 5). Part B brought up to date with the built screens and the review fixes (opening quotes, approving what was sent, Retry rules); Part C started from the app's own messages |

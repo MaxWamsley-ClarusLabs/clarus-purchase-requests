@@ -3,6 +3,7 @@
 // (travel D-002), so every value read here is checked, never trusted.
 
 import { toLocalDateTime } from '../../domain/dates';
+import { requestNumber } from '../../domain/naming';
 import { CATEGORIES, PAID_BY_OPTIONS } from '../../domain/purchaseRules';
 import { REQUEST_STATUSES } from '../../domain/statuses';
 import { SUGGESTED_FIELDS } from '../../domain/suggestions';
@@ -64,6 +65,8 @@ export interface RequestItem {
 
 export interface LineItem {
   Id: number;
+  /** Who created the row. A row belongs to a request only if the request's author made it (SharePointDataService). */
+  AuthorId?: number | null;
   RequestId: number | null;
   RowNumber: number | null;
   PurchaseDate: string | null;
@@ -84,6 +87,8 @@ export interface LineItem {
 
 export interface SubmissionItem {
   Id: number;
+  /** Who created the submission. It belongs to a request only if the request's author made it (SharePointDataService). */
+  AuthorId?: number | null;
   RequestId: number | null;
   SubmissionType: string | null;
   SubmissionNumber: number | null;
@@ -167,8 +172,12 @@ export function contentTypeFor(fileName: string): string {
 
 // ---- Files and their fingerprints ---------------------------------------------
 
-/** A stored file with no kind, or an unknown one, is a receipt (P-021). */
-const kindOf = (value: unknown): FileKind => (value === 'quote' ? 'quote' : 'receipt');
+/**
+ * A stored file with no kind, or an unknown one, is a quote (P-021): a file
+ * counts as a receipt only when the app recorded it as one, so a missing or
+ * edited record can never satisfy the receipt rule.
+ */
+const kindOf = (value: unknown): FileKind => (value === 'receipt' ? 'receipt' : 'quote');
 
 export function parseFingerprints(value: string | null): StoredFingerprint[] {
   if (!value) return [];
@@ -203,8 +212,9 @@ function fileFromPrint(print: StoredFingerprint): AttachedFile {
  * A row's files from its attachments. The stored fingerprints say what kind
  * each is and give the order the files were added in, which is the order the
  * package names follow (R01, R01-2, ...); SharePoint's own listing order is
- * not relied on. A file with no stored entry (added directly in SharePoint) is
- * a receipt and comes after the others.
+ * not relied on. A file with no stored entry (added directly in SharePoint)
+ * is a quote, so it is still copied into the package but never counts as the
+ * row's receipt, and comes after the others.
  */
 function filesFromAttachments(attachments: readonly SpAttachment[], prints: readonly StoredFingerprint[]): AttachedFile[] {
   const position = (name: string): number => {
@@ -221,7 +231,7 @@ function filesFromAttachments(attachments: readonly SpAttachment[], prints: read
         sizeBytes: print ? print.sizeBytes : 0,
         fingerprint: print ? print.fingerprint : '',
         contentType: contentTypeFor(a.FileName),
-        kind: print ? print.kind : 'receipt',
+        kind: print ? print.kind : 'quote',
         url: a.ServerRelativeUrl
       };
     });
@@ -273,10 +283,16 @@ function returnStageFrom(label: unknown): ReturnStage {
   return '';
 }
 
+/**
+ * A request as the app works with it. The request number is made from the
+ * item's ID (`requestNumber`), not read from the RequestNumber column: the
+ * column is written for anyone viewing the list, but an employee can edit it,
+ * and it is empty if writing it failed after the item was created.
+ */
 export function requestFromItem(item: RequestItem): PurchaseRequest {
   return {
     id: item.Id,
-    requestNumber: str(item.RequestNumber),
+    requestNumber: requestNumber(item.Id),
     businessPurpose: str(item.Title),
     department: str(item.Department),
     projectCode: str(item.ProjectCode),
@@ -418,11 +434,11 @@ export function lineFields(changes: Partial<PurchaseLine>): Record<string, unkno
 
 // ---- Purchase Submissions --------------------------------------------------
 
-export function submissionFromItem(item: SubmissionItem, requestNumber: string): Submission {
+export function submissionFromItem(item: SubmissionItem, requestNo: string): Submission {
   return {
     id: item.Id,
     requestId: int(item.RequestId),
-    requestNumber,
+    requestNumber: requestNo,
     type: item.SubmissionType === SUBMISSION_TYPE_LABELS.approval ? 'approval' : 'package',
     submissionNumber: count(item.SubmissionNumber),
     packageStatus: oneOf<PackageStatus>(item.PackageStatus, PACKAGE_STATUSES, 'Uploading'),

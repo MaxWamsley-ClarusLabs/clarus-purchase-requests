@@ -2,6 +2,8 @@ import * as React from 'react';
 import { BadgeTone } from '../../domain/statuses';
 import { formatCents } from '../../domain/money';
 import { Totals } from '../../domain/totals';
+import { AttachedFile } from '../../domain/types';
+import { useDialogFocus } from '../hooks';
 import { Icon } from './Icon';
 
 export function Badge(props: { tone: BadgeTone; children: React.ReactNode }): React.ReactElement {
@@ -122,25 +124,117 @@ export function SavedIndicator(props: { saving: boolean }): React.ReactElement {
   );
 }
 
+let dialogCount = 0;
+
+/**
+ * A dialog over the page. It takes the keyboard while it is open
+ * (`useDialogFocus`): focus starts on its first form field or its main button,
+ * Tab stays inside, Escape closes it, and focus returns to the button that
+ * opened it. Its name is its title.
+ */
 export function Dialog(props: { title: string; children: React.ReactNode; actions: React.ReactNode; onClose: () => void }): React.ReactElement {
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') props.onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [props.onClose]);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const titleId = React.useMemo(() => `ctx-dialog-title-${++dialogCount}`, []);
+  useDialogFocus(ref, props.onClose);
   return (
     <>
       <div className="ctx-backdrop" onClick={props.onClose} />
       <div className="ctx-dialog-wrap" onClick={props.onClose}>
-        <div className="ctx-dialog" role="dialog" aria-modal="true" aria-label={props.title} onClick={(e) => e.stopPropagation()}>
-          <h2>{props.title}</h2>
+        <div ref={ref} className="ctx-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+          <h2 id={titleId}>{props.title}</h2>
           {props.children}
           <div className="ctx-dialog-actions">{props.actions}</div>
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * What makes a table row open something: a click, or Enter or Space when the
+ * row has the keyboard focus (Tab reaches each row). `label` is what a screen
+ * reader says for the row, such as "Open PR-0041".
+ */
+export function openRowProps(label: string, open: () => void): React.HTMLAttributes<HTMLTableRowElement> {
+  return {
+    className: 'clickable',
+    tabIndex: 0,
+    'aria-label': label,
+    onClick: open,
+    onKeyDown: (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      open();
+    }
+  };
+}
+
+/**
+ * A file attached to a row, as a button that shows it. A quote is marked
+ * "Quote" (P-021); with `showKind`, a receipt or invoice is marked "Receipt".
+ */
+export function FileChip(props: { file: AttachedFile; onOpen: () => void; showKind?: boolean }): React.ReactElement {
+  const quote = props.file.kind === 'quote';
+  const kind = quote ? 'Quote' : 'Receipt';
+  return (
+    <button type="button" className={`ctx-receipt-chip ${quote ? 'quote' : ''}`} title={`${kind}: ${props.file.fileName}`} onClick={props.onOpen}>
+      {quote || props.showKind ? <strong>{kind}</strong> : <Icon name="file" size={13} />}
+      <span>{props.file.fileName}</span>
+    </button>
+  );
+}
+
+/** Text that may wrap after each slash ("Advertising/Marketing/Website"), rather than in the middle of a word. */
+function breakAfterSlashes(text: string): React.ReactNode {
+  const parts = text.split('/');
+  return parts.map((part, i) => (
+    <React.Fragment key={i}>
+      {part}
+      {i < parts.length - 1 ? (
+        <>
+          /<wbr />
+        </>
+      ) : null}
+    </React.Fragment>
+  ));
+}
+
+/** A date and time ("2026-10-12 16:40") that wraps only between the two, never at a hyphen. */
+export function DateTime(props: { value: string }): React.ReactElement {
+  const [date, ...rest] = props.value.split(' ');
+  const time = rest.join(' ');
+  return (
+    <span className="ctx-datetime">
+      <span className="ctx-nowrap">{date}</span>
+      {time ? (
+        <>
+          {' '}
+          <span className="ctx-nowrap">{time}</span>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * A drop-down that shows the chosen option in full, on two lines if needed,
+ * instead of cutting it off (a category such as "Computer, H/W & S/W
+ * Supplies" is longer than its column). The browser's own drop-down sits on
+ * top, transparent, so the mouse, the keyboard and screen readers use it as
+ * usual. `boxClassName` styles the visible box, `nothingChosen` greys the
+ * text; the other props go to the drop-down itself.
+ */
+export function FullTextSelect(
+  props: React.SelectHTMLAttributes<HTMLSelectElement> & { boxClassName: string; shownText: string; nothingChosen?: boolean }
+): React.ReactElement {
+  const { boxClassName, shownText, nothingChosen, className, ...select } = props;
+  return (
+    <div className={`ctx-fullselect ${boxClassName} ${select.disabled ? 'disabled' : ''}`}>
+      <span className={`ctx-fullselect-text ${nothingChosen ? 'unchosen' : ''}`} aria-hidden="true">
+        {breakAfterSlashes(shownText)}
+      </span>
+      <select {...select} className={`ctx-fullselect-native ${className ?? ''}`} />
+    </div>
   );
 }
 

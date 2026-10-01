@@ -62,6 +62,7 @@ A decision stays settled unless new facts affect it. If a later entry replaces a
 - **Date:** 2026-09-30
 - **Status:** Decided (Max)
 - **Decision:** The Test flow package sends folders to the test site's own Documents library, `Purchases_Test/Purchases_To_Process`. The Live destination is `ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchases_To_Process`. The flow creates only `Purchases`, `Purchases_To_Process` and new request folders, never touching anything else, and keeps the travel flow's read-only check that `01_Company Documents/Accounting` exists. It never touches `Accounting/Receipts_To_Process`. The destination is fixed in code, never taken from list data. The flow uses standard connectors only.
+- **How the check is built (2026-10-01):** as in the travel app, the read-only check that `Accounting` exists is made by the Set-up page when it builds a Live package (`getFlowSettings`), not by a step in the flow. The flow itself creates `Purchases` and `Purchases_To_Process` by path if they are missing; what it would do if `Accounting` were missing is Unverified. The package generator also refuses to build a Live package for any destination other than the fixed one.
 
 ## P-009. One CSV, with the accounting suggestions
 
@@ -117,17 +118,19 @@ The first three are the default rules Max asked to have built and listed.
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max). Max's prompt names this as a recommended default.
-- **Decision:** A threshold applies to the total from the same vendor within a request, not to each line, so a purchase cannot be split across lines to avoid approval. A request has one business purpose and one project or grant code, so "the same vendor for the same business purpose in a request" is "the same vendor in the request". Vendor names are matched ignoring capitals, spaces and punctuation ("Amazon", "amazon." and "AMAZON" are one vendor). A line with no vendor yet is counted on its own. Every line counts, whoever paid.
+- **Decision:** A threshold applies to the total from the same vendor within a request, not to each line, so a purchase cannot be split across lines to avoid approval. A request has one business purpose and one project or grant code, so "the same vendor for the same business purpose in a request" is "the same vendor in the request". Vendor names are matched ignoring capitals, accents, spaces and punctuation, in any alphabet ("Digi-Key" and "DigiKey", "Thor Labs" and "Thorlabs", "Café" and "Cafe" are each one vendor; "Amazon" and "Amazon.com" are two). A name with no letter or digit (such as "-") is matched as typed. A line with no vendor yet is counted on its own. Duplicate warnings and vendor memory match the same way. Every line counts, whoever paid. A matching rule that is too loose only ever asks for more approval, never less.
 - **Options considered:** per line (easy to avoid by splitting); per vendor across all of an employee's requests in a period (catches splitting across requests, but needs a rule for the period and a way to explain it; not built, see the question); per vendor and per a business purpose typed on each line (the purpose would be free text, so matching would be unreliable).
-- **Where a change goes:** `vendorGroups` in `purchaseRules.ts`; the request header (`docs/DATA_MODEL.md`) if a purpose per line is wanted.
+- **Where a change goes:** `vendorKey` and `vendorGroups` in `purchaseRules.ts`; the request header (`docs/DATA_MODEL.md`) if a purpose per line is wanted.
+- **Changed after review (2026-10-01):** the first version kept spaces and accents and dropped every non-Latin letter, so "Digi-Key" and "DigiKey" were two vendors and a $600 purchase typed two ways needed no approval. Found by two independent reviews; fixed with tests.
 
 ## P-017. Bought before approval
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max). Max's prompt names this as a recommended default.
-- **Decision:** A purchase of $500 or more already made without approval can still go through. When the request is sent for approval, a vendor total of $500 or more is flagged **Bought before approval** if any of its lines is dated before the day it is sent, or already has a receipt or invoice attached. The request still goes to the approver first. The flag stays on the request after approval. The administrator sees it in the submission email and in the CSV (a "Bought before approval" column). The employee submits for processing after the approval, as for any approved request.
+- **Decision:** A purchase of $500 or more already made without approval can still go through. When the request is sent for approval, a vendor total of $500 or more is flagged **Bought before approval** if any of its lines is dated before the day it is sent, or already has a receipt or invoice attached. The request still goes to the approver first. The flag stays on the request after approval. The administrator sees it in the submission email and in the CSV (a "Bought before approval" column). The employee submits for processing after the approval, as for any approved request. A flag, once set for a vendor, stays in later rounds, even if a date is changed. When a request is sent again after an approval, a vendor total the approval still covers (within the 10% allowance, P-019) is not newly flagged by a receipt or a date, because it was approved before it was bought; one that has risen past it, or was never approved, is.
 - **Options considered:** block the request (Max said it can still be submitted); let the employee submit straight to processing while approval is pending (the folder and CSV would be made before the approval exists, so the CSV would be out of date after approval); ask the employee to tick "already bought" (an honest answer is needed; the date and receipt tests need no extra click). Chosen: two steps, send for approval flagged, then submit, because the folder and CSV are then built once with the approval in them.
-- **Where a change goes:** `isAlreadyBought` and `flagBoughtBefore` in `purchaseRules.ts`; the wording in `messages.ts`; the send dialog in `RequestWorkspace`.
+- **Where a change goes:** `isAlreadyBought` and `groupsForApproval` in `purchaseRules.ts`, `approvalGroupsToSend` in `validation.ts`; the wording in `messages.ts`; the send dialog in `RequestWorkspace`.
+- **Changed after review (2026-10-01):** the first version judged every vendor total afresh on each send, so a second send after an approval flagged vendors that had been bought after approval, and a flag could be erased by changing a date. The rule for a second send was not in Max's prompt: it is Claude's, and part of question 3.
 
 ## P-018. The approval email is a branch of the same flow
 
@@ -145,9 +148,10 @@ The first three are the default rules Max asked to have built and listed.
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max)
-- **Decision:** When the approver approves, the app records each vendor total of $500 or more as approved at that amount. The employee may change the request afterwards (actual prices differ from planned ones). A vendor total that is now more than 10% above its approved amount, or a vendor total of $500 or more that was not approved, needs approval again: Submit is blocked with a message, and the employee uses Send for approval again. Amounts below the approved amount never need approval again.
+- **Decision:** When the approver approves, the app records each vendor total of $500 or more as approved at that amount. The employee may change the request afterwards (actual prices differ from planned ones). A vendor total that is now more than 10% above its approved amount, or a vendor total of $500 or more that was not approved, needs approval again: Submit is blocked with a message, and the employee uses Send for approval again. Amounts below the approved amount never need approval again. The approver approves what was sent: if the vendor totals that need approval no longer match what was sent (the same vendors at the same amounts), for example after an edit made directly in SharePoint while the request awaited approval, Approve is refused and nothing is written; the approver returns the request with a note.
 - **Options considered:** no check after approval (an approved request could be edited to any amount); no allowance (a small tax or shipping difference would need a second approval); a fixed dollar allowance. The 10% is a guess.
-- **Where a change goes:** `OVERRUN_TOLERANCE_PERCENT` in `purchaseRules.ts`.
+- **Where a change goes:** `OVERRUN_TOLERANCE_PERCENT`, `approvalCoverage` and `matchesWhatWasSent` in `purchaseRules.ts`.
+- **Not covered (question 22, P-036):** the approval covers vendor amounts only. After approval the employee can still change the business purpose and the project or grant code, and remove a quote.
 
 ## P-020. One role for approver and administrator; self-approval; no withdrawing
 
@@ -155,15 +159,15 @@ The first three are the default rules Max asked to have built and listed.
 - **Status:** Provisional (Claude, awaiting Max)
 - **Decision:** The approver and the administrator are the same role for now: people with SharePoint's "Manage web site" permission, which site Owners have (travel D-066). An approver who is also the requester may approve their own request; the record, the email and the CSV say it was self-approved. An employee cannot withdraw a request that is awaiting approval; the approver returns it.
 - **Options considered:** a separate approver list (no place to keep it without a fourth list or code changes; travel D-029 and O14 left this for later); no self-approval (Max is the only Owner, so his own requests could never be approved); a Withdraw button (more states and an email that has already gone out).
-- **Where a change goes:** `SharePointDataService.requireAdmin` and `MockDataService`; `selfApproved` in `purchaseRules.ts`.
+- **Where a change goes:** `SharePointDataService.requireAdmin` and `MockDataService`; `isSelfApproved` in `purchaseRules.ts`.
 
 ## P-021. Attachments have a kind: receipt or quote
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max)
-- **Decision:** Each attached file is a **receipt** (which includes invoices) or a **quote**. The kind is stored with the file's fingerprint on the line (`FileFingerprints`). The drop box has a switch, and the row menu offers "Attach a quote" and "Attach a receipt or invoice". A line has a receipt only if it has a receipt file (or shares another row's). In the folder, receipt copies are `R01_...` and quote copies are `Q01_...`. The receipt reader reads receipt files only; quotes are typed.
+- **Decision:** Each attached file is a **receipt** (which includes invoices) or a **quote**. The kind is stored with the file's fingerprint on the line (`FileFingerprints`). The drop box has a switch, and the row menu offers "Attach a quote" and "Attach a receipt or invoice". A line has a receipt only if it has a receipt file (or shares another row's). In the folder, receipt copies are `R01_...` and quote copies are `Q01_...`. The receipt reader reads receipt files only; quotes are typed. A file with no recorded kind (added directly in SharePoint, or whose kind could not be recorded) is treated as a quote and never counts as the receipt; if the kind cannot be recorded when a file is attached, the file is removed again. A row either holds its own receipt files or points at another row's receipt ("Same receipt as row"), never both.
 - **Options considered:** one untyped list of files (a quote would count as the receipt, so Submit could pass with no receipt); typing by the request's stage (wrong for a purchase already made); a separate list for quotes (more lists to create and permission). The kind per file is the smallest change that keeps "Receipt attached: yes or no" true.
-- **Where a change goes:** `ReceiptFile.kind` in `types.ts`, `naming.ts`, `mapping.ts`, the grid and drop box.
+- **Where a change goes:** `AttachedFile.kind` in `types.ts`, `naming.ts`, `mapping.ts`, the grid and drop box.
 
 ## P-022. Request header details
 
@@ -185,7 +189,7 @@ The first three are the default rules Max asked to have built and listed.
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max)
-- **Decision:** Choosing Other needs a short description of the category (the form's "Other: ____"), kept apart from "what was bought and why". Each line records who last confirmed or changed its category (the approver when approving, or the administrator later). The CSV has a "Category confirmed by" column, empty when only the employee has suggested the category. The approver or administrator can confirm or change categories while a request is Awaiting approval, Approved or Submitted (`CONFIRMABLE_STATUSES` in `statuses.ts`); approving confirms every category shown. The administrator's change after submission is saved in the app, but the CSV already in the folder keeps the category as submitted.
+- **Decision:** Choosing Other needs a short description of the category (the form's "Other: ____"), kept apart from "what was bought and why". Each line records who last confirmed or changed its category (the approver when approving, or the administrator later). The CSV has a "Category confirmed by" column, empty when only the employee has suggested the category. Choosing another category clears the description. The approver or administrator can confirm or change categories while a request is Awaiting approval, Approved or Submitted (`CONFIRMABLE_STATUSES` in `statuses.ts`); approving confirms every category shown. The administrator's change after submission is saved in the app, but the CSV already in the folder keeps the category as submitted.
 - **Options considered:** rewriting the CSV after processing (a second write into Accounting, travel D-050 rejected the same idea); no record of who confirmed (Max asked for confirm or change by the approver or administrator).
 - **Where a change goes:** `CategoryOther` and `CategoryConfirmedBy` in `docs/DATA_MODEL.md`; `confirmCategories` in the data services.
 
@@ -201,7 +205,7 @@ The first three are the default rules Max asked to have built and listed.
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max)
-- **Decision:** Request number `PR-0042`. Folder `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042` using the earliest purchase date, `_R2` for resubmissions. The CSV is `PR-0042_Purchases.csv` (`PR-0042_R2_Purchases.csv`). Columns: Request, Row, Date, Vendor, What was bought and why, Category, Category confirmed by, Suggested QuickBooks account, Amount, Who paid, Reimbursable, Project or grant code, Approval status, Bought before approval, Approved by, Approved on, Quote files, Receipt files, No-quote reason, No-receipt reason, Warnings, Submission, Submitted by, Submitted on, Department, Purchase dates, Business purpose, Certified by. The category is the category as submitted; "Approved by" names the approver (or the requester, marked self-approved).
+- **Decision:** Request number `PR-0042`. Folder `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042` using the earliest purchase date, `_R2` for resubmissions. The CSV is `PR-0042_Purchases.csv` (`PR-0042_R2_Purchases.csv`). Columns: Request, Row, Date, Vendor, What was bought and why, Category, Category confirmed by, Suggested QuickBooks account (Unverified, to confirm with Max), Amount, Who paid, Reimbursable, Project or grant code, Approval status, Bought before approval, Approved by, Approved on, Quote files, Receipt files, No-quote reason, No-receipt reason, Warnings, Submission, Submitted by, Submitted on, Department, Purchase dates, Business purpose, Certified by. The category is the category as submitted; "Approved by" names the approver (or the requester, marked self-approved).
 - **Options considered:** filing by the submission date (an old purchase submitted late would land in the wrong year); splitting the CSV in two (Max prefers one CSV, travel D-045).
 - **Where a change goes:** `naming.ts`, `CSV_COLUMNS` in `csv.ts`, `docs/STRATEGY.md` section 7.
 
@@ -233,7 +237,7 @@ The first three are the default rules Max asked to have built and listed.
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max)
-- **Decision:** An approval request whose email was not sent within 30 minutes, or whose sending failed, appears under Needs attention like a failed package, with Retry. Only the newest approval request of a request that is still Awaiting approval, and the newest package of a request that is still Submitted, are listed: once the request has moved on (approved in the app anyway, returned, processed) a stuck submission no longer matters and is not shown. The sidebar shows a count on **Approvals** (requests awaiting approval), **Requests to process** and **Needs attention**.
+- **Decision:** An approval request whose email was not sent within 30 minutes, or whose sending failed, appears under Needs attention like a failed package, with Retry. Only the newest approval request of a request that is still Awaiting approval, and the newest package of a request that is still Submitted, are listed: once the request has moved on (approved in the app anyway, returned, processed) a stuck submission no longer matters and is not shown. The sidebar shows a count on **Approvals** (requests awaiting approval), **Requests to process** and **Needs attention**. Retry (on the request page, reached from the Needs attention list) works only on a submission that failed or has not finished within 30 minutes, that is the newest of its kind, while its request is still Awaiting approval (an approval email) or Submitted (a package); otherwise it is refused, so an old approval email cannot be sent again for a request that has moved on.
 - **Options considered:** leaving approval emails unmonitored (an unnoticed failed email would stall a purchase); listing every failed submission for ever (old failures would bury the current ones).
 - **Where a change goes:** `adminData.ts` (`stuckSubmissions`), the Needs attention page.
 
@@ -248,9 +252,42 @@ The first three are the default rules Max asked to have built and listed.
 
 - **Date:** 2026-10-01
 - **Status:** Provisional (Claude, awaiting Max)
-- **Decision:** The request is made in three steps, as in travel: Details, Purchases and Review. The Purchases step has the drop box (with a Receipts or invoices / Quotes switch), the grid and a **Vendor totals** table that shows, for each vendor, the total, whether it needs approval, and whether it has a quote. The Review step lists what to fix, then a card for the approval (what needs approval, and what changed since it was approved). Send for approval and Submit are two different buttons; the one that applies is the one that is enabled. The "No quote: say why" box appears on the first row of a vendor total of $500 or more while the request is waiting to be sent, and the "No receipt" box appears once approval is done. A request that is Approved opens again for receipts and real prices (P-027). The administrator's side has an **Approvals** page (requests awaiting approval), and one request page with tabs (Purchases, Vendor totals, Approval email, Submission email, CSV file, Folder contents). While a request awaits approval, each category there is a drop-down; Approve confirms the categories shown, says how many were changed, and takes an optional note; Return needs a note. A returned request says who returned it (approver or administrator) and shows the note. Every wording is in `messages.ts` and `content/instructions.ts`.
+- **Decision:** The request is made in three steps, as in travel: Details, Purchases and Review. The Purchases step has the drop box (with a Receipts or invoices / Quotes switch), the grid and a **Vendor totals** table that shows, for each vendor, the total, whether it needs approval, and whether it has a quote. The Review step lists what to fix, then a card for the approval (what needs approval, and what changed since it was approved). Send for approval and Submit are two different buttons; the one that applies is the one that is enabled. The "No quote: say why" box appears on the first row of a vendor total of $500 or more while the request is waiting to be sent, and the "No receipt" box appears once approval is done. A request that is Approved opens again for receipts and real prices (P-027). The administrator's side has an **Approvals** page (requests awaiting approval), and one request page with tabs (Purchases, Vendor totals, Approval email, Submission email, CSV file, Folder contents). While a request awaits approval, each category there is a drop-down; Approve confirms the categories shown, says how many were changed, and takes an optional note; Return needs a note. Each attached file on the Purchases tab opens in a preview, so the approver can read the quote (in SharePoint this relies on the Owners being able to read the rows' attachments, which is Unverified). A returned request says who returned it (approver or administrator) and shows the note. Every wording is in `messages.ts` and `content/instructions.ts`.
 - **Options considered:** one screen for everything (a long page to scroll on a laptop); the approver approving each line (Max decided approval is by request; thresholds count by vendor total, P-016); a separate approver app (a second web part).
 - **Where a change goes:** `app/src/ui/` (`RequestWorkspace.tsx`, `PurchaseGrid.tsx`, `VendorTotals.tsx`, `pages/admin/AdminRequestPage.tsx`); screenshots in `docs/prototype/`.
+
+## P-033. Accepted risk: an employee can make the flow send an approval email
+
+- **Date:** 2026-10-01
+- **Status:** Provisional (Claude, awaiting Max); follows P-029
+- **Decision:** Employees can create and edit their own Purchase Submissions items (travel D-002). So an employee could create an item of type Approval request, status Ready, with any subject and summary, and the flow would email every Owner from the administrator's mailbox. What stays safe: the summary is escaped, so it cannot hold markup; the recipients and the link in the email are fixed in the package; nothing is created in the destination folders. What it allows: a misleading message to the Owners, such as a fake approval request. It is not a way to approve a purchase. Accepted for the pilot; look again at the security review.
+- **Options considered:** (A) accept it, as built; (B) the flow writes the subject itself from fixed columns and adds a fixed line saying the summary was written by the requester's app session (the app's "Approval email" tab would need the same line); (C) keep approval requests in a list employees cannot write to (a fourth list and a second permission model, as in P-029).
+- **Where a change goes:** the approval branch in `app/src/export/flowPackage.ts`, `email.ts`, and the "Approval email" tab in `AdminRequestPage.tsx`.
+
+## P-034. Integrity rules the services enforce
+
+- **Date:** 2026-10-01
+- **Status:** Provisional (Claude, awaiting Max)
+- **Decision:** The app cannot stop an employee editing their own SharePoint items (travel D-002), so the services check what they can, and the rest is left visible in version history. (1) Approve is refused if the vendor totals that need approval no longer match what was sent (P-019). (2) A row or a submission counts for a request only if the request's owner created it; anyone can type another person's request number into a new item, and such an item is ignored. (3) Retry is limited to a failed or stuck submission that is the newest of its kind while its request is still at that step (P-030). (4) A row holds its own receipt or points at another row's, never both (P-021). (5) A file with no recorded kind is a quote (P-021). (6) The request number shown is made from the item's ID, not from the editable column. (7) The first send of a Draft does not ask SharePoint to clear the approver, approval date or return stage, because there is nothing to clear (those clears are Unverified, question 23).
+- **Options considered:** leaving these to the administrator's review (each is a way for a mistaken or dishonest edit to look like an honest record); a tamper check against a second list (P-029's option B).
+- **Where a change goes:** `serviceRules.ts`, `SharePointDataService.ts`, `MockDataService.ts`, `mapping.ts`, `matchesWhatWasSent` in `purchaseRules.ts`.
+
+## P-035. Typing, pasting and saving limits
+
+- **Date:** 2026-10-01
+- **Status:** Provisional (Claude, awaiting Max)
+- **Decision:** An amount takes a comma only as a thousands separator ("1,234.56"); "12,50" is refused rather than read as 1,250.00. Amounts above $10,000,000.00 are refused. A date must be a real date in 2000 to 2099 (a date box typed as 101426 can hold year 0026). Pasting from a spreadsheet reads tab-separated text with quoted cells, in the grid's column order, with dates like 2026-10-14, 10/14/2026 or Oct 14, 2026; rows that do not fit and cells that cannot be read are skipped, and one message says how many and why. Text is cut at 255 characters. Changes save about half a second after the last keystroke; closing or reloading the page with something unsaved saves it, and the browser asks first.
+- **Options considered:** reading "12,50" as 12.50 (ambiguous with thousands); no upper limit on amounts; a date window of a year around today (a purchase may be filed late); growing the grid to fit pasted rows (more risk of unintended rows).
+- **Where a change goes:** `money.ts`, `dates.ts`, `app/src/ui/pasteParse.ts`, `PurchaseGrid.tsx`, `RequestWorkspace.tsx`.
+
+## P-036. After approval, only vendor amounts are re-checked
+
+- **Date:** 2026-10-01
+- **Status:** Provisional (Claude, awaiting Max)
+- **Decision:** What is recorded when the approver approves is each vendor total of $500 or more (P-019). After approval, an employee can still change the business purpose, the project or grant code and the suggested categories, delete rows, and remove a quote; none of that sends the request back for approval. The submission email and the CSV show the purpose and code as submitted, and the approver's name and time. This is a gap found by review, not a rule Max asked for.
+- **Options considered:** also record the business purpose and project or grant code with the approval, treat a change as "changed since approval", and warn the administrator in the submission email (a typo fix would also trigger it); lock a request once approved (receipts and real prices could not be attached, P-027).
+- **Recommendation:** record both with the approval and warn the administrator. Not built: it changes what "approved" means, so it waits for Max (question 22).
+- **Where a change goes:** `ApprovalRecord` in `types.ts`, `approvalState` in `purchaseRules.ts`, `submission.ts` and `email.ts`.
 
 ---
 

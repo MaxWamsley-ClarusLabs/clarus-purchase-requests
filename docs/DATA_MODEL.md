@@ -18,6 +18,7 @@ Three new lists. The travel app's lists and the current Power Apps apps' lists a
 | Version history | On, "create a version each time you edit" | The audit trail for direct edits (travel D-002) and automatic saving. It is also the check on an approval edited outside the app (P-029) |
 | Title column | Not required at list level; filled in automatically by the app | The app checks required fields itself, so a half-finished draft can be saved |
 | Attachments | On | Receipts, quotes and package files are stored as list attachments, so they follow the item's permissions |
+| Whose rows | A row or a submission belongs to a request only if the request's owner created it | A row or submission that names someone else's request by number (anyone can type a number) is ignored everywhere in the app, so nobody can add a purchase to another person's request |
 
 **Dates** are stored as text in the form `YYYY-MM-DD`, not as SharePoint date columns, which shift by a day through time zones (travel D-043). **Amounts** are stored in currency columns with two decimals; all totals are calculated in whole cents in the app.
 
@@ -28,7 +29,7 @@ Three new lists. The travel app's lists and the current Power Apps apps' lists a
 | Column (internal name) | Shown as | Type | Required to submit | Indexed | Notes |
 |---|---|---|---|---|---|
 | Title | Business purpose | Single line of text | Yes | | One line. Also the request's name in lists, folder names and emails (P-022) |
-| RequestNumber | Request number | Single line of text | Set by app | | `PR-` plus the item ID padded to four digits, for example `PR-0042`. Written by the app right after the request is created |
+| RequestNumber | Request number | Single line of text | Set by app | | `PR-` plus the item ID padded to four digits, for example `PR-0042`. Written by the app right after the request is created, for people viewing the list. The app itself shows the number made from the item ID, so an edited or empty column changes nothing |
 | Department | Department | Single line of text | Yes | | Filled in from the employee's latest request when a request is created (P-022) |
 | ProjectCode | Project or grant code | Single line of text | No | | For example "NSF SBIR Phase 1 (Award # 2528301)", offered as a quick pick, never filled in by default |
 | RequestStatus | Status | Choice: Draft, Awaiting approval, Approved, Submitted, Returned, Processed | Set by app | Yes | Default Draft |
@@ -61,25 +62,25 @@ There is no separate requester field (travel D-039). The purchase dates are not 
 | Title | Row label | Single line of text | Set by app | | For example `PR-0042 row 3`, for anyone viewing the list directly |
 | RequestId | Request | Number | Yes | Yes | ID of the Purchase Requests item |
 | RowNumber | Row | Number | Set by app | | 1, 2, 3 in the order shown in the grid |
-| PurchaseDate | Date | Single line of text | Yes | | `YYYY-MM-DD` |
-| Vendor | Vendor | Single line of text | Yes | | Vendors with the same name (ignoring capitals, spaces and punctuation) add up for the thresholds (P-016) |
+| PurchaseDate | Date | Single line of text | Yes | | `YYYY-MM-DD`, years 2000 to 2099 |
+| Vendor | Vendor | Single line of text | Yes | | Vendors with the same name (ignoring capitals, accents, spaces and punctuation, in any alphabet) add up for the thresholds (P-016) |
 | Description | What was bought and why | Single line of text | Yes | | Item or service and a short business reason |
 | Category | Category | Choice (8 categories, `purchaseRules.ts`) | Yes | | Suggested by the employee; confirmed or changed by the approver or administrator |
-| CategoryOther | Other category | Single line of text | Only for Other | | Says what kind of expense it is (the form's "Other: ____") |
+| CategoryOther | Other category | Single line of text | Only for Other | | Says what kind of expense it is (the form's "Other: ____"). Choosing another category clears it |
 | CategoryConfirmedBy | Category confirmed by | Single line of text | | | Name of the approver or administrator who confirmed or changed the category; empty while it is only the employee's suggestion |
-| Amount | Amount | Currency | Yes, greater than zero | | US dollars as charged |
+| Amount | Amount | Currency | Yes, greater than zero | | US dollars as charged, up to $10,000,000.00. A comma is read only as a thousands separator ("1,234.56"), so "12,50" is refused rather than read as 1,250.00 |
 | PaidBy | Who paid | Choice: Company, Employee | Yes | | "Employee" lines are reimbursed; worked out from this in the app, not stored |
 | NoQuoteReason | No-quote reason | Single line of text | Only when the vendor total is $500 or more and no quote is attached | | |
 | NoReceiptReason | No-receipt reason | Single line of text | Only if the row has no receipt at Submit | | |
 | SameReceiptAsRow | Same receipt as row | Number | | | Set from the row menu when one receipt covers several rows (travel D-038) |
-| FileFingerprints | File fingerprints | Multiple lines of plain text | Set by app | | JSON: for each attached file, its name, size, a SHA-256 fingerprint, and its **kind** (receipt or quote, P-021). A file with no kind is treated as a receipt |
+| FileFingerprints | File fingerprints | Multiple lines of plain text | Set by app | | JSON: for each attached file, its name, size, a SHA-256 fingerprint, and its **kind** (receipt or quote, P-021). A file with no recorded kind is treated as a quote and never counts as the receipt; if the kind cannot be recorded when a file is attached, the file is removed again |
 | SuggestedFields | Suggested, not confirmed | Single line of text | Must be empty | | Values the app filled in from a receipt or vendor memory that the employee has not confirmed, for example `date,vendor,amount` (travel D-078) |
 
 **Defaults (P-023):** a new row's Who paid is the row above's, or Company for the first row; Category is filled from the last time the employee used the same vendor, when empty.
 
 **Files (P-021)**
 - A row's files are its attachments. Each is a **receipt** (this includes invoices) or a **quote**. Dropping several files creates one row per file, all of the kind chosen on the drop box.
-- From the row menu, an employee can attach a quote, attach a receipt or invoice, or mark a row "Same receipt as row N". A shared receipt is stored once, on the first row. Quotes are never shared.
+- From the row menu, an employee can attach a quote, attach a receipt or invoice, or mark a row "Same receipt as row N". A shared receipt is stored once, on the first row. Quotes are never shared. A row either holds its own receipt files or points at another row, never both: pointing a row that has a receipt is refused, and attaching a receipt to a row that points at another row takes the pointer off.
 - A row counts as having a receipt if it has a receipt file, or points to a row in the same request that has one. Otherwise it needs a no-receipt reason before Submit. A quote never counts as a receipt.
 - Accepted files: PDF, JPG or JPEG, PNG, HEIC. Up to 15 MB each. Stored exactly as uploaded.
 
@@ -123,13 +124,13 @@ Attachments: for a package, the receipt copies, quote copies and the CSV file, e
 | Status | Employee can | Approver or administrator can |
 |---|---|---|
 | Draft | Edit; delete the request or any row; send for approval (if a vendor total is $500 or more) or submit (if not) | View |
-| Awaiting approval | View only | Approve (confirming or changing categories); return with a note; retry the approval email |
+| Awaiting approval | View only | Approve (confirming or changing categories; refused if the vendor totals no longer match what was sent, P-019); return with a note; retry the approval email (only if it failed or is stuck, P-030) |
 | Approved | Edit; submit; send for approval again (if it changed beyond P-019) | View; confirm or change categories |
 | Submitted | View only | Mark processed; return with a note; confirm or change categories; retry packaging |
 | Returned | Edit; send for approval again or submit | View |
 | Processed | View only | View |
 
-Nothing is deleted by the app once a request has been sent for approval or submitted. Direct edits in SharePoint remain possible under travel D-002 and are recorded in version history.
+A request can be deleted only while it is a Draft. Rows and files can still be removed while a request is Approved or Returned, because receipts and real prices arrive after approval; what the approver approved is kept in the approval record, and P-019 sends the request back for approval if a vendor total rises past it. Direct edits in SharePoint remain possible under travel D-002 and are recorded in version history.
 
 ---
 

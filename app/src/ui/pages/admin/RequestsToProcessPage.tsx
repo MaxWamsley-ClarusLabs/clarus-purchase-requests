@@ -3,7 +3,7 @@ import { messages } from '../../../domain/messages';
 import { formatCents } from '../../../domain/money';
 import { submissionStatusDisplay } from '../../../domain/statuses';
 import { useApp } from '../../AppContext';
-import { Badge, Card, HeaderCard, Tag } from '../../components/common';
+import { Badge, Card, DateTime, HeaderCard, Tag, openRowProps } from '../../components/common';
 import { Icon } from '../../components/Icon';
 import { latestByRequest, requestsToProcess } from './adminData';
 import { useAdminLists } from './useAdminLists';
@@ -35,41 +35,45 @@ export function RequestsToProcessPage(): React.ReactElement {
             New submissions appear here and are emailed to you.
           </div>
         ) : (
-          <table className="ctx-table">
-            <thead>
-              <tr>
-                <th>Request</th>
-                <th>Submitted by</th>
-                <th>Business purpose</th>
-                <th>Submitted</th>
-                <th>Folder</th>
-                <th className="num">To reimburse</th>
-                <th className="num">Request total</th>
-                <th>Flag</th>
-              </tr>
-            </thead>
-            <tbody>
-              {waiting.map((r) => {
-                const s = packages.get(r.id);
-                const pkg = s ? submissionStatusDisplay('package', s.packageStatus) : null;
-                return (
-                  <tr key={r.id} className="clickable" onClick={() => app.navigate({ name: 'adminRequest', requestId: r.id })}>
-                    <td className="ctx-strong nowrap">
-                      {r.requestNumber}
-                      {s && s.submissionNumber > 1 ? ` (R${s.submissionNumber})` : ''}
-                    </td>
-                    <td>{r.ownerName}</td>
-                    <td>{r.businessPurpose}</td>
-                    <td className="ctx-muted nowrap">{r.submittedOn}</td>
-                    <td>{pkg ? <Badge tone={pkg.tone}>{pkg.label}</Badge> : null}</td>
-                    <td className="num">{formatCents(r.totalReimburseCents)}</td>
-                    <td className="num">{formatCents(r.totalRequestCents)}</td>
-                    <td>{r.boughtBeforeApproval ? <Tag>Bought before approval</Tag> : null}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="ctx-table-wrap">
+            <table className="ctx-table">
+              <thead>
+                <tr>
+                  <th>Request</th>
+                  <th>Submitted by</th>
+                  <th>Business purpose</th>
+                  <th>Submitted</th>
+                  <th>Folder</th>
+                  <th className="num">To reimburse</th>
+                  <th className="num">Request total</th>
+                  <th>Flag</th>
+                </tr>
+              </thead>
+              <tbody>
+                {waiting.map((r) => {
+                  const s = packages.get(r.id);
+                  const pkg = s ? submissionStatusDisplay('package', s.packageStatus) : null;
+                  return (
+                    <tr key={r.id} {...openRowProps(`Open ${r.requestNumber}`, () => app.navigate({ name: 'adminRequest', requestId: r.id }))}>
+                      <td className="ctx-strong nowrap">
+                        {r.requestNumber}
+                        {s && s.submissionNumber > 1 ? ` (R${s.submissionNumber})` : ''}
+                      </td>
+                      <td>{r.ownerName}</td>
+                      <td>{r.businessPurpose}</td>
+                      <td className="ctx-muted">
+                        <DateTime value={r.submittedOn} />
+                      </td>
+                      <td>{pkg ? <Badge tone={pkg.tone}>{pkg.label}</Badge> : null}</td>
+                      <td className="num">{formatCents(r.totalReimburseCents)}</td>
+                      <td className="num">{formatCents(r.totalRequestCents)}</td>
+                      <td>{r.boughtBeforeApproval ? <Tag>Bought before approval</Tag> : null}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
       <div className="ctx-hint">

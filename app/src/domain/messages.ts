@@ -2,6 +2,7 @@
 // change is made once (travel strategy section 10). The policy numbers come
 // from purchaseRules.ts; the certification sentence is CERTIFICATION there.
 
+import { FIRST_YEAR, LAST_YEAR } from './dates';
 import { APPROVAL_THRESHOLD_TEXT, OVERRUN_TOLERANCE_PERCENT, QUOTE_THRESHOLD_TEXT } from './purchaseRules';
 
 const thisVendor = (vendor: string): string => (vendor.trim() ? vendor.trim() : 'A purchase with no vendor yet');
@@ -12,11 +13,14 @@ export const messages = {
   noRows: 'Add at least one purchase.',
 
   dateRequired: 'Enter the purchase date.',
+  dateInvalid: `Enter a date between ${FIRST_YEAR} and ${LAST_YEAR}, like 2026-10-14.`,
   vendorRequired: 'Enter the vendor.',
   descriptionRequired: 'Say what was bought and why.',
   categoryRequired: 'Choose a category.',
   categoryOtherRequired: 'Describe the category, for "Other".',
-  amountRequired: 'Enter an amount greater than zero, like 45.10.',
+  /** For an amount that is empty, or typed in a way that is not an amount (a decimal comma, three decimals). */
+  amountRequired: 'Enter an amount like 45.10: digits, and at most two decimals.',
+  amountNotPositive: 'Enter an amount greater than zero, like 45.10.',
   paidByRequired: 'Choose who paid.',
   receiptOrReason: 'Attach a receipt or invoice, or give a reason there is none.',
   sameReceiptBroken: (row: number) => `Row ${row} has no receipt of its own to share. Choose a row that has a receipt.`,
@@ -35,6 +39,8 @@ export const messages = {
     `${thisVendor(vendor)} totals ${total} and was not part of the approval. Send the request for approval again.`,
   approvalRequiredToSubmit: 'This request needs approval first. Send it for approval, then submit it once it is approved.',
   approvalNotNeeded: 'Every vendor total is under the approval threshold, so this request does not need approval. Submit it instead.',
+  alreadyWithApprover: 'This request is already with the approver.',
+  alreadyApproved: 'This request is approved, and every vendor total is still within what was approved. Submit it instead.',
 
   duplicateFileInRequest: (row: number) => `Same receipt file as row ${row}. Check it is not entered twice.`,
   duplicateFileElsewhere: (request: string, row: number) => `Same receipt file as ${request} row ${row}. Check it is not entered twice.`,

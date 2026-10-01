@@ -17,10 +17,16 @@
 // addresses are fixed here, never taken from list data; the folder name written
 // by the app is cleaned again; nothing is overwritten, moved or deleted; the
 // email text stored in the list is escaped before it is sent (travel D-067).
+// The generator enforces this itself (checkFlowConfig): every address, ID and
+// destination it writes into the flow is checked first, and a package that
+// does not pass is not made.
 
 import { buildZip } from './zip';
 
 export type FlowMode = 'test' | 'live';
+
+/** Where the approval email addresses came from: the site Owners, or the administrator's own address because no Owner address could be read. */
+export type ApproverSource = 'owners' | 'administrator';
 
 export interface FlowConfig {
   mode: FlowMode;
@@ -37,7 +43,9 @@ export interface FlowConfig {
   adminEmail: string;
   /** Who receives the approval email: the site Owners' addresses when the package is made, fixed in the package (P-018). */
   approverEmails: string[];
-  /** The page the app runs on, for the "open the request" links. */
+  /** Where approverEmails came from, so the Set-up page can say so. Not written into the flow. */
+  approverSource: ApproverSource;
+  /** The page the app runs on, for the "open the request" links. Only its origin and path are used. */
   appPageUrl: string;
 }
 
@@ -45,13 +53,129 @@ export interface FlowConfig {
 export const LIVE_DESTINATION = {
   siteUrl: 'https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam',
   libraryUrlName: 'Shared Documents',
-  /** Must already exist; the flow never creates or changes it. */
+  /** Must already exist. The flow does not check it: the Set-up page does, read only, when it makes a live package. */
   existingParent: '01_Company Documents/Accounting',
   folders: ['01_Company Documents/Accounting/Purchases', '01_Company Documents/Accounting/Purchases/Purchases_To_Process']
 } as const;
 
 /** The test destination: the test site's own library, outside Accounting (strategy section 10). */
 export const TEST_FOLDERS = ['Purchases_Test', 'Purchases_Test/Purchases_To_Process'];
+
+/** The test destination's library: the test site's own Documents library, as the Set-up page reads it. */
+export const TEST_LIBRARY_URL_NAME = 'Shared Documents';
+
+/** The most addresses the approval email can go to. More are refused, so the To line stays a sane length. */
+export const MAX_APPROVERS = 20;
+
+const MAX_EMAIL_LENGTH = 254;
+const SAFE_EMAIL = /^[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
+const LIST_ID = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
+/** Text a web address written into the flow must not contain: braces (so no "@{" either), quotes, backticks, backslashes, angle brackets or spaces. */
+const UNSAFE_URL_TEXT = /[{}"'`\\<>\s]/;
+
+/**
+ * Whether an address can go into the flow as it is: one plain ASCII address of
+ * at most 254 characters, with nothing the flow could read as an expression or
+ * as a second address (no spaces, commas, semicolons, braces, angle brackets,
+ * double quotes, backticks or backslashes, and no leading @).
+ */
+export function isSafeEmailAddress(value: string): boolean {
+  return typeof value === 'string' && value.length <= MAX_EMAIL_LENGTH && SAFE_EMAIL.test(value);
+}
+
+function hasControlCharacter(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return true;
+  }
+  return false;
+}
+
+function notMade(reason: string): Error {
+  return new Error(`The flow package was not made: ${reason}`);
+}
+
+/** An https address with no user name, password or unsafe text. */
+function httpsUrl(value: string, what: string): URL {
+  const refused = notMade(`${what} "${value}" is not a plain https address the flow can use.`);
+  if (typeof value !== 'string' || UNSAFE_URL_TEXT.test(value) || hasControlCharacter(value)) throw refused;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw refused;
+  }
+  if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') throw refused;
+  return url;
+}
+
+/** A site address: https, and no query string or fragment, so it is used exactly as SharePoint gave it. */
+function checkSiteUrl(value: string, what: string): void {
+  httpsUrl(value, what);
+  if (/[?#]/.test(value)) throw notMade(`${what} "${value}" is not a plain https address the flow can use.`);
+}
+
+/**
+ * The page address for the email links, reduced to its origin and path. A query
+ * string or fragment is dropped, so a Set-up page opened with a crafted address
+ * (browsers do not encode braces in a query string) cannot put an expression
+ * into the emails.
+ */
+function pageUrl(value: string): string {
+  const what = 'the address of the Purchase Requests page';
+  if (typeof value !== 'string') throw notMade(`${what} is missing.`);
+  const url = httpsUrl(value.split(/[?#]/)[0], what);
+  const page = url.origin + url.pathname;
+  if (UNSAFE_URL_TEXT.test(page) || hasControlCharacter(page)) throw notMade(`${what} "${page}" is not a plain https address the flow can use.`);
+  return page;
+}
+
+const sameFolders = (folders: readonly string[], expected: readonly string[]): boolean =>
+  Array.isArray(folders) && folders.length === expected.length && folders.every((folder, i) => folder === expected[i]);
+
+/** A config that passed checkFlowConfig. */
+export interface CheckedFlowConfig extends FlowConfig {
+  /** Who the approval email goes to: the approvers, or the administrator if there are none. */
+  approvalRecipients: string[];
+}
+
+/**
+ * Checks everything the flow takes from the config and throws an Error with a
+ * plain message if anything could not be used safely (strategy section 7,
+ * P-008, P-018). Returns the config with the page address reduced to its origin
+ * and path, and the approval email's recipients.
+ */
+export function checkFlowConfig(config: FlowConfig): CheckedFlowConfig {
+  if (config.mode !== 'test' && config.mode !== 'live') throw notMade('it must be a Test or a Live package.');
+  if (typeof config.submissionsListId !== 'string' || !LIST_ID.test(config.submissionsListId))
+    throw notMade('the ID of the Purchase Submissions list is not in the form SharePoint gives it.');
+  checkSiteUrl(config.siteUrl, 'the site address');
+  checkSiteUrl(config.destinationSiteUrl, 'the destination site address');
+  // A live package can only ever write to the fixed Accounting folders; a test package only to this site's own library.
+  if (config.mode === 'live') {
+    if (
+      config.destinationSiteUrl !== LIVE_DESTINATION.siteUrl ||
+      config.libraryUrlName !== LIVE_DESTINATION.libraryUrlName ||
+      !sameFolders(config.folders, LIVE_DESTINATION.folders)
+    )
+      throw notMade('a Live package can only send folders to Accounting > Purchases > Purchases_To_Process on the ExecutiveTeam site.');
+  } else if (config.destinationSiteUrl !== config.siteUrl || config.libraryUrlName !== TEST_LIBRARY_URL_NAME || !sameFolders(config.folders, TEST_FOLDERS)) {
+    throw notMade("a Test package can only send folders to this site's own Documents library, in Purchases_Test > Purchases_To_Process.");
+  }
+  if (!isSafeEmailAddress(config.adminEmail))
+    throw notMade(`the administrator's email address "${config.adminEmail}" cannot be used by the flow. It must be one plain email address.`);
+  if (!Array.isArray(config.approverEmails)) throw notMade('the list of approver addresses is missing.');
+  if (config.approverEmails.length > MAX_APPROVERS)
+    throw notMade(`the approval email can go to at most ${MAX_APPROVERS} addresses, and there are ${config.approverEmails.length}.`);
+  for (const address of config.approverEmails) {
+    if (!isSafeEmailAddress(address)) throw notMade(`the approver address "${address}" cannot be used by the flow. Each must be one plain email address.`);
+  }
+  // No approvers: the administrator (P-018). The flow relies on at least one recipient; the administrator's
+  // address has passed above, so this always holds, and the check keeps the promise visible.
+  const approvalRecipients = config.approverEmails.length > 0 ? [...config.approverEmails] : [config.adminEmail];
+  if (approvalRecipients.length === 0) throw notMade('the approval email has no one to go to.');
+  return { ...config, appPageUrl: pageUrl(config.appPageUrl), approvalRecipients };
+}
 
 export const FLOW_NAMES: Record<FlowMode, string> = {
   test: 'Purchase Requests flow (test site)',
@@ -165,8 +289,19 @@ function email(runAfter: Record<string, string[]>, to: string, subject: string, 
 const OK = ['Succeeded'];
 const EMAIL_STYLE = 'font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;';
 
-/** The flow's definition: trigger, claim, the approval branch and the packaging branch, each with its failure handling (strategy section 8). */
+/** Says what failed in the approval branch: sending the email, or recording that it was sent (A2). */
+const APPROVAL_FAILED = 'Sending the approval email, or recording that it was sent, failed';
+
+/**
+ * The flow's definition: trigger, claim, the approval branch and the packaging
+ * branch, each with its failure handling (strategy section 8). Throws if the
+ * config does not pass checkFlowConfig.
+ */
 export function buildFlowDefinition(config: FlowConfig): Record<string, unknown> {
+  return definitionOf(checkFlowConfig(config));
+}
+
+function definitionOf(config: CheckedFlowConfig): Record<string, unknown> {
   const destPath = `${sitePath(config.destinationSiteUrl)}/${config.libraryUrlName}`;
   const landing = config.folders[config.folders.length - 1];
   const landingServerPath = `${destPath}/${landing}`;
@@ -180,6 +315,7 @@ export function buildFlowDefinition(config: FlowConfig): Record<string, unknown>
   const pathPart = (path: { text: string } | { expression: string }) => ('text' in path ? path.text.replace(/'/g, "''") : `@{${path.expression}}`);
   const existsUri = (path: { text: string } | { expression: string }) => `_api/web/GetFolderByServerRelativeUrl('${pathPart(path)}')/Exists`;
   const createUri = (path: { text: string } | { expression: string }) => `_api/web/folders/addUsingPath(decodedurl='${pathPart(path)}')`;
+  // The page's origin and path only (checkFlowConfig), so nothing from a query string reaches the email links.
   const appUrl = attr(config.appPageUrl);
   // Where the app opens a request (the approver's and the administrator's page).
   const requestLink = `${appUrl}#/admin/request/@{triggerBody()?['RequestId']}`;
@@ -322,25 +458,30 @@ export function buildFlowDefinition(config: FlowConfig): Record<string, unknown>
 
   // Approval scope (the approval branch, P-018): one email to the approvers, then the status. It creates no
   // folder and no file. The recipients come from the config, fixed in the package, never from the list item.
-  const approvers = config.approverEmails.map((address) => address.trim()).filter((address) => address !== '');
   const approvalHeading = "@{if(greater(triggerBody()?['SubmissionNumber'], 1), 'Purchase approval needed again', 'Purchase approval needed')}";
   const approvalNotice =
     `<div style="${EMAIL_STYLE}"><h3>${approvalHeading}</h3><p>${summaryHtml}</p>` +
     `<p>Open the request in Purchase Requests to approve it, confirm the categories, or return it with a note: <a href="${requestLink}">Purchase Requests</a></p></div>`;
   const approval: Record<string, unknown> = {
-    Send_approval_email: email({}, approvers.length > 0 ? approvers.join(';') : config.adminEmail, "@{triggerBody()?['EmailSubject']}", approvalNotice),
+    Send_approval_email: email({}, config.approvalRecipients.join(';'), "@{triggerBody()?['EmailSubject']}", approvalNotice),
     Mark_approval_sent: patchSubmission({ Send_approval_email: OK }, config, { 'PackageStatus/Value': 'Packaged', PackagedAt: '@{utcNow()}', ErrorMessage: '' })
   };
 
-  const approvalFailureText = "@{coalesce(first(body('Failed_approval_steps'))?['error']?['message'], 'The approval email was not sent. See the flow run.')}";
+  // The error of the step that failed. A connector failure may carry its message in the step's outputs rather
+  // than in its error, so each place is tried in turn, then a fixed sentence.
+  const failedApprovalStep = "first(body('Failed_approval_steps'))";
+  const approvalError =
+    `coalesce(${failedApprovalStep}?['error']?['message'], ${failedApprovalStep}?['outputs']?['body']?['error']?['message'], ` +
+    `${failedApprovalStep}?['outputs']?['body']?['message'], ${lit(`${APPROVAL_FAILED}. See the flow run.`)})`;
   const onApprovalFailure: Record<string, unknown> = {
     Failed_approval_steps: { runAfter: {}, type: 'Query', inputs: { from: "@result('Approval_email')", where: "@equals(item()?['status'], 'Failed')" } },
-    Mark_approval_failed: patchSubmission({ Failed_approval_steps: OK }, config, { 'PackageStatus/Value': 'Failed', ErrorMessage: approvalFailureText }),
+    Mark_approval_failed: patchSubmission({ Failed_approval_steps: OK }, config, { 'PackageStatus/Value': 'Failed', ErrorMessage: `@{${approvalError}}` }),
+    // The administrator is told even if recording the failure failed or timed out.
     Send_approval_failure_email: email(
-      { Mark_approval_failed: ['Succeeded', 'Failed'] },
+      { Mark_approval_failed: ['Succeeded', 'Failed', 'TimedOut'] },
       config.adminEmail,
       `Purchase approval email failed: ${reportLabel}`,
-      `<div style="${EMAIL_STYLE}"><p>The approval email failed: @{${htmlTextExpression(approvalFailureText.slice(2, -1))}}</p>` +
+      `<div style="${EMAIL_STYLE}"><p>${APPROVAL_FAILED}: @{${htmlTextExpression(approvalError)}}</p>` +
         `<p><a href="@{${runLink}}">Open the flow run</a> &middot; <a href="${appUrl}#/admin/attention">Open Needs attention</a></p></div>`
     )
   };
@@ -394,10 +535,13 @@ export interface FlowPackage {
   zip: Uint8Array;
   /** The files inside, for checks and the example in flow/. */
   files: Record<string, string>;
+  /** Who the approval email goes to, as fixed in the package: the approvers, or the administrator if there are none. */
+  approvalRecipients: string[];
 }
 
-/** The legacy import package: manifests, connection maps and the definition. */
+/** The legacy import package: manifests, connection maps and the definition. Throws if the config does not pass checkFlowConfig. */
 export function buildFlowPackage(config: FlowConfig, newId: () => string = () => crypto.randomUUID(), now: Date = new Date()): FlowPackage {
+  const checked = checkFlowConfig(config);
   const flowId = newId();
   const ids: Record<string, { api: string; connection: string }> = {
     [SP]: { api: newId(), connection: newId() },
@@ -463,7 +607,7 @@ export function buildFlowPackage(config: FlowConfig, newId: () => string = () =>
     properties: {
       apiId: API('shared_logicflows'),
       displayName,
-      definition: buildFlowDefinition(config),
+      definition: definitionOf(checked),
       connectionReferences,
       flowFailureAlertSubscribed: false,
       isManaged: false
@@ -483,6 +627,7 @@ export function buildFlowPackage(config: FlowConfig, newId: () => string = () =>
       Object.entries(files).map(([path, content]) => ({ path, content })),
       now
     ),
-    files
+    files,
+    approvalRecipients: checked.approvalRecipients
   };
 }

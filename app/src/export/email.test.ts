@@ -1,5 +1,6 @@
 import { approvalEmailSubject, buildApprovalEmailSummary, buildSubmissionEmailSummary, shortPurpose, submissionEmailSubject } from './email';
 import { computeTotals } from '../domain/totals';
+import { vendorKey } from '../domain/purchaseRules';
 import { ApprovalGroup } from '../domain/types';
 import { file, line, quote, request } from '../testing/builders';
 
@@ -36,8 +37,8 @@ describe('the approval email summary', () => {
     line({ id: 'c', rowNumber: 3, vendor: 'Cedar', description: 'Tape', amountCents: 1500, files: [] })
   ];
   const groups: ApprovalGroup[] = [
-    { key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 60000, bought: false },
-    { key: 'borealis office', vendor: 'Borealis Office', cents: 55000, bought: true }
+    { key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 60000, bought: false },
+    { key: vendorKey('Borealis Office'), vendor: 'Borealis Office', cents: 55000, bought: true }
   ];
   const text = buildApprovalEmailSummary({
     request: request({ projectCode: 'NSF SBIR Phase 1 (Award # 2528301)' }),
@@ -72,7 +73,7 @@ describe('the approval email summary', () => {
     expect(text).toContain('2. 2026-10-12, Borealis Office, Paper, $550.00, Employee, R&D Materials & Supplies / Equipment');
   });
 
-  it('says when it is sent again after a return, and never includes the flag when nothing was bought', () => {
+  it('says when it is sent again, whether after a return or a rise past what was approved, and never includes the flag when nothing was bought', () => {
     const again = buildApprovalEmailSummary({
       request: request(),
       lines,
@@ -83,7 +84,8 @@ describe('the approval email summary', () => {
       sentOn: '2026-10-13 09:00',
       groups: [groups[0]]
     });
-    expect(again).toContain('(round 2, after a return)');
+    expect(again).toContain('Sent for approval: 2026-10-13 09:00 (round 2, sent again)');
+    expect(again).not.toContain('after a return');
     expect(again).not.toContain('FLAG');
   });
 
@@ -156,8 +158,8 @@ describe('the submission email summary', () => {
       approvedOn: '2026-10-14 10:05',
       approvalNote: 'OK, use the company card.',
       approval: {
-        sent: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 60000, bought: true }],
-        approved: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 60000, bought: true }]
+        sent: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 60000, bought: true }],
+        approved: [{ key: vendorKey('Acme Lab Supply'), vendor: 'Acme Lab Supply', cents: 60000, bought: true }]
       }
     });
     const text = buildSubmissionEmailSummary({ ...base, request: approvedRequest });

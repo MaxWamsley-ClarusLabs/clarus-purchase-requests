@@ -40,7 +40,7 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
   const [steps, setSteps] = React.useState<string[]>([]);
   const [mode, setMode] = React.useState<FlowMode>('test');
   const [making, setMaking] = React.useState(false);
-  const [made, setMade] = React.useState<{ fileName: string; config: FlowConfig } | null>(null);
+  const [made, setMade] = React.useState<{ fileName: string; config: FlowConfig; approvalRecipients: string[] } | null>(null);
   const mounted = React.useRef(true);
   React.useEffect(
     () => () => {
@@ -74,15 +74,16 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
     }
   };
 
-  // Builds the package from this site's details and downloads it (travel D-047).
+  // Builds the package from this site's details and downloads it (travel D-047). The page address goes in
+  // without its query string or fragment; the generator also drops them, and refuses anything it cannot use safely.
   const makePackage = async (): Promise<void> => {
     setMaking(true);
     setMade(null);
     try {
-      const config = await app.service.getFlowSettings(mode, window.location.href.split('#')[0]);
+      const config = await app.service.getFlowSettings(mode, window.location.origin + window.location.pathname);
       const pkg = buildFlowPackage(config);
       downloadFile(pkg.zip, pkg.fileName, 'application/zip');
-      if (mounted.current) setMade({ fileName: pkg.fileName, config });
+      if (mounted.current) setMade({ fileName: pkg.fileName, config, approvalRecipients: pkg.approvalRecipients });
     } catch (e) {
       app.reportError(e);
     } finally {
@@ -163,7 +164,7 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
               <strong>SharePoint did not accept the permission setting.</strong> Set it by hand on each list marked &quot;Permissions not set&quot;: open the
               list, then Settings (the gear) &gt; List settings &gt; Advanced settings. Under Item-level Permissions, set Read access to &quot;Read items that
               were created by the user&quot; and Create and Edit access to &quot;Create items and edit items that were created by the user&quot;. Click OK, then
-              Check again here.
+              choose Update the lists here.
             </div>
           ) : null}
         </Card>
@@ -201,7 +202,8 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
             <div className="ctx-banner green" role="status" style={{ marginTop: 16, display: 'block', overflowWrap: 'anywhere' }}>
               <strong>{made.fileName}</strong> downloaded. Submissions list {made.config.submissionsListId}; folders go to {made.config.destinationSiteUrl}/
               {made.config.libraryUrlName}/{made.config.folders[made.config.folders.length - 1]}. Submission emails go to {made.config.adminEmail}. Approval
-              emails go to {made.config.approverEmails.join(', ')}.
+              emails go to {made.config.approverSource === 'owners' ? 'the site Owners' : 'your own address, because the site Owners could not be read'}:{' '}
+              {made.approvalRecipients.join(', ')}.
             </div>
           ) : null}
           <ol className="ctx-hint" style={{ margin: '16px 0 0', paddingLeft: 18 }}>

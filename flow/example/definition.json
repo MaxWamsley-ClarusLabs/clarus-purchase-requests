@@ -170,7 +170,7 @@
                       "table": "00000000-0000-0000-0000-000000000003",
                       "id": "@triggerBody()?['ID']",
                       "item/PackageStatus/Value": "Failed",
-                      "item/ErrorMessage": "@{coalesce(first(body('Failed_approval_steps'))?['error']?['message'], 'The approval email was not sent. See the flow run.')}"
+                      "item/ErrorMessage": "@{coalesce(first(body('Failed_approval_steps'))?['error']?['message'], first(body('Failed_approval_steps'))?['outputs']?['body']?['error']?['message'], first(body('Failed_approval_steps'))?['outputs']?['body']?['message'], 'Sending the approval email, or recording that it was sent, failed. See the flow run.')}"
                     },
                     "authentication": "@parameters('$authentication')"
                   }
@@ -179,7 +179,8 @@
                   "runAfter": {
                     "Mark_approval_failed": [
                       "Succeeded",
-                      "Failed"
+                      "Failed",
+                      "TimedOut"
                     ]
                   },
                   "type": "OpenApiConnection",
@@ -192,7 +193,7 @@
                     "parameters": {
                       "emailMessage/To": "administrator@example.com",
                       "emailMessage/Subject": "Purchase approval email failed: @{coalesce(triggerBody()?['Title'], 'a purchase request')}",
-                      "emailMessage/Body": "<div style=\"font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;\"><p>The approval email failed: @{replace(replace(replace(replace(replace(replace(coalesce(coalesce(first(body('Failed_approval_steps'))?['error']?['message'], 'The approval email was not sent. See the flow run.'), ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '\"', '&quot;'), decodeUriComponent('%0D'), ''), decodeUriComponent('%0A'), '<br>')}</p><p><a href=\"@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}\">Open the flow run</a> &middot; <a href=\"https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx#/admin/attention\">Open Needs attention</a></p></div>",
+                      "emailMessage/Body": "<div style=\"font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;\"><p>Sending the approval email, or recording that it was sent, failed: @{replace(replace(replace(replace(replace(replace(coalesce(coalesce(first(body('Failed_approval_steps'))?['error']?['message'], first(body('Failed_approval_steps'))?['outputs']?['body']?['error']?['message'], first(body('Failed_approval_steps'))?['outputs']?['body']?['message'], 'Sending the approval email, or recording that it was sent, failed. See the flow run.'), ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '\"', '&quot;'), decodeUriComponent('%0D'), ''), decodeUriComponent('%0A'), '<br>')}</p><p><a href=\"@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}\">Open the flow run</a> &middot; <a href=\"https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx#/admin/attention\">Open Needs attention</a></p></div>",
                       "emailMessage/Importance": "Normal"
                     },
                     "authentication": "@parameters('$authentication')"

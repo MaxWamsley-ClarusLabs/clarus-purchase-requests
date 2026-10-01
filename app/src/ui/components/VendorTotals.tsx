@@ -37,51 +37,53 @@ export function VendorTotals(props: {
       {rows.length === 0 ? (
         <div className="ctx-hint">Add purchases to see the vendor totals.</div>
       ) : (
-        <table className="ctx-table">
-          <thead>
-            <tr>
-              <th>Vendor</th>
-              <th className="num">Total</th>
-              {props.showApproved ? <th className="num">Approved</th> : null}
-              <th>Approval</th>
-              <th>Quote</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.group.key}>
-                <td>
-                  <span className="ctx-strong">{r.group.vendor || <span className="ctx-muted">No vendor yet</span>}</span>
-                  <div className="ctx-hint">{rowsText(r.rows)}</div>
-                </td>
-                <td className="num">{formatCents(r.group.totalCents)}</td>
-                {props.showApproved ? (
-                  <td className="num">{r.approvedCents === null ? <span className="ctx-muted">-</span> : formatCents(r.approvedCents)}</td>
-                ) : null}
-                <td>
-                  <Badge tone={APPROVAL_TONE[r.approval]}>{VENDOR_APPROVAL_LABEL[r.approval]}</Badge>
-                  {r.boughtBefore ? (
-                    <>
-                      {' '}
-                      <Tag>Bought before approval</Tag>
-                    </>
-                  ) : null}
-                </td>
-                <td>
-                  {r.quote.kind === 'notNeeded' ? (
-                    <span className="ctx-muted" title="No quote is needed">
-                      -
-                    </span>
-                  ) : r.quote.kind === 'missing' ? (
-                    <Badge tone="amber">{quoteText(r.quote)}</Badge>
-                  ) : (
-                    quoteText(r.quote)
-                  )}
-                </td>
+        <div className="ctx-table-wrap">
+          <table className="ctx-table">
+            <thead>
+              <tr>
+                <th>Vendor</th>
+                <th className="num">Total</th>
+                {props.showApproved ? <th className="num">Approved</th> : null}
+                <th>Approval</th>
+                <th>Quote</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.group.key}>
+                  <td>
+                    <span className="ctx-strong">{r.group.vendor || <span className="ctx-muted">No vendor yet</span>}</span>
+                    <div className="ctx-hint">{rowsText(r.rows)}</div>
+                  </td>
+                  <td className="num">{formatCents(r.group.totalCents)}</td>
+                  {props.showApproved ? (
+                    <td className="num">{r.approvedCents === null ? <span className="ctx-muted">-</span> : formatCents(r.approvedCents)}</td>
+                  ) : null}
+                  <td>
+                    <Badge tone={APPROVAL_TONE[r.approval]}>{VENDOR_APPROVAL_LABEL[r.approval]}</Badge>
+                    {r.boughtBefore ? (
+                      <>
+                        {' '}
+                        <Tag>Bought before approval</Tag>
+                      </>
+                    ) : null}
+                  </td>
+                  <td>
+                    {r.quote.kind === 'notNeeded' ? (
+                      <span className="ctx-muted" title="No quote is needed">
+                        -
+                      </span>
+                    ) : r.quote.kind === 'missing' ? (
+                      <Badge tone="amber">{quoteText(r.quote)}</Badge>
+                    ) : (
+                      quoteText(r.quote)
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

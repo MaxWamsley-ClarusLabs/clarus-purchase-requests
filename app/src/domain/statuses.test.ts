@@ -4,8 +4,10 @@ import {
   PACKAGE_ATTENTION_MINUTES,
   REQUEST_STATUSES,
   REQUEST_STATUS_DISPLAY,
+  STATUS_FOR_SUBMISSION,
   canConfirmCategories,
   isEditable,
+  submissionNeedsAttention,
   submissionStatusDisplay
 } from './statuses';
 
@@ -37,5 +39,19 @@ describe('request statuses (P-006, P-027)', () => {
 
   it('flags a submission that is not done after 30 minutes', () => {
     expect(PACKAGE_ATTENTION_MINUTES).toBe(30);
+  });
+
+  it('needs attention when it failed, or when it is not Packaged 30 minutes after it was made (P-030)', () => {
+    const now = new Date(2026, 9, 12, 10, 0);
+    expect(submissionNeedsAttention({ packageStatus: 'Failed', submittedOn: '2026-10-12 09:59' }, now)).toBe(true);
+    expect(submissionNeedsAttention({ packageStatus: 'Packaged', submittedOn: '2026-10-01 09:00' }, now)).toBe(false);
+    for (const status of ['Uploading', 'Ready', 'Processing'] as const) {
+      expect(submissionNeedsAttention({ packageStatus: status, submittedOn: '2026-10-12 09:29' }, now)).toBe(true);
+      expect(submissionNeedsAttention({ packageStatus: status, submittedOn: '2026-10-12 09:31' }, now)).toBe(false);
+    }
+  });
+
+  it('says which request status each kind of submission is for', () => {
+    expect(STATUS_FOR_SUBMISSION).toEqual({ approval: 'Awaiting approval', package: 'Submitted' });
   });
 });

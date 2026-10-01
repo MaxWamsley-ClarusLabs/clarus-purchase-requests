@@ -2,7 +2,7 @@
 // A submission is either an approval request (the flow emails the approvers) or
 // a processing package (the flow creates the request folder), P-018.
 
-import { PACKAGE_ATTENTION_MINUTES } from '../../../domain/statuses';
+import { submissionNeedsAttention } from '../../../domain/statuses';
 import { PurchaseRequest, Submission, SubmissionType } from '../../../domain/types';
 
 /** Newest first: the highest submission number, and for the same number the highest ID. */
@@ -41,10 +41,7 @@ export function latestApprovalByRequest(submissions: readonly Submission[]): Map
  * email was not sent.
  */
 export function needsAttention(s: Submission, now: Date = new Date()): boolean {
-  if (s.packageStatus === 'Failed') return true;
-  if (s.packageStatus === 'Packaged') return false;
-  const submitted = new Date(s.submittedOn.replace(' ', 'T'));
-  return now.getTime() - submitted.getTime() > PACKAGE_ATTENTION_MINUTES * 60 * 1000;
+  return submissionNeedsAttention(s, now);
 }
 
 /**

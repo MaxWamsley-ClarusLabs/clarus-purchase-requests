@@ -1,6 +1,10 @@
+import { vendorKey } from '../domain/purchaseRules';
+import { LINE_APPROVAL_DISPLAY } from '../domain/statuses';
 import { file, line, quote, request } from '../testing/builders';
-import { changedMessages, quoteText, rowsText, vendorRows } from './vendorRows';
+import { VENDOR_APPROVAL_LABEL, changedMessages, quoteText, rowsText, vendorRows } from './vendorRows';
 
+// The approval record keys a vendor by its matching key (P-016).
+const ACME = vendorKey('Acme Lab Supply');
 const acme = (overrides = {}) => line({ id: 'a1', rowNumber: 1, vendor: 'Acme Lab Supply', amountCents: 64000, files: [], ...overrides });
 
 describe('the vendor totals (P-015, P-016, P-019)', () => {
@@ -45,7 +49,7 @@ describe('the vendor totals (P-015, P-016, P-019)', () => {
     const status = (r: ReturnType<typeof request>) => vendorRows(lines, r).map((v) => v.approval);
     expect(status(request({ status: 'Draft' }))).toEqual(['needed', 'notRequired']);
     expect(status(request({ status: 'Awaiting approval' }))).toEqual(['pending', 'notRequired']);
-    const approved = { sent: [], approved: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 64000, bought: false }] };
+    const approved = { sent: [], approved: [{ key: ACME, vendor: 'Acme Lab Supply', cents: 64000, bought: false }] };
     expect(status(request({ status: 'Approved', approval: approved }))).toEqual(['approved', 'notRequired']);
     expect(vendorRows(lines, request({ status: 'Approved', approval: approved }))[0].approvedCents).toBe(64000);
     // A rise of more than 10% needs approval again.
@@ -53,14 +57,19 @@ describe('the vendor totals (P-015, P-016, P-019)', () => {
     expect(vendorRows(raised, request({ status: 'Approved', approval: approved }))[0].approval).toBe('changed');
   });
 
+  it('uses the same words as the grid and the CSV', () => {
+    expect(VENDOR_APPROVAL_LABEL.notRequired).toBe('Not required');
+    expect(VENDOR_APPROVAL_LABEL.notRequired).toBe(LINE_APPROVAL_DISPLAY.notRequired.label);
+  });
+
   it('carries the bought before approval flag', () => {
-    const sent = { sent: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 64000, bought: true }], approved: [] };
+    const sent = { sent: [{ key: ACME, vendor: 'Acme Lab Supply', cents: 64000, bought: true }], approved: [] };
     expect(vendorRows([acme()], request({ status: 'Awaiting approval', approval: sent }))[0].boughtBefore).toBe(true);
     expect(vendorRows([acme()], request())[0].boughtBefore).toBe(false);
   });
 
   it('words what rose past the allowance, or was never approved', () => {
-    const approved = { sent: [], approved: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 64000, bought: false }] };
+    const approved = { sent: [], approved: [{ key: ACME, vendor: 'Acme Lab Supply', cents: 64000, bought: false }] };
     const lines = [acme({ amountCents: 80000 }), line({ id: 'k1', rowNumber: 2, vendor: 'Kestrel Instruments', amountCents: 115000, files: [] })];
     const messages = changedMessages(vendorRows(lines, request({ status: 'Approved', approval: approved })));
     expect(messages).toHaveLength(2);

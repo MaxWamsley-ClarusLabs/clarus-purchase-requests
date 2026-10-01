@@ -22,6 +22,7 @@ const example: FlowConfig = {
   folders: [...LIVE_DESTINATION.folders],
   adminEmail: 'administrator@example.com',
   approverEmails: ['approver.one@example.com', 'approver.two@example.com'],
+  approverSource: 'owners',
   appPageUrl: 'https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx'
 };
 

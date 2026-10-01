@@ -6,7 +6,7 @@
 // Tests use global describe, it and expect only, so they also run under Jest.
 
 import { messages } from '../../domain/messages';
-import { CERTIFICATION, isSelfApproved } from '../../domain/purchaseRules';
+import { CERTIFICATION, isSelfApproved, vendorKey } from '../../domain/purchaseRules';
 import { ApprovalGroup, CategoryId, PackageStatus, PaidById, PurchaseLine, RequestStatus, SubmissionType } from '../../domain/types';
 import { ApprovalRequiredError, SubmissionBlockedError } from '../../export/submission';
 import { ApproveOptions, PurchaseDataService, RequestChanges } from '../PurchaseDataService';
@@ -23,11 +23,20 @@ export const SAM: Person = { name: 'Sam Lee', email: 'sam.lee@example.com', admi
 /** An administrator, who is also the approver (P-020). */
 export const MAX: Person = { name: 'Max Wamsley', email: 'max.wamsley@example.com', admin: true };
 
+/** A change made to a row directly in SharePoint, outside the app and its locks (travel D-002). */
+export interface DirectLineEdit {
+  amountCents?: number;
+  vendor?: string;
+  date?: string;
+}
+
 export interface Harness {
   /** The service, signed in as this person. `now` sets the clock for the times it writes. */
   as(person: Person, now?: Date): PurchaseDataService;
-  /** Leaves a submission as the flow would, for the retry tests. */
-  setSubmissionState(id: number, status: PackageStatus, errorMessage?: string): void;
+  /** Leaves a submission as the flow would, for the retry tests. `madeAt` sets when it was made. */
+  setSubmissionState(id: number, status: PackageStatus, errorMessage?: string, madeAt?: Date): void;
+  /** Changes a row as its owner can directly in SharePoint, whatever the request's status. */
+  editLineDirectly(lineId: string, edit: DirectLineEdit): void;
   /** Adds an earlier attempt that stopped part-way, still Uploading, as the person's own item. Returns its ID. */
   addUploadingSubmission(owner: Person, request: { id: number; requestNumber: string }, type: SubmissionType, number: number): number;
   /** Leaves an approval on a request, as an edit made directly in SharePoint could (travel D-002). */
@@ -37,6 +46,9 @@ export interface Harness {
 const NOW = new Date(2026, 9, 16, 9, 30);
 const APPROVED_AT = new Date(2026, 9, 17, 10, 5);
 const SUBMITTED_AT = new Date(2026, 9, 18, 11, 15);
+
+/** The vendor matching key of the request most tests use. */
+const ACME_KEY = vendorKey('Acme Lab Supply');
 
 const pdf = (name: string, content = `synthetic ${name}`): File => new File([content], name, { type: 'application/pdf' });
 const png = (name: string, content = `synthetic ${name}`): File => new File([content], name, { type: 'image/png' });
@@ -161,6 +173,11 @@ async function requestInState(h: Harness, status: RequestStatus): Promise<number
 }
 
 const STATUSES: RequestStatus[] = ['Draft', 'Awaiting approval', 'Approved', 'Submitted', 'Returned', 'Processed'];
+
+/** Lets the mock's simulated flow finish the steps it runs on timers, so a test can then set a submission's state itself. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 5));
+}
 
 /** Resolves to the error a call was refused with, which must be a NotAllowedError. */
 async function refusal(call: Promise<unknown>): Promise<Error> {
@@ -496,7 +513,14 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       const jane = h.as(JANE, NOW);
       const { lines } = await fill(jane, [NORTHWIND]);
       const long = 'x'.repeat(300);
-      const saved = await jane.updateLine(lines[0].id, { vendor: long, description: long, categoryOther: long, noQuoteReason: long, noReceiptReason: long });
+      const saved = await jane.updateLine(lines[0].id, {
+        vendor: long,
+        description: long,
+        category: 'other',
+        categoryOther: long,
+        noQuoteReason: long,
+        noReceiptReason: long
+      });
       for (const value of [saved.vendor, saved.description, saved.categoryOther, saved.noQuoteReason, saved.noReceiptReason]) expect(value.length).toBe(255);
     });
 
@@ -523,7 +547,9 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);
       const { id } = await jane.createRequest();
-      const [a, b, c] = await jane.addLinesFromFiles(id, [pdf('a.pdf'), pdf('b.pdf'), pdf('c.pdf')], 'receipt');
+      const [a, b] = await jane.addLinesFromFiles(id, [pdf('a.pdf'), pdf('b.pdf')], 'receipt');
+      // Row 3 uses row 2's receipt, so it holds none of its own.
+      const c = await jane.addEmptyLine(id);
       await jane.updateLine(a.id, { amountCents: 1000, paidBy: 'company' });
       await jane.updateLine(b.id, { amountCents: 2000, paidBy: 'employee' });
       await jane.updateLine(c.id, { amountCents: 3000, paidBy: 'company', sameReceiptAsRow: 2 });
@@ -601,6 +627,38 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect((await jane.getRequest(id)).lines[1].sameReceiptAsRow).toBeNull();
     });
 
+    it('refuses to point a row that holds a receipt of its own at another row, until that receipt is removed (travel D-038)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id } = await jane.createRequest();
+      const [, two] = await jane.addLinesFromFiles(id, [pdf('a.pdf'), pdf('b.pdf')], 'receipt');
+      const refused = await refusal(jane.updateLine(two.id, { description: 'Centrifuge tubes', sameReceiptAsRow: 1 }));
+      expect(refused.message).toBe(notAllowed.sharedReceiptHasOwn);
+      // Nothing in the refused change was saved.
+      expect((await jane.getRequest(id)).lines[1]).toMatchObject({ description: '', sameReceiptAsRow: null });
+      expect((await jane.getRequest(id)).lines[1].files.map((f) => f.fileName)).toEqual(['b.pdf']);
+      // A quote is not a receipt: once the row holds only a quote, it can use row 1's receipt.
+      await jane.removeFileFromLine(two.id, two.files[0].id);
+      await jane.addFileToLine(two.id, pdf('quote.pdf'), 'quote');
+      expect((await jane.updateLine(two.id, { sameReceiptAsRow: 1 })).sameReceiptAsRow).toBe(1);
+      expect((await jane.getRequest(id)).lines[1].sameReceiptAsRow).toBe(1);
+      // Taking the pointer away is always allowed.
+      expect((await jane.updateLine(two.id, { sameReceiptAsRow: null })).sameReceiptAsRow).toBeNull();
+    });
+
+    it('keeps a description of the category only for Other: choosing another category clears it (P-024)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id, lines } = await fill(jane, [NORTHWIND]);
+      await jane.updateLine(lines[0].id, { category: 'other', categoryOther: 'Lab safety audit' });
+      expect((await jane.getRequest(id)).lines[0]).toMatchObject({ category: 'other', categoryOther: 'Lab safety audit' });
+      expect(await jane.updateLine(lines[0].id, { category: 'office' })).toMatchObject({ category: 'office', categoryOther: '' });
+      expect((await jane.getRequest(id)).lines[0]).toMatchObject({ category: 'office', categoryOther: '' });
+      // A description sent for a category that needs none is not kept.
+      expect(await jane.updateLine(lines[0].id, { categoryOther: 'Left over' })).toMatchObject({ category: 'office', categoryOther: '' });
+      expect((await jane.getRequest(id)).lines[0].categoryOther).toBe('');
+    });
+
     it("stores unconfirmed suggestions in the grid's order, and will not submit until they are confirmed (travel D-078)", async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);
@@ -634,7 +692,27 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       const { id } = await fill(jane, split);
       const submission = await jane.sendForApproval(id);
       expect(submission.emailSummary).toContain('- Acme Lab Supply: $600.00 (quote attached)');
-      expect((await jane.getRequest(id)).request.approval.sent).toEqual([{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 60000, bought: false }]);
+      expect((await jane.getRequest(id)).request.approval.sent).toEqual([{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 60000, bought: false }]);
+    });
+
+    it('counts the spellings of one vendor together: $300 at "Digi-Key" and $300 at "DigiKey" need approval and a quote (P-016)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id, lines } = await fill(jane, [
+        { ...ACME, vendor: 'Digi-Key', amountCents: 30000, quotes: [] },
+        { ...ACME, vendor: 'DigiKey', amountCents: 30000, quotes: [] }
+      ]);
+      await expect(jane.submitRequest(id, CERTIFICATION)).rejects.toBeInstanceOf(ApprovalRequiredError);
+      const error = await jane.sendForApproval(id).then(
+        () => undefined,
+        (e: unknown) => e
+      );
+      expect(error).toBeInstanceOf(SubmissionBlockedError);
+      expect((error as SubmissionBlockedError).issues.map((i) => [i.rowNumber, i.field])).toEqual([[1, 'quote']]);
+      await jane.updateLine(lines[0].id, { noQuoteReason: 'Catalog price' });
+      const submission = await jane.sendForApproval(id);
+      expect(submission.emailSummary).toContain('- Digi-Key: $600.00 (no quote: Catalog price)');
+      expect((await jane.getRequest(id)).request.approval.sent).toEqual([{ key: 'digikey', vendor: 'Digi-Key', cents: 60000, bought: false }]);
     });
 
     it('refuses a vendor total at the threshold with no quote and no reason (P-015), and allows it with a reason', async () => {
@@ -716,7 +794,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
         approvedOn: '',
         approvedBy: '',
         approvalNote: '',
-        approval: { sent: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 100000, bought: false }], approved: [] }
+        approval: { sent: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }], approved: [] }
       });
       expect((await jane.listSubmissionsForRequest(id)).map((s) => [s.type, s.submissionNumber, s.id])).toEqual([['approval', 1, submission.id]]);
       expect(await jane.getSubmissionCsv(submission.id)).toBe('');
@@ -741,7 +819,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect(submission.emailSummary).toContain('FLAG, bought before approval: Acme Lab Supply ($1,000.00).');
       const { request } = await jane.getRequest(id);
       expect(request.boughtBeforeApproval).toBe(true);
-      expect(request.approval.sent).toEqual([{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 100000, bought: true }]);
+      expect(request.approval.sent).toEqual([{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: true }]);
       // The day it is sent is not before it.
       const today = await fill(jane, [{ ...ACME, date: '2026-10-16' }]);
       expect((await jane.sendForApproval(today.id)).boughtBeforeApproval).toBe(false);
@@ -757,6 +835,65 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       // A quote alone does not.
       const quoted = await fill(jane, [ACME]);
       expect((await jane.sendForApproval(quoted.id)).boughtBeforeApproval).toBe(false);
+    });
+
+    it('keeps the bought-before-approval flag of an earlier round, even after the date is moved to the future (P-017)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id, lines } = await fill(jane, [{ ...ACME, date: '2026-10-10' }]);
+      expect((await jane.sendForApproval(id)).boughtBeforeApproval).toBe(true);
+      await h.as(MAX, APPROVED_AT).returnRequest(id, 'Please check the date.');
+      const later = h.as(JANE, SUBMITTED_AT);
+      await later.updateLine(lines[0].id, { date: '2026-12-01' });
+      const again = await later.sendForApproval(id);
+      expect(again).toMatchObject({ submissionNumber: 2, boughtBeforeApproval: true });
+      expect(again.emailSummary).toContain('FLAG, bought before approval: Acme Lab Supply ($1,000.00).');
+      expect(again.emailSummary).toContain('(round 2, sent again)');
+      expect((await later.getRequest(id)).request).toMatchObject({
+        boughtBeforeApproval: true,
+        approval: { sent: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: true }], approved: [] }
+      });
+    });
+
+    it('sent again after a rise, flags only the vendor total that rose past its approval, and the emails and the CSV agree (P-017, P-019)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const borealis: Row = {
+        vendor: 'Borealis Optics',
+        amountCents: 80000,
+        date: '2026-10-20',
+        description: 'Optical bench parts',
+        category: 'rdMaterials',
+        quotes: ['borealis-quote.pdf']
+      };
+      const { id, lines } = await fill(jane, [ACME, borealis]);
+      await jane.sendForApproval(id);
+      await h.as(MAX, APPROVED_AT).approveRequest(id, { note: '', categories: {} });
+      // Both are bought after the approval; Acme cost $1,150.00, more than 10% over the $1,000.00 approved.
+      const later = h.as(JANE, SUBMITTED_AT);
+      await attachReceipts(later, id);
+      await later.updateLine(lines[0].id, { amountCents: 115000 });
+      await expect(later.submitRequest(id, CERTIFICATION)).rejects.toBeInstanceOf(ApprovalRequiredError);
+      const again = await later.sendForApproval(id);
+      expect(again.boughtBeforeApproval).toBe(true);
+      expect(again.emailSummary).toContain('FLAG, bought before approval: Acme Lab Supply ($1,150.00).');
+      expect(again.emailSummary).not.toMatch(/FLAG.*Borealis/);
+      expect((await later.getRequest(id)).request.approval.sent.map((g) => [g.vendor, g.cents, g.bought])).toEqual([
+        ['Acme Lab Supply', 115000, true],
+        ['Borealis Optics', 80000, false]
+      ]);
+
+      const at = new Date(2026, 9, 19, 9, 0);
+      await h.as(MAX, at).approveRequest(id, { note: '', categories: {} });
+      const submission = await h.as(JANE, at).submitRequest(id, CERTIFICATION);
+      expect(submission.boughtBeforeApproval).toBe(true);
+      expect(submission.emailSummary).toContain('FLAG, bought before approval: Acme Lab Supply ($1,150.00).');
+      expect(submission.emailSummary).not.toMatch(/FLAG.*Borealis/);
+      const rows = (await h.as(JANE, at).getSubmissionCsv(submission.id)).split('\r\n');
+      expect(rows[1]).toContain('Acme Lab Supply');
+      expect(rows[1]).toContain('Approved,Yes,Max Wamsley');
+      expect(rows[2]).toContain('Borealis Optics');
+      expect(rows[2]).toContain('Approved,No,Max Wamsley');
     });
 
     it('removes an earlier approval attempt that stopped part-way, but nothing else', async () => {
@@ -807,8 +944,8 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
         sentForApprovalOn: '2026-10-16 09:30'
       });
       expect(approved.approval).toEqual({
-        sent: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 100000, bought: false }],
-        approved: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 100000, bought: false }]
+        sent: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }],
+        approved: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }]
       });
       const after = (await h.as(JANE, NOW).getRequest(id)).lines;
       expect(after[0]).toMatchObject({ category: 'rdMaterials', categoryOther: '', categoryConfirmedBy: 'Max Wamsley' });
@@ -823,13 +960,56 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect((await jane.updateRequest(id, { projectCode: 'NSF SBIR Phase 1 (Award # 2528301)' })).projectCode).toContain('NSF');
     });
 
+    it('refuses to approve a request changed after it was sent, for example directly in SharePoint, and writes nothing (P-019)', async () => {
+      const h = await makeHarness();
+      const { id, lines } = await sent(h);
+      // Jane raises the amount in SharePoint itself, past the app's lock (travel D-002).
+      h.editLineDirectly(lines[0].id, { amountCents: 150000 });
+      const max = h.as(MAX, APPROVED_AT);
+      const changedCategory = { [lines[1].id]: { category: 'other' as CategoryId, categoryOther: 'Lab furniture' } };
+      expect((await refusal(max.approveRequest(id, { note: 'OK', categories: changedCategory }))).message).toBe(notAllowed.changedSinceSent);
+      const after = await max.getRequest(id);
+      expect(after.request).toMatchObject({ status: 'Awaiting approval', approvedBy: '', approvedByEmail: '', approvedOn: '', approvalNote: '' });
+      expect(after.request.approval).toEqual({ sent: [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }], approved: [] });
+      expect(after.lines.map((l) => [l.category, l.categoryOther, l.categoryConfirmedBy])).toEqual([
+        ['rdMaterials', '', ''],
+        ['office', '', '']
+      ]);
+      // The approver returns it; sent again as it now stands, it can be approved.
+      await max.returnRequest(id, 'The amount changed after you sent it. Please send it again.');
+      await h.as(JANE, SUBMITTED_AT).sendForApproval(id);
+      const approved = await h.as(MAX, SUBMITTED_AT).approveRequest(id, { note: '', categories: {} });
+      expect(approved.approval.approved).toEqual([{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 150000, bought: false }]);
+    });
+
+    it('approves a request whose vendor was only spelt another way since it was sent, and refuses one where a vendor total came or went', async () => {
+      const h = await makeHarness();
+      const cases: [string, number, DirectLineEdit, boolean][] = [
+        ['the same vendor, spelt another way', 0, { vendor: 'ACME LAB SUPPLY.' }, true],
+        ['another vendor name', 0, { vendor: 'Acme Labs' }, false],
+        ['a total that fell under the threshold', 0, { amountCents: 40000 }, false],
+        ['a new total of $500 or more', 1, { amountCents: 60000 }, false],
+        ['a lower amount', 0, { amountCents: 90000 }, false]
+      ];
+      for (const [name, row, edit, allowed] of cases) {
+        const { id, lines } = await sent(h);
+        h.editLineDirectly(lines[row].id, edit);
+        const max = h.as(MAX, APPROVED_AT);
+        const outcome = await max.approveRequest(id, { note: '', categories: {} }).then(
+          (r) => r.status as string,
+          (e: unknown) => (e instanceof NotAllowedError ? e.message : 'unexpected error')
+        );
+        expect([name, outcome]).toEqual([name, allowed ? 'Approved' : notAllowed.changedSinceSent]);
+      }
+    });
+
     it('records the approved total of a vendor that has several rows, and carries the bought flag over', async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);
       const { id } = await fill(jane, [{ ...ACME, amountCents: 40000, date: '2026-10-10' }, { ...ACME, amountCents: 35000, quotes: [] }, NORTHWIND]);
       await jane.sendForApproval(id);
       const approved = await h.as(MAX, APPROVED_AT).approveRequest(id, { note: '', categories: {} });
-      expect(approved.approval.approved).toEqual([{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 75000, bought: true }]);
+      expect(approved.approval.approved).toEqual([{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 75000, bought: true }]);
       expect(approved.boughtBeforeApproval).toBe(true);
     });
 
@@ -925,7 +1105,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
     it('takes away an approval left on a request that is awaiting approval, for example by an edit in SharePoint, when it is returned', async () => {
       const h = await makeHarness();
       const { id } = await sent(h);
-      h.leaveApproval(id, MAX, [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 100000, bought: false }]);
+      h.leaveApproval(id, MAX, [{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }]);
       const before = (await h.as(MAX).getRequest(id)).request;
       expect(before).toMatchObject({ status: 'Awaiting approval', approvedBy: 'Max Wamsley', approvedByEmail: MAX.email, approvalNote: 'Left by an edit' });
       expect(before.approvedOn).not.toBe('');
@@ -968,7 +1148,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       await jane.updateLine(added.id, {
         date: '2026-10-20',
         vendor: 'Harbor Software',
-        description: 'Annual licence',
+        description: 'Annual license',
         category: 'computer',
         amountCents: 50000,
         paidBy: 'company',
@@ -995,6 +1175,29 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect(request.approval.approved).toEqual([]);
       const approved = await h.as(MAX, SUBMITTED_AT).approveRequest(id, { note: '', categories: {} });
       expect(approved.approval.approved[0].cents).toBe(120000);
+    });
+
+    it('does not let a vendor spelt another way get round the allowance: "Thorlabs" adds to the "Thor Labs" total (P-016, P-019)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id } = await fill(jane, [{ ...ACME, vendor: 'Thor Labs', quotes: ['thor-labs-quote.pdf'] }]);
+      await jane.sendForApproval(id);
+      await h.as(MAX, APPROVED_AT).approveRequest(id, { note: '', categories: {} });
+      const later = h.as(JANE, SUBMITTED_AT);
+      await attachReceipts(later, id);
+      const added = await later.addEmptyLine(id);
+      await later.updateLine(added.id, {
+        date: '2026-10-20',
+        vendor: 'Thorlabs',
+        description: 'Lens mounts',
+        category: 'rdMaterials',
+        amountCents: 49900,
+        paidBy: 'company'
+      });
+      await later.addFileToLine(added.id, pdf('thorlabs-invoice.pdf'), 'receipt');
+      await expect(later.submitRequest(id, CERTIFICATION)).rejects.toBeInstanceOf(ApprovalRequiredError);
+      const again = await later.sendForApproval(id);
+      expect(again.emailSummary).toContain('- Thor Labs: $1,499.00 (quote attached)');
     });
 
     it('does not ask for approval again when nothing changed', async () => {
@@ -1186,7 +1389,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       await jane.submitRequest(id, CERTIFICATION);
       const returned = await h.as(MAX, APPROVED_AT).returnRequest(id, 'Row 1: please attach the itemized invoice.');
       expect(returned).toMatchObject({ status: 'Returned', returnStage: 'processing', approvedBy: 'Max Wamsley', approvalNote: 'OK, use the company card.' });
-      expect(returned.approval.approved).toEqual([{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 100000, bought: false }]);
+      expect(returned.approval.approved).toEqual([{ key: ACME_KEY, vendor: 'Acme Lab Supply', cents: 100000, bought: false }]);
       const second = await jane.submitRequest(id, CERTIFICATION);
       expect(second).toMatchObject({ submissionNumber: 2, approvedBy: 'Max Wamsley' });
       expect((await jane.listSubmissionsForRequest(id)).map((s) => [s.type, s.submissionNumber])).toEqual([
@@ -1266,6 +1469,49 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
         expect((await max.listSubmissions()).find((s) => s.id === target.id)).toMatchObject({ packageStatus: 'Ready', errorMessage: '' });
       }
       await refusal(max.retryPackaging(999));
+    });
+
+    it('retries only a failed or stuck submission, the newest of its kind, while its request is still at that step (P-030)', async () => {
+      const h = await makeHarness();
+      const max = (at: Date = APPROVED_AT) => h.as(MAX, at);
+      const statusOf = async (id: number) => (await max().listSubmissions()).find((s) => s.id === id)!.packageStatus;
+
+      // An approval email that went out, for a request since approved, is left as it is.
+      const approvedOne = await sent(h);
+      await max().approveRequest(approvedOne.id, { note: '', categories: {} });
+      await settle();
+      h.setSubmissionState(approvedOne.submission.id, 'Packaged');
+      expect((await refusal(max().retryPackaging(approvedOne.submission.id))).message).toBe(notAllowed.retryMovedOn);
+      expect(await statusOf(approvedOne.submission.id)).toBe('Packaged');
+
+      // A failed package of a request since returned is not sent again.
+      const returnedId = await requestInState(h, 'Returned');
+      const failedPackage = (await max().listSubmissions()).find((s) => s.requestId === returnedId)!;
+      await settle();
+      h.setSubmissionState(failedPackage.id, 'Failed', 'The flow failed.');
+      expect((await refusal(max().retryPackaging(failedPackage.id))).message).toBe(notAllowed.retryMovedOn);
+      expect(await statusOf(failedPackage.id)).toBe('Failed');
+
+      // Of two approval rounds, only the newest can be tried again.
+      const twice = await sent(h);
+      await max().returnRequest(twice.id, 'Please add a quote.');
+      const second = await h.as(JANE, SUBMITTED_AT).sendForApproval(twice.id);
+      await settle();
+      h.setSubmissionState(twice.submission.id, 'Failed', 'The flow failed.');
+      h.setSubmissionState(second.id, 'Failed', 'The flow failed.');
+      expect((await refusal(max().retryPackaging(twice.submission.id))).message).toBe(notAllowed.retryMovedOn);
+      expect(await max().retryPackaging(second.id)).toMatchObject({ id: second.id, packageStatus: 'Ready', errorMessage: '' });
+
+      // One still waiting for the flow is tried again only once it is more than 30 minutes old; one that went out, never.
+      const waiting = await sent(h);
+      await settle();
+      const madeAt = new Date(2026, 9, 16, 9, 30);
+      h.setSubmissionState(waiting.submission.id, 'Ready', '', madeAt);
+      expect((await refusal(max(new Date(2026, 9, 16, 9, 35)).retryPackaging(waiting.submission.id))).message).toBe(notAllowed.retryNotStuck);
+      expect(await max(new Date(2026, 9, 16, 10, 1)).retryPackaging(waiting.submission.id)).toMatchObject({ packageStatus: 'Ready' });
+      await settle();
+      h.setSubmissionState(waiting.submission.id, 'Packaged', '', madeAt);
+      expect((await refusal(max(new Date(2026, 9, 16, 11, 0)).retryPackaging(waiting.submission.id))).message).toBe(notAllowed.retryNotStuck);
     });
 
     it("lists a request's submissions with approval requests first and each type newest first", async () => {

@@ -1,7 +1,7 @@
 // Request, package and approval statuses and how each is shown (travel D-033).
 
 import { ApprovalState, LineApprovalStatus } from './purchaseRules';
-import { PackageStatus, RequestStatus, SubmissionType } from './types';
+import { PackageStatus, RequestStatus, Submission, SubmissionType } from './types';
 
 export type BadgeTone = 'lavender' | 'purple' | 'amber' | 'green' | 'red';
 
@@ -70,3 +70,19 @@ export function canConfirmCategories(status: RequestStatus): boolean {
 
 /** Minutes after which a submission that is not Packaged needs attention (travel strategy section 7, P-030). */
 export const PACKAGE_ATTENTION_MINUTES = 30;
+
+/**
+ * A submission that failed, or that the flow has not finished within
+ * PACKAGE_ATTENTION_MINUTES of it being made (P-030): its folder was not
+ * created, or its approval email was not sent. `submittedOn` is the local
+ * "YYYY-MM-DD HH:MM" it was made at.
+ */
+export function submissionNeedsAttention(s: Pick<Submission, 'packageStatus' | 'submittedOn'>, now: Date): boolean {
+  if (s.packageStatus === 'Failed') return true;
+  if (s.packageStatus === 'Packaged') return false;
+  const submitted = new Date(s.submittedOn.replace(' ', 'T'));
+  return now.getTime() - submitted.getTime() > PACKAGE_ATTENTION_MINUTES * 60 * 1000;
+}
+
+/** The request status a submission of each type is for: an approval request while the request awaits approval, a package while it is submitted. */
+export const STATUS_FOR_SUBMISSION: Record<SubmissionType, RequestStatus> = { approval: 'Awaiting approval', package: 'Submitted' };

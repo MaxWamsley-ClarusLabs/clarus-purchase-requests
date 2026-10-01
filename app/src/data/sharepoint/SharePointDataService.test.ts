@@ -5,6 +5,7 @@
 
 import { messages } from '../../domain/messages';
 import { CERTIFICATION } from '../../domain/purchaseRules';
+import { MAX_APPROVERS, checkFlowConfig } from '../../export/flowPackage';
 import { FakeOwner, FakeSharePoint, FakeUser } from '../../testing/FakeSharePoint';
 import { uniqueName } from '../files';
 import { Harness, JANE, MAX, Person, SAM, describeDataServiceRules } from '../mock/dataServiceContract';
@@ -19,6 +20,7 @@ const FAKE_USERS: Record<string, FakeUser> = {
 };
 const FAKE_MAX = FAKE_USERS[MAX.email];
 const FAKE_JANE = FAKE_USERS[JANE.email];
+const FAKE_SAM = FAKE_USERS[SAM.email];
 
 const NOW = new Date(2026, 9, 16, 9, 30);
 const PAGE = 'https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx';
@@ -43,10 +45,17 @@ async function harness(): Promise<Harness & { site: FakeSharePoint }> {
   return {
     site,
     as: (person: Person, now?: Date) => serviceFor(site, FAKE_USERS[person.email], now),
-    setSubmissionState: (id, status, errorMessage = '') => {
+    setSubmissionState: (id, status, errorMessage = '', madeAt) => {
       const item = site.listByUrlName('PurchaseSubmissions')!.items.get(id)!;
       item.fields.PackageStatus = status;
       item.fields.ErrorMessage = errorMessage;
+      if (madeAt) item.fields.Created = madeAt.toISOString();
+    },
+    editLineDirectly: (lineId, edit) => {
+      const fields = site.listByUrlName('PurchaseRequestLines')!.items.get(Number(lineId))!.fields;
+      if (edit.amountCents !== undefined) fields.Amount = edit.amountCents / 100;
+      if (edit.vendor !== undefined) fields.Vendor = edit.vendor;
+      if (edit.date !== undefined) fields.PurchaseDate = edit.date;
     },
     addUploadingSubmission: (owner, request, type, number) => {
       const list = site.listByUrlName('PurchaseSubmissions')!;
@@ -379,6 +388,7 @@ describe('what is stored in the lists (docs/DATA_MODEL.md)', () => {
     });
     await jane.addFileToLine(line.id, file('quote.pdf'), 'quote');
     await jane.sendForApproval(request.id);
+    // A first send leaves the approver, the time and the return stage as they were made: empty (see "what a first send writes").
     expect(stored(site, 'PurchaseRequests', request.id)).toMatchObject({
       RequestStatus: 'Awaiting approval',
       ApprovalRounds: 1,
@@ -387,10 +397,10 @@ describe('what is stored in the lists (docs/DATA_MODEL.md)', () => {
       ReturnNote: '',
       ReturnStage: null,
       ApprovedOn: null,
-      ApprovedById: null
+      ApprovedBy: null
     });
     expect(JSON.parse(String(stored(site, 'PurchaseRequests', request.id).ApprovalRecord))).toEqual({
-      sent: [{ key: 'acme lab supply', vendor: 'Acme Lab Supply', cents: 100000, bought: false }],
+      sent: [{ key: 'acmelabsupply', vendor: 'Acme Lab Supply', cents: 100000, bought: false }],
       approved: []
     });
 
@@ -529,9 +539,10 @@ describe('what is stored in the lists (docs/DATA_MODEL.md)', () => {
     const { request, lines } = await jane.getRequest(id);
     expect(request).toMatchObject({ status: 'Draft', approval: { sent: [], approved: [] }, returnStage: '', totalReimburseCents: 0, submissionCount: 0 });
     expect(lines[0]).toMatchObject({ category: '' });
+    // With the record of the files gone, neither counts as the receipt.
     expect(lines[0].files.map((f) => [f.fileName, f.kind, f.fingerprint])).toEqual([
-      ['invoice.pdf', 'receipt', ''],
-      ['quote.pdf', 'receipt', '']
+      ['invoice.pdf', 'quote', ''],
+      ['quote.pdf', 'quote', '']
     ]);
   });
 });
@@ -692,6 +703,7 @@ describe('Flow package settings (travel D-047, P-018)', () => {
       folders: ['Purchases_Test', 'Purchases_Test/Purchases_To_Process'],
       adminEmail: MAX.email,
       approverEmails: ['max@example.com', 'pat.rivera@example.com'],
+      approverSource: 'owners',
       appPageUrl: PAGE
     });
     expect(site.webUrl).toBe('https://contoso.sharepoint.com/sites/FormsAndApps');
@@ -717,10 +729,29 @@ describe('Flow package settings (travel D-047, P-018)', () => {
     expect(config.approverEmails).toEqual(['max.wamsley@example.com', 'pat.rivera@example.com']);
   });
 
+  it('leaves out an Owner address the package cannot carry safely, keeps an apostrophe, and caps the list at what the package allows', async () => {
+    const site = await setUpSite();
+    site.owners = [
+      { Title: 'Max Wamsley', Email: 'max@example.com', PrincipalType: 1 },
+      { Title: "Pat O'Brien", Email: "pat.o'brien@example.com", PrincipalType: 1 },
+      { Title: 'Jose', Email: 'josé@example.com', PrincipalType: 1 }
+    ];
+    const admin = serviceFor(site, FAKE_MAX);
+    const config = await admin.getFlowSettings('test', PAGE);
+    expect(config.approverEmails).toEqual(['max@example.com', "pat.o'brien@example.com"]);
+    expect(() => checkFlowConfig(config)).not.toThrow();
+    site.owners = Array.from({ length: MAX_APPROVERS + 5 }, (_, i) => ({ Title: `Owner ${i}`, Email: `owner${i}@example.com`, PrincipalType: 1 }));
+    const crowded = await admin.getFlowSettings('test', PAGE);
+    expect(crowded.approverEmails).toHaveLength(MAX_APPROVERS);
+    expect(crowded.approverEmails[0]).toBe('owner0@example.com');
+    expect(() => checkFlowConfig(crowded)).not.toThrow();
+  });
+
   it("falls back to the administrator's own address when no approver can be read or none has an address", async () => {
     const site = await setUpSite();
     const admin = serviceFor(site, FAKE_MAX);
     expect((await admin.getFlowSettings('test', PAGE)).approverEmails).toEqual([MAX.email]);
+    expect((await admin.getFlowSettings('test', PAGE)).approverSource).toBe('administrator');
     site.owners = [
       { Title: 'No Mail', Email: '', PrincipalType: 1 },
       { Title: 'Clarus Admins', Email: 'admins@example.com', PrincipalType: 4 }
@@ -730,6 +761,7 @@ describe('Flow package settings (travel D-047, P-018)', () => {
     site.ownersStatus = 403;
     const config = await admin.getFlowSettings('test', PAGE);
     expect(config.approverEmails).toEqual([MAX.email]);
+    expect(config.approverSource).toBe('administrator');
     expect(config.adminEmail).toBe(MAX.email);
   });
 
@@ -801,3 +833,263 @@ describe('waiting while SharePoint is busy', () => {
     expect(site.listByUrlName('PurchaseRequests')!.items.size).toBe(0);
   });
 });
+
+describe("rows and submissions belong to the request's owner (travel D-002, D-003)", () => {
+  /** What Sam can do with the list itself: make an item that names Jane's request. */
+  async function samMakes(site: FakeSharePoint, urlName: string, fields: Record<string, unknown>): Promise<number> {
+    const sam = new SpClient(site.fetchAs(FAKE_SAM), site.webUrl, site.webPath, async () => undefined);
+    const created = await sam.post<{ Id: number }>(`${sam.listPath(urlName)}/items`, fields);
+    return created!.Id;
+  }
+
+  /** Jane's request needing approval: Acme Lab Supply $1,000.00 with a quote, and a small purchase. */
+  async function janeBig(site: FakeSharePoint): Promise<{ id: number; lines: string[] }> {
+    const jane = serviceFor(site, FAKE_JANE);
+    const request = await jane.createRequest();
+    await jane.updateRequest(request.id, { businessPurpose: 'Lab supplies', department: 'R&D' });
+    const rows: string[] = [];
+    for (const [vendor, amountCents] of [
+      ['Acme Lab Supply', 100000],
+      ['Northwind Office Supply', 8645]
+    ] as const) {
+      const line = await jane.addEmptyLine(request.id);
+      await jane.updateLine(line.id, { date: '2026-10-20', vendor, description: 'Supplies', category: 'rdMaterials', amountCents, paidBy: 'company' });
+      rows.push(line.id);
+    }
+    await jane.addFileToLine(rows[0], file('quote.pdf'), 'quote');
+    return { id: request.id, lines: rows };
+  }
+
+  it("ignores a row someone else made that names the request: not in the approver's view, the duplicate checks or the approval", async () => {
+    const site = await setUpSite();
+    const { id, lines } = await janeBig(site);
+    const forged = await samMakes(site, 'PurchaseRequestLines', {
+      Title: 'PR-0001 row 3',
+      RequestId: id,
+      RowNumber: 3,
+      PurchaseDate: '2026-10-20',
+      Vendor: 'Acme Lab Supply',
+      Description: 'Not part of this request',
+      Category: 'Office Supplies',
+      Amount: 5000,
+      PaidBy: 'Employee'
+    });
+    const jane = serviceFor(site, FAKE_JANE);
+    const max = serviceFor(site, FAKE_MAX, new Date(2026, 9, 17, 10, 5));
+    expect((await jane.getRequest(id)).lines.map((l) => l.id)).toEqual(lines);
+    expect((await max.getRequest(id)).lines.map((l) => l.id)).toEqual(lines);
+    expect((await max.listAllLineRefs()).map((r) => r.line.id)).toEqual(lines);
+    const other = await jane.createRequest();
+    expect((await max.getOwnerOtherLines(other.id)).map((r) => r.line.id)).toEqual(lines);
+    // Sent and approved as Jane made it: $1,000.00 for Acme, not $6,000.00.
+    expect((await jane.sendForApproval(id)).emailSummary).toContain('- Acme Lab Supply: $1,000.00 (quote attached)');
+    const approved = await max.approveRequest(id, { note: '', categories: {} });
+    expect(approved.approval.approved.map((g) => [g.vendor, g.cents])).toEqual([['Acme Lab Supply', 100000]]);
+    expect(stored(site, 'PurchaseRequestLines', forged).CategoryConfirmedBy ?? null).toBeNull();
+  });
+
+  it('ignores such a row even where the list lets everyone read every row: not in the request or its totals, and the owner cannot change it', async () => {
+    const site = await setUpSite();
+    const { id, lines } = await janeBig(site);
+    const forged = await samMakes(site, 'PurchaseRequestLines', {
+      Title: 'x',
+      RequestId: id,
+      RowNumber: 3,
+      Vendor: 'Acme Lab Supply',
+      Amount: 5000,
+      PaidBy: 'Employee'
+    });
+    site.listByUrlName('PurchaseRequestLines')!.info.ReadSecurity = 1;
+    const jane = serviceFor(site, FAKE_JANE);
+    expect((await jane.getRequest(id)).lines.map((l) => l.id)).toEqual(lines);
+    // The totals Jane's changes keep current leave it out.
+    await jane.updateLine(lines[1], { amountCents: 9000 });
+    expect(stored(site, 'PurchaseRequests', id)).toMatchObject({ TotalCompany: 1090, TotalRequest: 1090, TotalReimburse: 0 });
+    // It is not hers to change through the app either.
+    expect((await refusal(jane.updateLine(String(forged), { vendor: 'Changed' }))).message).toBe(messages.spNotFound);
+    expect((await refusal(jane.deleteLine(String(forged)))).message).toBe(messages.spNotFound);
+    expect(stored(site, 'PurchaseRequestLines', forged).Vendor).toBe('Acme Lab Supply');
+    // And it is not sent for approval.
+    expect((await jane.sendForApproval(id)).emailSummary).toContain('- Acme Lab Supply: $1,000.00 (quote attached)');
+    expect((await jane.getRequest(id)).request.approval.sent.map((g) => g.cents)).toEqual([100000]);
+  });
+
+  it('ignores a submission someone else made that names the request, and will not retry it', async () => {
+    const site = await setUpSite();
+    const { id } = await janeBig(site);
+    const real = await serviceFor(site, FAKE_JANE).sendForApproval(id);
+    const forged = await samMakes(site, 'PurchaseSubmissions', {
+      Title: 'PR-0001 approval 2',
+      RequestId: id,
+      SubmissionType: SUBMISSION_TYPE_LABELS.approval,
+      SubmissionNumber: 2,
+      PackageStatus: 'Failed',
+      EmailSummary: 'Not from Jane'
+    });
+    const max = serviceFor(site, FAKE_MAX);
+    expect((await max.listSubmissions()).map((s) => s.id)).toEqual([real.id]);
+    expect((await max.listSubmissionsForRequest(id)).map((s) => s.id)).toEqual([real.id]);
+    expect((await refusal(max.retryPackaging(forged))).message).toBe(messages.spNotFound);
+    expect(stored(site, 'PurchaseSubmissions', forged).PackageStatus).toBe('Failed');
+  });
+
+  it('asks SharePoint for the author of every row and submission it reads', async () => {
+    const site = await setUpSite();
+    const { id } = await janeBig(site);
+    const before = site.log.length;
+    await serviceFor(site, FAKE_MAX).getRequest(id);
+    await serviceFor(site, FAKE_MAX).listSubmissionsForRequest(id);
+    await serviceFor(site, FAKE_MAX).listAllLineRefs();
+    const reads = site.log
+      .slice(before)
+      .map((r) => decodeURIComponent(r.url))
+      .filter((url) => /PurchaseRequestLines|PurchaseSubmissions/.test(url) && url.includes('/items?'));
+    expect(reads.length).toBeGreaterThanOrEqual(3);
+    for (const url of reads) expect(url).toMatch(/\$select=Id,AuthorId,/);
+  });
+});
+
+describe('what a first send writes (P-019)', () => {
+  const requestWrites = (site: FakeSharePoint, from: number) =>
+    site.log
+      .slice(from)
+      .filter((r) => r.method === 'MERGE' && decodeURIComponent(r.url).includes("Lists/PurchaseRequests')/items("))
+      .map((r) => JSON.parse(r.body!) as Record<string, unknown>);
+
+  it('sends a Draft without clearing an approver, a time or a return stage it never had, and clears them when there are some', async () => {
+    const site = await setUpSite();
+    const jane = serviceFor(site, FAKE_JANE);
+    const request = await jane.createRequest();
+    await jane.updateRequest(request.id, { businessPurpose: 'Lab supplies', department: 'R&D' });
+    const line = await jane.addEmptyLine(request.id);
+    await jane.updateLine(line.id, {
+      date: '2026-10-20',
+      vendor: 'Acme Lab Supply',
+      description: 'Pipette tips',
+      category: 'rdMaterials',
+      amountCents: 100000
+    });
+    await jane.addFileToLine(line.id, file('quote.pdf'), 'quote');
+
+    let from = site.log.length;
+    await jane.sendForApproval(request.id);
+    const [first] = requestWrites(site, from);
+    expect(first).toMatchObject({ RequestStatus: 'Awaiting approval', ApprovalRounds: 1, ReturnNote: '' });
+    for (const column of ['ApprovedById', 'ApprovedOn', 'ApprovalNote', 'ReturnStage']) expect(Object.keys(first)).not.toContain(column);
+
+    // Approved, then raised past the allowance and sent again: the approval is taken back.
+    const max = serviceFor(site, FAKE_MAX, new Date(2026, 9, 17, 10, 5));
+    await max.approveRequest(request.id, { note: 'OK', categories: {} });
+    await jane.updateLine(line.id, { amountCents: 130000 });
+    from = site.log.length;
+    await jane.sendForApproval(request.id);
+    const [second] = requestWrites(site, from);
+    expect(second).toMatchObject({ ApprovedById: null, ApprovedOn: null, ApprovalNote: '' });
+    expect(Object.keys(second)).not.toContain('ReturnStage');
+
+    // Returned at the approval step and sent again: the return stage is cleared; the approval was already taken back.
+    await max.returnRequest(request.id, 'Please add a second quote.');
+    from = site.log.length;
+    await jane.sendForApproval(request.id);
+    const [third] = requestWrites(site, from);
+    expect(third).toMatchObject({ ReturnStage: null, ReturnNote: '' });
+    expect(Object.keys(third)).not.toContain('ApprovedById');
+  });
+
+  it('submits a Draft without clearing a return stage it never had, and clears one after a return', async () => {
+    const site = await setUpSite();
+    const { id } = await janeRequest(site);
+    const jane = serviceFor(site, FAKE_JANE);
+    let from = site.log.length;
+    await jane.submitRequest(id, CERTIFICATION);
+    const [first] = requestWrites(site, from);
+    expect(first).toMatchObject({ RequestStatus: 'Submitted', SubmissionCount: 1, ReturnNote: '' });
+    expect(Object.keys(first)).not.toContain('ReturnStage');
+    await serviceFor(site, FAKE_MAX).returnRequest(id, 'Please attach the itemized invoice.');
+    from = site.log.length;
+    await jane.submitRequest(id, CERTIFICATION);
+    expect(requestWrites(site, from)[0]).toMatchObject({ RequestStatus: 'Submitted', SubmissionCount: 2, ReturnStage: null });
+  });
+});
+
+describe('the request number (P-026)', () => {
+  it('is made from the item ID, even if writing the column failed or it was edited directly', async () => {
+    const site = await setUpSite();
+    const jane = serviceFor(site, FAKE_JANE);
+    site.failWhen = (r) => (r.method === 'MERGE' && (r.body ?? '').includes('RequestNumber') ? 500 : undefined);
+    await expect(jane.createRequest()).rejects.toBeInstanceOf(SharePointRequestError);
+    site.failWhen = undefined;
+    expect(stored(site, 'PurchaseRequests', 1).RequestNumber).toBeNull();
+    expect((await jane.listMyRequests()).map((r) => r.requestNumber)).toEqual(['PR-0001']);
+    stored(site, 'PurchaseRequests', 1).RequestNumber = 'PR-0999';
+    expect((await jane.getRequest(1)).request.requestNumber).toBe('PR-0001');
+    const line = await jane.addEmptyLine(1);
+    expect(stored(site, 'PurchaseRequestLines', Number(line.id)).Title).toBe('PR-0001 row 1');
+    // The administrator's lists say the same.
+    expect((await serviceFor(site, FAKE_MAX).listAllRequests()).map((r) => r.requestNumber)).toEqual(['PR-0001']);
+    // A new request still writes the column, for anyone viewing the list.
+    const next = await jane.createRequest();
+    expect(stored(site, 'PurchaseRequests', next.id).RequestNumber).toBe('PR-0002');
+  });
+});
+
+describe('recording what kind of file each attachment is (P-021)', () => {
+  it('takes a file off again when its kind cannot be recorded, so a quote can never be left looking like a receipt', async () => {
+    const site = await setUpSite();
+    const { id, lineId } = await janeRequest(site);
+    const jane = serviceFor(site, FAKE_JANE);
+    const attachmentsOf = (lineNumber: number) =>
+      site
+        .listByUrlName('PurchaseRequestLines')!
+        .items.get(lineNumber)!
+        .attachments.map((a) => a.name);
+    const printsBefore = stored(site, 'PurchaseRequestLines', Number(lineId)).FileFingerprints;
+    const rowsBefore = site.listByUrlName('PurchaseRequestLines')!.items.size;
+    site.failWhen = (r) => (r.method === 'MERGE' && (r.body ?? '').includes('FileFingerprints') ? 500 : undefined);
+
+    await expect(jane.addFileToLine(lineId, file('second-quote.pdf'), 'quote')).rejects.toBeInstanceOf(SharePointRequestError);
+    expect(attachmentsOf(Number(lineId))).toEqual(['invoice.pdf', 'quote.pdf']);
+    expect(stored(site, 'PurchaseRequestLines', Number(lineId)).FileFingerprints).toBe(printsBefore);
+    // A file dropped as a new row: the new row is taken away too.
+    await expect(jane.addLinesFromFiles(id, [file('dropped-quote.pdf')], 'quote')).rejects.toBeInstanceOf(SharePointRequestError);
+    expect(site.listByUrlName('PurchaseRequestLines')!.items.size).toBe(rowsBefore);
+
+    site.failWhen = undefined;
+    expect((await jane.getRequest(id)).lines.map((l) => l.files.map((f) => [f.fileName, f.kind]))).toEqual([
+      [
+        ['invoice.pdf', 'receipt'],
+        ['quote.pdf', 'quote']
+      ]
+    ]);
+  });
+
+  it('does not count a file added directly in SharePoint, with no record of its kind, as the receipt', async () => {
+    const site = await setUpSite();
+    const jane = serviceFor(site, FAKE_JANE);
+    const request = await jane.createRequest();
+    await jane.updateRequest(request.id, { businessPurpose: 'Postage', department: 'R&D' });
+    const line = await jane.addEmptyLine(request.id);
+    await jane.updateLine(line.id, { date: '2026-10-20', vendor: 'QuickShip Postage', description: 'Postage', category: 'shipping', amountCents: 2500 });
+    site
+      .listByUrlName('PurchaseRequestLines')!
+      .items.get(Number(line.id))!
+      .attachments.push({ name: 'slip.pdf', content: new Blob(['synthetic slip']) });
+    expect((await jane.getRequest(request.id)).lines[0].files.map((f) => [f.fileName, f.kind])).toEqual([['slip.pdf', 'quote']]);
+    const error = await jane.submitRequest(request.id, CERTIFICATION).then(
+      () => undefined,
+      (e: unknown) => e
+    );
+    expect((error as { issues?: { field: string }[] }).issues?.map((i) => i.field)).toEqual(['receipt']);
+  });
+});
+
+/** The error a call was refused with, which must be a NotAllowedError. */
+async function refusal(call: Promise<unknown>): Promise<Error> {
+  try {
+    await call;
+  } catch (e) {
+    expect(e).toBeInstanceOf(NotAllowedError);
+    return e as Error;
+  }
+  throw new Error('The call was allowed, but it should have been refused.');
+}

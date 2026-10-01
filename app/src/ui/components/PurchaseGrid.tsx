@@ -16,7 +16,7 @@ import {
 import { ACCEPT_ATTRIBUTE, hasReceipt, quoteFiles, receiptFiles, receiptSourceRow } from '../../domain/receipts';
 import { LINE_APPROVAL_DISPLAY } from '../../domain/statuses';
 import { messages } from '../../domain/messages';
-import { suggestedFieldsText } from '../../domain/suggestions';
+import { suggestedFieldsText, visibleSuggestions } from '../../domain/suggestions';
 import { BuyerId, FileKind, PurchaseLine, SuggestedField, TEXT_MAX_LENGTH } from '../../domain/types';
 import { Issue, LineField, ValidationStage, issueForCell, issuesForLine } from '../../domain/validation';
 import { LineChanges } from '../../data/PurchaseDataService';
@@ -363,7 +363,8 @@ export function PurchaseGrid(props: Props): React.ReactElement {
             const rowIssues = issuesForLine(issues, line.id)
               .filter((issue) => issue.field !== 'suggested')
               .map((issue) => issueShown(line, issue) as Issue);
-            const showSuggestNote = line.suggested.length > 0 && !readOnly;
+            const unconfirmed = visibleSuggestions(line, props.buyer);
+            const showSuggestNote = unconfirmed.length > 0 && !readOnly;
             const source = receiptSourceRow(line, lines);
             const shared = line.sameReceiptAsRow !== null;
             const receipts = receiptFiles(line);
@@ -743,7 +744,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                     <td colSpan={columnCount}>
                       {showSuggestNote ? (
                         <div className="ctx-suggest-note">
-                          <span>{messages.suggestionsNotConfirmed(suggestedFieldsText(line.suggested))}</span>
+                          <span>{messages.suggestionsNotConfirmed(suggestedFieldsText(unconfirmed))}</span>
                           <button
                             type="button"
                             className="ctx-btn ctx-btn-secondary ctx-btn-small"

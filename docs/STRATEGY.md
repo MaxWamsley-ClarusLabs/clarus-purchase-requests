@@ -1,6 +1,6 @@
 # Clarus Purchase Request App: Strategy
 
-**Status:** First draft, written 2026-09-30 during Max Wamsley's overnight build. Everything Max decided in his build prompt is marked **Decided**. Everything Claude chose where the prompt was silent is marked **Provisional (Claude, awaiting Max)** and is listed in `docs/QUESTIONS_FOR_MAX.md`. Nothing has been installed or changed in Microsoft 365.
+**Status:** First draft, written 2026-09-30 during Max Wamsley's overnight build, and updated on 2026-10-01 for the approver-buys build (P-037 to P-042) after Max's answers of that day. Everything Max decided in his build prompt is marked **Decided**. Everything Claude chose where the prompt was silent is marked **Provisional (Claude, awaiting Max)** and is listed in `docs/QUESTIONS_FOR_MAX.md`. Nothing has been installed or changed in Microsoft 365.
 
 **Purpose of this document:** record what carries over from the Travel Expense App, what changes for purchases, the workflow, the output package, the flow design, and the order in which the app is built and finished. `docs/DECISIONS.md` is the formal log (P-001 onward); this document summarises it.
 
@@ -8,7 +8,7 @@
 
 | Label | Meaning |
 |---|---|
-| **Decided** | Max decided it (the overnight build prompt, 2026-09-30, unless a date is given) |
+| **Decided** | Max decided it (the overnight build prompt, 2026-09-30, or his answers of 2026-10-01; each entry says which) |
 | **Carried over** | A Travel Expense App decision (D-number in the travel repository) that applies here unchanged |
 | **Provisional** | Claude's choice where the prompt was silent. Built as recommended, listed in `docs/QUESTIONS_FOR_MAX.md`, and changed only if Max chooses differently |
 | **Open** | Needs a decision that cannot be made by Claude |
@@ -21,9 +21,9 @@
 **Goal (Decided):** a Purchase Request app for Clarus Labs employees. It is a near copy of the Travel Expense App, adapted for non-travel purchases. It replaces the current process, in which the F2 Purchase Request and Approval Form is completed in Word and sent through the Purchasing Receipt Team on Microsoft Teams, with the supervisor @-mentioned.
 
 **In scope**
-- A purchase request with a header (employee, department, business purpose, project or grant code) and one line per purchase (date, vendor, what was bought and why, amount, who paid, category).
-- Approval inside the app for any vendor total of $500 or more, with an email to the approver.
-- Receipts and invoices attached after buying, with the same receipt suggestions and vendor memory as the travel app (D-074, D-078, D-079).
+- A purchase request with a header (employee, department, business purpose, project or grant code, and who buys it) and one line per purchase (date, vendor, what was bought and why, amount, category, the item's web page, and, when the employee buys, who paid).
+- **The approver buys most purchases (about 95%, the default, P-037).** The employee asks, the approver approves, buys, attaches the receipt and marks it purchased. Every such request goes to the approver, whatever the amount.
+- When the employee buys it instead: approval inside the app for any vendor total of $500 or more, with an email to the approver; receipts and invoices attached after buying, with the same receipt suggestions and vendor memory as the travel app (D-074, D-078, D-079); the employee submits.
 - On submission: a folder with receipt copies and one CSV in `Accounting/Purchases/Purchases_To_Process`, and an email to the administrator.
 - An SOP for employees, approvers and the administrator, written as the app is built.
 
@@ -70,11 +70,11 @@ Decided: there is no architecture debate for this project. The answer is the sam
 |---|---|
 | A report is one trip | A request is one business purpose, with one or more purchases |
 | Trip name, destination, dates, "what was this trip for" | Business purpose (one line, also the request's name), project or grant code (optional, with a quick pick), department |
-| Seven travel categories, each with a QuickBooks account | Eight purchase categories, each with a suggested QuickBooks account name (Unverified, to confirm with Max) |
-| Payment type: personal, company card, paid by Clarus | Who paid: Company or Employee |
-| Submitted reports go straight to the administrator | A vendor total of $500 or more needs the approver's approval first |
-| Receipts are the only attachments | Attachments are receipts, invoices and quotes, each marked with its kind |
-| Statuses: Draft, Submitted, Returned, Processed | Adds Awaiting approval and Approved |
+| Seven travel categories, each with a QuickBooks account | Thirteen purchase categories, each one a QuickBooks account number and name (P-038); the account list is from Max, to be re-exported and compared before go-live |
+| Payment type: personal, company card, paid by Clarus | Who buys it: the approver (default) or the employee. When the approver buys, the company pays every row. When the employee buys: Who paid, Company or Employee |
+| Submitted reports go straight to the administrator | When the approver buys, every request goes to the approver first, whatever the amount. When the employee buys, a vendor total of $500 or more needs the approver's approval first |
+| Receipts are the only attachments | Attachments are receipts, invoices and quotes, each marked with its kind. Each row also has the item's web page (P-039) |
+| Statuses: Draft, Submitted, Returned, Processed | Adds Awaiting approval and Approved. Submitted is shown as Purchased when the approver bought it |
 | One email per submission | Adds an email to the approver when approval is needed |
 | Report number `TR-0042` | Request number `PR-0042` |
 | Folder `Accounting/Trips/Trips_To_Process` | Folder `Accounting/Purchases/Purchases_To_Process` |
@@ -84,20 +84,22 @@ Decided: there is no architecture debate for this project. The answer is the sam
 
 ## 4. Rules (all in one domain file)
 
-Decided by Max: the certification sentence, the $500 approval threshold, who paid and the categories. Carried over from travel: the receipt rule. Recommended by Claude and built, each listed in `docs/QUESTIONS_FOR_MAX.md`: everything else in this table.
+Decided by Max: the certification sentence, the $500 approval threshold and quote rule, the 10% rule, the Owners as approvers, who buys (the approver by default) and the QuickBooks accounts and 13 categories. Carried over from travel: the receipt rule. Recommended by Claude and built, each listed in `docs/QUESTIONS_FOR_MAX.md`: everything else in this table.
 
 Every number and every piece of policy wording lives in `app/src/domain/purchaseRules.ts`, so the new purchasing policy can change them in one place. Tests in `purchaseRules.test.ts` cover each rule.
 
 | Rule | Value | Status |
 |---|---|---|
-| Approval threshold | A vendor total of **$500 or more** in a request needs approval in the app before the purchase. Under $500 needs no approval, but the request is still submitted with receipts | **Decided** (prompt) |
-| Quote rule | At **$500 or more**, the approval request also needs a quote, or a written no-quote reason. The threshold is the same as the approval threshold | Provisional. The attached F2 form (old P4 wording) says "over $500" |
+| Who buys | **The approver buys it** (default) or **I will buy it myself**, chosen on each request while it is a Draft or Returned | **Decided** (2026-10-01, P-037) |
+| Approval threshold | When the approver buys: every vendor total goes to the approver, whatever the amount. When the employee buys: a vendor total of **$500 or more** in a request needs approval in the app before the purchase, and under $500 needs none (the request is still submitted with receipts) | **Decided** (prompt; 2026-10-01) |
+| Quote rule | At **$500 or more**, the approval request also needs a quote, or a written no-quote reason, for both ways of buying. The old form's $100 and "over $500" are retired | **Decided** (2026-10-01, P-015) |
+| Item link | Each row has the item's web page, or, when the approver buys, a reason there is none | **Decided** (2026-10-01, P-039) |
 | How thresholds count | By **vendor total within a request**, not by line. All lines in a request share one business purpose and one project or grant code, so "the same vendor for the same business purpose" is "the same vendor in the request". Vendor names are matched ignoring capitals, accents, spaces and punctuation, in any alphabet ("Digi-Key" and "DigiKey" are one vendor). A line with no vendor yet counts on its own | Provisional (the prompt says "the same vendor for the same business purpose in a request, not each line") |
-| Bought before approval | A $500-or-more vendor total that was already bought when the request is sent for approval is flagged **Bought before approval**. "Already bought" means a line dated before the day it is sent, or a receipt or invoice already attached. It can still be sent. It still needs the approver's approval before processing, and the administrator sees the flag in the email and the CSV. A flag, once set, stays; when a request is sent again after an approval, a vendor total the approval still covers is not newly flagged | Provisional (the prompt describes the behaviour; the test for "already bought" is Claude's) |
-| Approval covers what the approver saw | The approver approves each vendor total as shown. Later changes are allowed, but a vendor total that rises more than **10%** above what was approved, or a new vendor total of $500 or more, needs approval again | Provisional (Claude's rule; the percentage is a guess) |
-| Certification | "I certify that the listed purchases are for official Clarus Labs business purposes, are not personal expenses, have not been reimbursed elsewhere, and that the information provided is accurate to the best of my knowledge." Ticked at Submit, tied to the account | **Decided** (the form's sentence, exact) |
-| Who paid | Company, or Employee. Employee-paid lines are "To reimburse" | **Decided** |
-| Categories | R&D Materials & Supplies / Equipment; Advertising/Marketing/Website; Computer, H/W & S/W Supplies; Office Supplies; Training and Education; Shipping/Postage; Business Insurance; Other (with a description) | **Decided** |
+| Bought before approval | For a request the employee buys: a $500-or-more vendor total that was already bought when the request is sent for approval is flagged **Bought before approval**. "Already bought" means a line dated before the day it is sent, or a receipt or invoice already attached. It can still be sent. It still needs the approver's approval before processing, and the administrator sees the flag in the email and the CSV. A flag, once set, stays; when a request is sent again after an approval, a vendor total the approval still covers is not newly flagged | Provisional (the prompt describes the behaviour; the test for "already bought" is Claude's) |
+| Approval covers what the approver saw | For a request the employee buys: the approver approves each vendor total as shown. Later changes are allowed, but a vendor total that rises more than **10%** above what was approved, or a new vendor total of $500 or more, needs approval again. A request the approver buys stays approved whatever the approver changes while buying | **Decided** (2026-10-01: keep the 10% rule) |
+| Certification | "I certify that the listed purchases are for official Clarus Labs business purposes, are not personal expenses, have not been reimbursed elsewhere, and that the information provided is accurate to the best of my knowledge." Ticked by the employee at Submit when the employee buys, and when sending the request when the approver buys (P-041), tied to the account | **Decided** (the form's sentence, exact; the moment, 2026-10-01) |
+| Who paid | Asked only when the employee buys: Company, or Employee (employee-paid lines are "To reimburse"). When the approver buys, the company pays every row | **Decided** |
+| Categories | The 13 QuickBooks accounts: R&D Materials & Supplies; Equipment; Advertising/Marketing/Website; Computer, H/W & S/W Supplies; Office Supplies; Training and Education; Shipping/Postage; Business Insurance; Dues and Subscriptions; Telephone/Internet; Repairs & maintenance; Professional Services; Other (with a description). Equipment and Other: the administrator decides the account | **Decided** (2026-10-01, P-038) |
 | Receipt needed | Every line needs a receipt or invoice, or a no-receipt reason, before Submit (as in travel, D-027) | Carried over |
 
 ---
@@ -106,21 +108,20 @@ Every number and every piece of policy wording lives in `app/src/domain/purchase
 
 ### Employee
 
-1. Opens the app and starts a request (step 1, Request details): business purpose, project or grant code (a quick pick offers "NSF SBIR Phase 1 (Award # 2528301)"; nothing is filled in by default), and department. The employee's name comes from the signed-in account. The approver is shown as the site Owners. The date submitted and the purchase dates are shown from the request itself.
-2. On step 2, Purchases, adds one line per purchase: date, vendor, what was bought and why, amount, who paid, and a suggested category. Files can be dropped in as receipts or invoices (each becomes a row, and the app reads it and suggests the date, amount and vendor, as in travel) or as quotes.
-3. The app works out the approval status of each line from the vendor totals, and shows it in the grid.
-4. On step 3, Review and submit, the employee sees what is needed:
-   - **Nothing over the threshold:** no approval is needed. The employee attaches receipts and submits.
-   - **A vendor total of $500 or more:** the request is sent for approval first. A quote or a no-quote reason is needed for each such vendor. If a purchase was already made, the app says so and flags it.
-5. After approval, the employee buys, attaches the receipts and invoices, and submits, ticking the certification.
-6. If the approver or the administrator returns the request, the employee sees the note, corrects it and sends or submits again.
+1. Opens the app and starts a request (step 1, Request details): business purpose, project or grant code (a quick pick offers "NSF SBIR Phase 1 (Award # 2528301)"; nothing is filled in by default), department, and **Who buys this?** ("The approver buys it" is already chosen). The employee's name comes from the signed-in account. The approver is shown as the site Owners.
+2. On step 2, Purchases, adds one line per purchase: date, vendor, what was bought and why, the estimated amount, the category, and the item's web page (or why there is none). A quote is attached for a vendor total of $500 or more, or a reason there is none is given. When the employee buys it, they also say who paid and attach receipts later; files can be dropped in as receipts or invoices (each becomes a row, and the app reads it and suggests the date, amount and vendor, as in travel) or as quotes.
+3. On step 3, Review, the employee sees what is needed:
+   - **The approver buys it (the usual case):** every request is sent to the approver, whatever the amount. The employee ticks the certification and chooses **Send to the approver**. After that the employee has nothing to do unless the request is returned.
+   - **I will buy it myself, under $500 for every vendor:** no approval is needed. The employee buys, attaches receipts and submits, ticking the certification.
+   - **I will buy it myself, a vendor total of $500 or more:** the request is sent for approval first. If a purchase was already made, the app says so and flags it. After approval, the employee buys, attaches the receipts and submits.
+4. If the approver or the administrator returns the request, the employee sees the note, corrects it and sends or submits again.
 
 ### Approver (the site Owners; today, Max)
 
-1. Receives an email with a link when a request is sent for approval.
-2. Opens **Approvals** in the app, reads the request, the vendor totals, the quotes (each file opens in a preview) and any "Bought before approval" flag, and confirms or changes each category.
-3. Chooses **Approve**, or **Return with a note**. Approving confirms the categories shown.
-4. An approver who is also the requester can approve their own request; it is recorded as self-approved (Provisional).
+1. Receives an email with a link when a request is sent.
+2. Opens **Approvals** in the app, reads the request, the vendor totals, the item links, the quotes (each file opens in a preview) and any "Bought before approval" flag, and confirms or changes each category.
+3. Chooses **Approve**, or **Return with a note**. Approving confirms the categories shown. An approver who is also the requester can approve their own request; it is recorded as self-approved (Decided, 2026-10-01).
+4. **When the approver buys it:** approving means buying. The request is in the **To buy** list; **Open to buy** lets the approver change every row to what was bought, add or remove rows (shipping, tax), attach the receipts and invoices, and choose **Mark purchased**. The rows as the employee sent them stay on the page ("As sent for approval"). If the approver cannot buy it, they return it to the employee.
 
 ### Flow (section 8 has the detail)
 
@@ -128,7 +129,7 @@ For an approval request: emails the approver. For a submission: creates `Account
 
 ### Administrator (site Owners; today, Max)
 
-As in travel: receives the email, opens the folder, processes the receipts with the receipt skill and QuickBooks (outside the app), moves the folder into `Purchases/<year>/`, and marks the request **Processed**. The administrator can also confirm or change a category (the CSV in the folder keeps the category as submitted), and can return a request with a note.
+As in travel: receives the email, opens the folder, processes the receipts with the receipt skill and QuickBooks (outside the app), moves the folder into `Purchases/<year>/`, and marks the request **Processed**. The CSV names the QuickBooks account on each row; for Equipment and Other the administrator decides the account, and Mark processed waits until their categories are confirmed. The administrator can also confirm or change a category (the CSV in the folder keeps the category as submitted), and can return a request with a note. A request the approver bought, returned at processing, goes back to the approver, who fixes it and marks it purchased again.
 
 ### Request statuses
 
@@ -136,12 +137,12 @@ As in travel: receives the email, opens the folder, processes the receipts with 
 |---|---|---|---|
 | Draft | Being prepared | App (new request) | Yes |
 | Awaiting approval | Sent to the approver | App (Send for approval) | No |
-| Approved | Approved; the employee buys, attaches receipts and submits | Approver | Yes |
-| Submitted | Sent for processing; package created | App (Submit) | No |
+| Approved | Approved. When the employee buys: the employee buys, attaches receipts and submits. When the approver buys: the approver buys, attaches the receipts and marks it purchased | Approver | Employee-bought: yes. Approver-bought: no |
+| Submitted | Sent for processing; package created. Shown as Purchased when the approver bought it | App (Submit, or Mark purchased) | No |
 | Returned | Sent back with a note, by the approver or the administrator | Approver or administrator | Yes |
 | Processed | Filed and entered; closed | Administrator | No |
 
-A request whose vendor totals are all under $500 goes Draft, Submitted, Processed. One with a vendor total of $500 or more goes Draft, Awaiting approval, Approved, Submitted, Processed. A return from either stage goes to Returned; the employee corrects it and sends or submits again (the next submission gets an `_R2` folder, D-042).
+A request the approver buys goes Draft, Awaiting approval, Approved, Submitted (Purchased), Processed. A request the employee buys with every vendor total under $500 goes Draft, Submitted, Processed; with a vendor total of $500 or more, Draft, Awaiting approval, Approved, Submitted, Processed. A return from either stage goes to Returned; the employee corrects it and sends or submits again (the next submission gets an `_R2` folder, D-042). The exceptions: the approver can return an Approved request they were to buy, and the administrator's return at processing sends a request the approver bought back to Approved, for the approver to fix (P-042).
 
 Submission (package) statuses are unchanged: Uploading, Ready, Processing, Packaged, Failed. Each submission also has a type: **Approval request** (no files; the flow only emails the approver) or **Processing package**.
 
@@ -151,8 +152,8 @@ Submission (package) statuses are unchanged: Uploading, Ready, Processing, Packa
 
 The full list and column definitions are in `docs/DATA_MODEL.md`. In summary, three lists on the shared Forms and Apps site (Decided): `Lists/PurchaseRequests`, `Lists/PurchaseRequestLines`, `Lists/PurchaseSubmissions`. Every address starts with "Purchase" so the lists can sit beside the travel app's lists and other forms (D-075, D-077). Set-up never changes a list it did not create.
 
-- **Purchase Requests:** request number, business purpose (the item's title), department, project or grant code, status, return note and stage, totals (to reimburse, paid by Clarus, request total), submission count, the approval record, the bought-before-approval flag, and who approved and when.
-- **Purchase Request Lines:** request link, row, date, vendor, what was bought and why, category (with a description for Other), amount, who paid, no-receipt reason, no-quote reason, same receipt as row, file fingerprints (each file's kind, receipt or quote), suggested-not-confirmed marks, and who confirmed the category.
+- **Purchase Requests:** request number, business purpose (the item's title), department, project or grant code, who buys it, status, return note and stage, totals (to reimburse, paid by Clarus, request total), submission count, the approval record, the bought-before-approval flag, and who approved and when.
+- **Purchase Request Lines:** request link, row, date, vendor, what was bought and why, category (with a description for Other), amount, who paid, item link, no-link reason, no-receipt reason, no-quote reason, same receipt as row, file fingerprints (each file's kind, receipt or quote), suggested-not-confirmed marks, and who confirmed the category.
 - **Purchase Submissions:** as in travel, plus a type (approval request or processing package) and frozen approval details. The flow reads and completes it.
 
 ---
@@ -181,14 +182,14 @@ The date is the earliest purchase date in the request, so the year shows where t
 
 ### The CSV (Decided: one CSV, with category, suggested account, grant code, approval status and approver)
 
-Purchase columns first, then the repeated request columns (as in travel D-048): Request, Row, Date, Vendor, What was bought and why, Category, Category confirmed by, Suggested QuickBooks account (Unverified, to confirm with Max), Amount, Who paid, Reimbursable, Project or grant code, Approval status, Bought before approval, Approved by, Approved on, Quote files, Receipt files, No-quote reason, No-receipt reason, Warnings, Submission, Submitted by, Submitted on, Department, Purchase dates, Business purpose, Certified by.
+Purchase columns first, then the repeated request columns (as in travel D-048): Request, Row, Date, Vendor, What was bought and why, Item link, Category, Category confirmed by, QuickBooks account, Amount, Who bought, Who paid, Reimbursable, Project or grant code, Approval status, Bought before approval, Approved by, Approved on, Quote files, Receipt files, No-quote reason, No-receipt reason, No-link reason, Warnings, Submission, Submitted by, Submitted on, Department, Purchase dates, Business purpose, Certified by (31 columns).
 
-**The suggested QuickBooks account is Unverified, to confirm with Max.** Claude could not look up the chart of accounts (the QuickBooks connector is not used), so the suggestions are plain account names without numbers. The administrator decides the account, as in travel (D-020). The mapping is one table in `purchaseRules.ts`.
+**The QuickBooks account** is the number and exact name from the account list Max supplied (P-038); for Equipment and Other the column says what the administrator decides. The mapping is one table in `purchaseRules.ts`, labelled "from the May 1, 2026 account list". **Re-export the account list and compare it before go-live.** There is no class column. The administrator decides the account, as in travel (D-020). The QuickBooks connector is not used.
 
 ### Emails (Provisional wording; same plain-text, escaped design as travel, D-046, D-067)
 
-- **Approval email**, to the approvers (the site Owners' addresses, read when the flow package is made): request, requester, department, business purpose, project or grant code, the vendor totals that need approval, quote status, any Bought before approval flag, and a link that opens the request in the app.
-- **Submission email**, to the administrator: as in travel, with "To reimburse", "Paid by Clarus" and "Request total", rows without receipts, warnings, the approval (who, when, note), the Bought before approval flag, and the certification.
+- **Approval email**, to the approvers (the site Owners' addresses, read when the flow package is made): request, requester, department, business purpose, project or grant code, who buys, the vendor totals that need approval (every vendor total when the approver buys), quote status, any Bought before approval flag, and a link that opens the request in the app. The item links are not in the email; the approver opens them in the app.
+- **Submission email**, to the administrator: as in travel, with "To reimburse", "Paid by Clarus" and "Request total", rows without receipts, warnings, the approval (who, when, note), the Bought before approval flag, the certification, and who bought it (the approver's name and address when the approver bought).
 - **Failure email**, as in travel.
 
 ---
@@ -231,6 +232,7 @@ Carried over from the travel app (D-002, D-003, D-066, D-067) with these additio
 - **A self-approval** (the approver is the requester) is allowed and shown as such in the record, email and CSV (Provisional).
 - The approval email is built from plain text stored by the app and escaped by the flow. The approver's address list is fixed inside the flow package, and the package generator refuses any address, web address or destination it could not carry safely. An employee could still make the flow send an approval email to the Owners with text of their choosing (P-033).
 - The services check what they can, because the app cannot stop an employee editing their own items: Approve is refused if the request changed after it was sent, a row or submission counts only if the request's owner made it, and a few more (P-034).
+- **When the approver buys (P-040 to P-042):** the approver adds rows and files to the request they approved, and those count on that request only. SharePoint shows people their own items, so the employee does not see them (Unverified, tested at the checkpoint). The employee's certification is kept on their approval request, so it is only as honest as an item the employee can edit (P-041, accepted, like P-029). The item link is the only stored text shown as a link, and only after a web-address check (P-039).
 - Commit synthetic data only: fictional vendors and people.
 
 ---
@@ -267,11 +269,11 @@ Testing: unit tests run under Vitest and again under Jest in the SharePoint buil
 Unchanged from travel (D-032 to D-036): purple primary buttons, dark purple sidebar with the Clarus logo, lavender workspace with white cards, a header card on every page, a totals strip, a large drop box, an automatic-saving grid, an Instructions panel. The app name is **Purchase Requests**.
 
 Changes for purchases (Provisional):
-- Three steps: **Request details**, **Purchases**, **Review and submit**. The Review step shows the approval state and offers **Send for approval** or **Submit**, whichever applies.
+- Three steps: **Request details**, **Purchases**, **Review and send** (or **Review and submit**). The Review step shows the approval state and offers **Send to the approver**, **Send for approval** or **Submit**, whichever applies. Request details asks **Who buys this?**.
 - The totals strip shows **To reimburse**, **Paid by Clarus**, **Request total** and a fourth card for what needs attention, or the approval state for a locked request.
 - The drop box has a switch: the dropped files are **receipts or invoices** (the default) or **quotes**.
 - Each grid row shows its approval status: Not required, Approval needed, Awaiting approval, Approved, or Changed since approval. A purchase that looked already made is flagged **Bought before approval** on the request, in the Approval card and in the approver's and administrator's views.
-- Administrator pages: **Approvals** (new), Requests to process, Needs attention, All requests, Set-up. The request page for an approver has Approve and Return, editable categories, and the vendor totals.
+- Administrator pages: **Approvals** (new, with a **To buy** list), Requests to process, Needs attention, All requests, Set-up. The request page for an approver has Approve and Return, editable categories, the item links, the vendor totals, and, for a request the approver buys, Open to buy and Mark purchased with the rows as sent beside the rows as bought.
 
 ---
 
@@ -296,12 +298,12 @@ Each stage ends with a commit on the project branch and an entry in `docs/CHANGE
 | 7. Checks | Preview sample data, screenshots, Instructions, SOP Part A, full build | Overnight build |
 | 8. Checkpoint steps | `docs/CHECKPOINT.md` | Overnight build |
 | 9. Morning report | `docs/STATUS.md`, the draft pull request | Overnight build |
-| 10. Review | Max answers `docs/QUESTIONS_FOR_MAX.md`; Claude makes the changes | Max |
+| 10. Review | Max answers `docs/QUESTIONS_FOR_MAX.md`; Claude makes the changes. On 2026-10-01 Max answered questions 1 to 5 and 24 to 29, and Claude built the approver-buys workflow, the item link and the 13 QuickBooks categories (P-037 to P-042); the new questions 30 to 32 wait for him | Max and Claude |
 | 11. Test-site checkpoint | Max installs on a test site from `docs/CHECKPOINT.md` and runs a request through, including approval | Max |
 | 12. Security review and SOP proof pass | Permissions, flow safety, repository check; SOP read against the built app | Claude and Max |
 | 13. Pilot | Production site and flow, used on real purchases by a few employees | Max |
 | 14. Production | Teams app; the Word form and the Teams posting are retired when Max decides | Max |
-| 15. **New purchasing policy (last stage)** | Max writes a new purchasing policy with Claude. The thresholds, quote rule, categories, certification sentence and account mapping in `purchaseRules.ts` are changed to match, in one place; the Instructions, SOP and the form text are updated. Inputs already decided (2026-10-01, `docs/SOP.md` "Rules confirmed by Max"): $500 for approval and the quote rule, the old form's $100 retired, the Owners approve, the 10% rule | Max and Claude |
+| 15. **New purchasing policy (last stage)** | Max writes a new purchasing policy with Claude. The thresholds, quote rule, categories, certification sentence and account mapping in `purchaseRules.ts` are changed to match, in one place; the Instructions, SOP and the form text are updated. Inputs already decided (2026-10-01, `docs/SOP.md` "Rules confirmed by Max"): $500 for approval and the quote rule, the old form's $100 retired, the Owners approve, the 10% rule, the approver buys by default, the QuickBooks accounts. Still to settle: where Equipment is capitalized rather than expensed | Max and Claude |
 
 ---
 
@@ -335,7 +337,8 @@ Microsoft's documentation sites are blocked in this environment. Claims below ma
 | The site Owners group's members can be read with `web/AssociatedOwnerGroup/users` by an administrator | Claude's knowledge of the SharePoint REST interface; not checked | Unverified. The Set-up page falls back to the administrator's own address, and the employee screens show the generic label "Site Owners" instead of "Site Owners (names)" |
 | A nested scope with its own failure scope inside a condition branch works in a legacy import package | Standard Power Automate and Logic Apps structure; not checked against a package | Unverified. The import and the branch are tested at the checkpoint; the failure scope is not (`docs/CHECKPOINT.md` step 34) |
 | The F2 form's wording ($100 approval, "over $500" quote) is old policy and is not used | The attached form itself, read 2026-09-30 | Confirmed (what the form says). Which thresholds Max wants is decided in his prompt and recorded as P-005 |
-| QuickBooks account names suggested per category | Claude's suggestion only | **Unverified, to confirm with Max** |
+| QuickBooks account numbers and names per category | Max's message of 2026-10-01, from his reading of the May 1, 2026 account list (Claude did not open the file) | Max's information. Re-export the account list and compare it with `purchaseRules.ts` before go-live |
+| SharePoint's own-items-only permission hides rows the approver adds from the employee | Claude's knowledge of SharePoint item-level permissions; not checked | **Unverified.** Tested at the checkpoint (`docs/CHECKPOINT.md`) |
 
 ---
 
@@ -353,3 +356,4 @@ Microsoft's documentation sites are blocked in this environment. Claims below ma
 |---|---|
 | 2026-09-30 | First draft, written during the overnight build from Max's prompt and the F2 form |
 | 2026-10-01 | Reconciled with the built app at the end of the overnight build: the stage table, the screens, the flow's structure (`flow/FLOW.md`) and the Owners label |
+| 2026-10-01 | The approver-buys build (P-037 to P-042): who buys, the item link, the 13 QuickBooks categories, the approver's buying screens, the certification at send, the 31-column CSV |

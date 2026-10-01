@@ -8,7 +8,7 @@
 
 import { knownVendorName, suggestCategoryForVendor, suggestPaidByForVendor } from './defaults';
 import { ReceiptGuess } from './receiptText';
-import { IsoDate, PurchaseLine, SuggestedField, TEXT_MAX_LENGTH } from './types';
+import { BuyerId, IsoDate, PurchaseLine, SuggestedField, TEXT_MAX_LENGTH } from './types';
 
 /** In the order the grid shows them. */
 export const SUGGESTED_FIELDS: readonly SuggestedField[] = ['date', 'vendor', 'category', 'amount', 'paidBy'];
@@ -20,6 +20,16 @@ const LABELS: Record<SuggestedField, string> = {
   amount: 'amount',
   paidBy: 'who paid'
 };
+
+/**
+ * The suggestions a person can see and confirm on a row. When the approver buys
+ * (P-037) nobody is asked who paid, so a "Who paid" mark could never be
+ * confirmed and is left out; it comes back if the request is switched to the
+ * employee buying.
+ */
+export function visibleSuggestions(line: Pick<PurchaseLine, 'suggested'>, buyer: BuyerId): SuggestedField[] {
+  return buyer === 'approver' ? line.suggested.filter((f) => f !== 'paidBy') : line.suggested;
+}
 
 /** "date, vendor and amount" */
 export function suggestedFieldsText(fields: readonly SuggestedField[]): string {

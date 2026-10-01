@@ -1719,6 +1719,21 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect((await jane.getRequest(id)).request).toMatchObject({ status: 'Awaiting approval', approvalRounds: 1, boughtBeforeApproval: false });
     });
 
+    it('never keeps "who paid" as an unconfirmed suggestion when the approver buys, but keeps the others', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id, lines } = await fill(jane, [NORTHWIND], { ...HEADER, buyer: 'approver' });
+      await jane.updateLine(lines[0].id, { paidBy: 'employee', suggested: ['paidBy', 'amount'] });
+      expect((await jane.getRequest(id)).lines[0]).toMatchObject({ paidBy: 'company', suggested: ['amount'] });
+      await jane.updateLine(lines[0].id, { suggested: [] });
+      await jane.updateLine(lines[0].id, { suggested: ['paidBy'] });
+      expect((await jane.getRequest(id)).lines[0].suggested).toEqual([]);
+      // When the employee buys, the mark stays.
+      const own = await fill(jane, [POSTAGE]);
+      await jane.updateLine(own.lines[0].id, { suggested: ['paidBy'] });
+      expect((await jane.getRequest(own.id)).lines[0].suggested).toEqual(['paidBy']);
+    });
+
     it('refuses an address that is not a web address, and keeps a long one whole', async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);

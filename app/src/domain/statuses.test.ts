@@ -72,7 +72,7 @@ describe('request statuses (P-006, P-027)', () => {
 });
 
 describe('when the approver buys (P-037)', () => {
-  it('shows Submitted as Purchased and an approved request as the approver\'s to finish', () => {
+  it("shows Submitted as Purchased and an approved request as the approver's to finish", () => {
     expect(requestStatusDisplay('Submitted', 'approver').label).toBe('Purchased');
     expect(requestStatusDisplay('Submitted', 'self').label).toBe('Submitted');
     expect(requestStatusDisplay('Approved', 'approver').help).toContain('approver buys it');

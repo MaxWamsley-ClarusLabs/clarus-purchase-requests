@@ -815,10 +815,7 @@ export class SharePointDataService implements PurchaseDataService {
     // The stored fingerprints are enough for totals; the attachment list is not needed.
     const authors = authorsOf(stored);
     const items = await this.sp.getAll<LineItem>(`${this.items('lines')}?$select=${LINE_FIELDS}&$filter=RequestId eq ${requestId}&${PAGE}`);
-    const totals = computeTotals(
-      items.filter((i) => madeBy(i, authors)).map(lineFromItem),
-      stored.request.buyer
-    );
+    const totals = computeTotals(items.filter((i) => madeBy(i, authors)).map(lineFromItem), stored.request.buyer);
     await this.sp.merge(
       this.item('requests', requestId),
       requestFields({ totalReimburseCents: totals.reimburseCents, totalCompanyCents: totals.companyCents, totalRequestCents: totals.requestCents })

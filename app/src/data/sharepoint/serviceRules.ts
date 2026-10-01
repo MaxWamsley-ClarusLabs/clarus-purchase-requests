@@ -52,9 +52,9 @@ export const notAllowed = {
   buyerOnly: 'Only the approver who approved this request can change it, attach files to it or mark it purchased.',
   buyWhen: 'Only an approved request that the approver buys can be marked purchased.',
   employeeBuys: 'The employee buys this request, so it is submitted by the employee.',
-  certificationMissing:
-    "The employee's certification is missing from this request. Return it to the employee, who can send it again with the certification.",
-  addedRowsFirst: (rows: string) => `You added ${rows} to this request, so it cannot be returned yet. Delete ${rows.startsWith('rows ') ? 'them' : 'it'}, then return it.`,
+  certificationMissing: "The employee's certification is missing from this request. Return it to the employee, who can send it again with the certification.",
+  addedRowsFirst: (rows: string) =>
+    `You added ${rows} to this request, so it cannot be returned yet. Delete ${rows.startsWith('rows ') ? 'them' : 'it'}, then return it.`,
   reviewFirst: (rows: string) =>
     `Confirm the category of ${rows} first: the account depends on a decision. Use Confirm categories, then mark the request processed.`,
   approveWhen: 'Only a request that is awaiting approval can be approved.',
@@ -97,7 +97,10 @@ export function statusAfterReturn(stage: 'approval' | 'processing', buyer: Buyer
  * purchased, or return it from Approved, or '' when they may (P-037, P-040):
  * the approver who approved a request the approver buys, while it is approved.
  */
-export function buyRefusal(request: Pick<PurchaseRequest, 'buyer' | 'status' | 'approvedByEmail'>, user: Pick<CurrentUser, 'email' | 'isAdministrator'>): string {
+export function buyRefusal(
+  request: Pick<PurchaseRequest, 'buyer' | 'status' | 'approvedByEmail'>,
+  user: Pick<CurrentUser, 'email' | 'isAdministrator'>
+): string {
   if (!user.isAdministrator) return notAllowed.administratorsOnly;
   if (request.buyer !== 'approver') return notAllowed.employeeBuys;
   if (request.status !== 'Approved') return notAllowed.buyWhen;
@@ -225,6 +228,8 @@ export function applyLineChanges(line: PurchaseLine, changes: LineChanges, edito
   const written: Partial<PurchaseLine> = normalizeLineChanges(changes);
   // The company pays for what the approver buys, whatever is sent (P-037).
   if (editor.buyer === 'approver' && written.paidBy !== undefined) written.paidBy = 'company';
+  // Nobody can confirm "who paid" when the approver buys, so it is never left as an unconfirmed suggestion (P-037).
+  if (editor.buyer === 'approver' && written.suggested !== undefined) written.suggested = written.suggested.filter((f) => f !== 'paidBy');
   if (written.sameReceiptAsRow !== undefined && written.sameReceiptAsRow !== null && receiptFiles(line).length > 0) {
     throw new NotAllowedError(notAllowed.sharedReceiptHasOwn);
   }

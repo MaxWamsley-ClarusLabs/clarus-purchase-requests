@@ -287,6 +287,16 @@ describe('validateRequest: a request the approver buys (P-037, P-039)', () => {
     expect(check(r, [withLink()])).toEqual([]);
   });
 
+  it('does not block on a "who paid" suggestion nobody can see, but still blocks on the others', () => {
+    const r = approverRequest();
+    expect(check(r, [withLink({ suggested: ['paidBy'] })])).toEqual([]);
+    expect(blockingIssues(check(r, [withLink({ suggested: ['date', 'paidBy'] })]))).toEqual([
+      expect.objectContaining({ field: 'suggested', message: messages.suggestionsNotConfirmed('date') })
+    ]);
+    // The same row in a request the employee buys is blocked on it.
+    expect(blockingIssues(check(request(), [line({ suggested: ['paidBy'] })])).map((i) => i.field)).toEqual(['suggested']);
+  });
+
   it('asks for the item link, or a reason there is no web page, before the request is sent', () => {
     const r = approverRequest();
     expect(blockingIssues(check(r, [withLink({ itemLink: '' })])).map((i) => [i.field, i.message])).toEqual([['link', messages.linkOrReason]]);

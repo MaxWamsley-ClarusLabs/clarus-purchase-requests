@@ -24,7 +24,7 @@ import {
   vendorGroups,
   vendorKey
 } from './purchaseRules';
-import { suggestedFieldsText } from './suggestions';
+import { suggestedFieldsText, visibleSuggestions } from './suggestions';
 import { ApprovalGroup, IsoDate, PurchaseLine, PurchaseRequest } from './types';
 
 export type Severity = 'blocking' | 'warning';
@@ -131,7 +131,8 @@ export function validateRequest(request: RequestFields, lines: readonly Purchase
     } else if (request.buyer === 'approver' && stage === 'approval' && !line.noLinkReason.trim()) {
       row('blocking', 'link', messages.linkOrReason);
     }
-    if (line.suggested.length > 0) row('blocking', 'suggested', messages.suggestionsNotConfirmed(suggestedFieldsText(line.suggested)));
+    const unconfirmed = visibleSuggestions(line, request.buyer);
+    if (unconfirmed.length > 0) row('blocking', 'suggested', messages.suggestionsNotConfirmed(suggestedFieldsText(unconfirmed)));
 
     if (line.sameReceiptAsRow !== null && !receiptSourceRow(line, ordered)) {
       row('blocking', 'receipt', messages.sameReceiptBroken(line.sameReceiptAsRow));

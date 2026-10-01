@@ -425,7 +425,9 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
   const applyLineChanges = (lineId: string, requested: LineChanges) => {
     const current = linesRef.current.find((l) => l.id === lineId);
     // The company pays for what the approver buys, so "who paid" is never changed (P-037): the data layer would keep it as the company.
-    const asked: LineChanges = request.buyer === 'approver' && requested.paidBy !== undefined ? { ...requested, paidBy: 'company' } : requested;
+    let asked: LineChanges = request.buyer === 'approver' && requested.paidBy !== undefined ? { ...requested, paidBy: 'company' } : requested;
+    // Nobody can confirm "who paid" when the approver buys, so it is never left as a suggestion (P-037).
+    if (request.buyer === 'approver' && asked.suggested !== undefined) asked = { ...asked, suggested: asked.suggested.filter((f) => f !== 'paidBy') };
     const changes = current ? changeAsKept(current, asked) : asked;
     showLines(linesRef.current.map((l) => (l.id === lineId ? { ...l, ...changes } : l)));
     pending.current = addChanges(pending.current, { request: {}, lines: { [lineId]: changes } });
@@ -443,7 +445,8 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     if (marks) changes.suggested = marks;
     if (requested.vendor !== undefined) {
       const memory = vendorMemoryChanges(requested.vendor, { ...current, ...changes }, historyFor(lineId), {
-        paidByChosen: !!paidByChosen.current[lineId],
+        // When the approver buys, "who paid" is not asked, so vendor memory leaves it alone (P-037).
+        paidByChosen: request.buyer === 'approver' || !!paidByChosen.current[lineId],
         vendorSuggested: false
       });
       changes = { ...changes, ...memory };
@@ -476,7 +479,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
       // The employee may have typed or deleted the row meanwhile: use it as it is now.
       const line = linesRef.current.find((l) => l.id === job.lineId);
       if (!guess || !line) continue;
-      const changes = readingChanges(line, guess, historyFor(line.id), todayIso(), !!paidByChosen.current[line.id]);
+      const changes = readingChanges(line, guess, historyFor(line.id), todayIso(), request.buyer === 'approver' || !!paidByChosen.current[line.id]);
       if (changes) {
         applyLineChanges(line.id, changes);
         filled += 1;

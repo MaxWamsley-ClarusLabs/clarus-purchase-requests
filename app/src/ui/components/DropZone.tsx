@@ -82,7 +82,9 @@ export function DropZone(props: {
           </div>
         )}
         {props.quoteHint ? (
-          <div className="ctx-hint ctx-drop-note">A vendor total of {QUOTE_THRESHOLD_TEXT} or more needs a quote. Choose Quotes for a quote.</div>
+          <div className="ctx-hint ctx-drop-note">
+            A vendor total of {QUOTE_THRESHOLD_TEXT} or more needs a quote.{props.only ? '' : ' Choose Quotes for a quote.'}
+          </div>
         ) : null}
       </div>
       <button type="button" className="ctx-btn ctx-btn-secondary" disabled={props.disabled} onClick={() => inputRef.current?.click()}>

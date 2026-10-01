@@ -271,7 +271,9 @@ select.ctx-cell { cursor: pointer; appearance: auto; }
 .ctx-link-open { flex: none; display: inline-flex; padding: 4px; border-radius: 6px; color: var(--c-purple); }
 .ctx-link-open:hover, .ctx-link-open:focus-visible { background: var(--c-lavender); }
 .ctx-option-row.selected { border-color: var(--c-purple); background: #faf5fd; }
-.ctx-option-row .ctx-hint { display: block; }
+.ctx-field label.ctx-option-row { display: flex; font-size: 0.9rem; font-weight: 400; color: var(--c-text); margin-bottom: 0; }
+.ctx-option-row strong { display: block; font-weight: 700; }
+.ctx-option-row .ctx-hint { display: block; margin-top: 2px; }
 .ctx-radio-group { display: grid; gap: 8px; }
 .ctx-approval-cell .ctx-badge, .ctx-approval-cell .ctx-tag { white-space: normal; }
 .ctx-flag { display: inline-flex; vertical-align: middle; color: var(--c-warning); margin-left: 6px; }

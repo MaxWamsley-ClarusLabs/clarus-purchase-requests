@@ -1,5 +1,5 @@
 import { EMPTY_GUESS } from './receiptText';
-import { marksAfterEdit, readingChanges, shouldReadReceipt, suggestedFieldsText, vendorMemoryChanges } from './suggestions';
+import { marksAfterEdit, readingChanges, shouldReadReceipt, suggestedFieldsText, vendorMemoryChanges, visibleSuggestions } from './suggestions';
 import { line } from '../testing/builders';
 
 const TODAY = '2026-09-29';
@@ -79,5 +79,17 @@ describe('receipt suggestions (travel D-074, D-078, carried over)', () => {
     expect(suggestedFieldsText(['amount', 'date'])).toBe('date and amount');
     expect(suggestedFieldsText(['paidBy', 'vendor', 'date'])).toBe('date, vendor and who paid');
     expect(suggestedFieldsText(['vendor'])).toBe('vendor');
+  });
+});
+
+describe('visible suggestions (P-037)', () => {
+  it('leaves out "who paid" when the approver buys, because nobody is asked who paid', () => {
+    const marked = { suggested: ['date', 'paidBy'] as const };
+    expect(visibleSuggestions({ suggested: [...marked.suggested] }, 'approver')).toEqual(['date']);
+    expect(visibleSuggestions({ suggested: ['paidBy'] }, 'approver')).toEqual([]);
+  });
+
+  it('shows every suggestion when the employee buys', () => {
+    expect(visibleSuggestions({ suggested: ['date', 'paidBy'] }, 'self')).toEqual(['date', 'paidBy']);
   });
 });

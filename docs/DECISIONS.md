@@ -4,6 +4,7 @@ Every project decision, newest last. Each entry gives the date, the decision, th
 
 **Status labels**
 - **Decided (Max):** Max decided it in his overnight build prompt of 2026-09-30.
+- **Decided (Max, 2026-10-01):** Max answered in his messages of 2026-10-01 (questions 1 to 5 and 24 to 29 in `docs/QUESTIONS_FOR_MAX.md`). Where an entry below says so, the decision is his; the details that Claude worked out in building it are labelled Provisional (Claude) inside the entry.
 - **Provisional (Claude, awaiting Max):** Claude chose it overnight where the prompt was silent, because Max asked for work to continue without waiting. Each is built as recommended and listed in `docs/QUESTIONS_FOR_MAX.md` with the options and where a change would go. A provisional decision stays in force until Max answers.
 - **Carried over:** a decision of the Travel Expense App (repository `MaxWamsley-ClarusLabs/clarus-travel-expense`, decisions D-001 to D-079) that applies here unchanged. The travel decisions are not repeated here; they are referenced as "travel D-nnn".
 
@@ -43,6 +44,7 @@ A decision stays settled unless new facts affect it. If a later entry replaces a
 - **Date:** 2026-09-30
 - **Status:** Decided (Max). Confirmed again on 2026-10-01, with the quote rule (P-015): the attached F2 form's $100 supervisor approval and "over $500" quote wording are retired and are not to appear in the new SOP or the purchasing policy.
 - **Decision:** Under $500: no approval is needed, but the employee still submits the request with receipts. $500 or more: needs approval in the app before the purchase.
+- **Changed 2026-10-01 (P-037):** this applies to a request the employee buys. A request the approver buys, the usual case, goes to the approver whatever the amount.
 - **Note:** The attached F2 form (P4 wording) still says that purchases of $100 or more need approval and that purchases over $500 need a quote. Max's prompt decides $500 for approval, and the form's $100 is not used. The form text is one of the things the new policy stage updates. Listed as a question so Max sees it.
 
 ## P-006. Workflow and statuses
@@ -50,6 +52,7 @@ A decision stays settled unless new facts affect it. If a later entry replaces a
 - **Date:** 2026-09-30
 - **Status:** Decided (Max)
 - **Decision:** 1. Request: the employee creates a request with the planned purchases. 2. Approval: if any vendor-and-purpose total is $500 or more, the request goes to the approver. The approver gets an email with a link; in the app, the approver can Approve (and confirm categories) or Return with a note. A request under $500 skips this step. 3. Receipts: after buying, the employee attaches receipts and invoices, with receipt suggestions as in travel, then submits. 4. Processing: as in travel, the flow places a folder with receipt copies and a CSV in the destination and emails the administrator. The travel status model (Draft, Submitted, Returned, Processed, `_R2` resubmissions) is reused, with the approval states added. Approvers are the site Owners (the travel D-066 pattern); for now that is Max.
+- **Changed 2026-10-01 (P-037, P-040):** when the approver buys, the request goes Draft, Awaiting approval, Approved, Submitted (shown as Purchased), Processed. The approver, not the employee, attaches the receipts and finishes the request.
 
 ## P-007. Where it lives
 
@@ -69,6 +72,7 @@ A decision stays settled unless new facts affect it. If a later entry replaces a
 - **Date:** 2026-09-30
 - **Status:** Decided (Max)
 - **Decision:** A single CSV like travel D-044 to D-053, with the category, a suggested QuickBooks account per category, the grant code, the approval status and the approver. The account mapping is marked "Unverified, to confirm with Max" in the code and the records. The QuickBooks connector is not used.
+- **Changed 2026-10-01 (P-038):** the accounts now come from Max's message, as one column holding the account number and exact name.
 
 ## P-010. Certification at submit
 
@@ -85,7 +89,7 @@ A decision stays settled unless new facts affect it. If a later entry replaces a
 ## P-012. Expense categories
 
 - **Date:** 2026-09-30
-- **Status:** Decided (Max), from the attached form. On 2026-10-01 Max said the form was only a template, so the categories may be renamed. Open: which names, and which QuickBooks account each maps to, once Claude has the chart of accounts (question 1).
+- **Status:** Decided (Max), from the attached form. **Replaced 2026-10-01 by P-038**: Max supplied the QuickBooks accounts and the categories are now the 13 below.
 - **Decision:** R&D Materials & Supplies / Equipment; Advertising/Marketing/Website; Computer, H/W & S/W Supplies; Office Supplies; Training and Education; Shipping/Postage; Business Insurance; Other (with a description). The employee suggests one per line, with vendor memory as in travel. The approver or administrator can confirm or change it.
 
 ## P-013. Overnight mode
@@ -182,6 +186,7 @@ The first three are the default rules Max asked to have built and listed.
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max) for the defaults; the two choices are Decided (Max, P-003)
+- **Changed 2026-10-01 (P-037):** asked only when the employee buys. When the approver buys, nobody is asked: the company pays every row.
 - **Decision:** Two choices: Company and Employee. Employee-paid lines are "To reimburse". The first row of a request starts as Company and each new row copies the row above, and vendor memory remembers who paid last time (travel D-057, D-078). The travel app's "Suggested payment account" CSV column is dropped, because "Company" does not say which account paid.
 - **Options considered:** no default, so every row needs a choice (more clicks); the default Employee (Max has not said which is more common).
 - **Where a change goes:** `FIRST_ROW_PAID_BY` in `defaults.ts`; `CSV_COLUMNS` in `csv.ts`.
@@ -197,7 +202,8 @@ The first three are the default rules Max asked to have built and listed.
 ## P-025. Suggested QuickBooks accounts: names only, Unverified
 
 - **Date:** 2026-09-30
-- **Status:** Provisional (Claude, awaiting Max). The mapping is **Unverified, to confirm with Max**.
+- **Status:** **Replaced in part 2026-10-01 by P-038**: Max supplied the account numbers and names. The class column is still not carried over. The text below is the first build's.
+- **Earlier status:** Provisional (Claude, awaiting Max). The mapping was **Unverified, to confirm with Max**.
 - **Decision:** Plain account names without numbers: R&D Materials and Supplies; Advertising and Marketing; Computer and Software; Office Supplies; Training and Education; Shipping and Postage; Insurance; and none for Other (the administrator decides). Claude cannot look up the chart of accounts, because the QuickBooks connector is not used and account names in the travel repository cover travel only. Invented account numbers would look verified, so none are given. The CSV's "Suggested payment account" and "Suggested class" columns of the travel app are not carried over.
 - **Options considered:** numbers with names (would be invented); leaving the column empty (Max asked for a suggestion); a class from the project code (the travel app's D-050 list maps a trip purpose, not a grant code; Max asked only for the grant code in the CSV).
 - **Where a change goes:** `CATEGORIES[].suggestedAccount` and `QUICKBOOKS_MAPPING_STATUS` in `purchaseRules.ts`.
@@ -206,7 +212,7 @@ The first three are the default rules Max asked to have built and listed.
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max)
-- **Decision:** Request number `PR-0042`. Folder `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042` using the earliest purchase date, `_R2` for resubmissions. The CSV is `PR-0042_Purchases.csv` (`PR-0042_R2_Purchases.csv`). Columns: Request, Row, Date, Vendor, What was bought and why, Category, Category confirmed by, Suggested QuickBooks account (Unverified, to confirm with Max), Amount, Who paid, Reimbursable, Project or grant code, Approval status, Bought before approval, Approved by, Approved on, Quote files, Receipt files, No-quote reason, No-receipt reason, Warnings, Submission, Submitted by, Submitted on, Department, Purchase dates, Business purpose, Certified by. The category is the category as submitted; "Approved by" names the approver (or the requester, marked self-approved).
+- **Decision:** Request number `PR-0042`. Folder `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042` using the earliest purchase date, `_R2` for resubmissions. The CSV is `PR-0042_Purchases.csv` (`PR-0042_R2_Purchases.csv`). Columns (31 since 2026-10-01, P-037 to P-039): Request, Row, Date, Vendor, What was bought and why, Item link, Category, Category confirmed by, QuickBooks account (the number and exact name, or "Administrator decides"), Amount, Who bought, Who paid, Reimbursable, Project or grant code, Approval status, Bought before approval, Approved by, Approved on, Quote files, Receipt files, No-quote reason, No-receipt reason, No-link reason, Warnings, Submission, Submitted by, Submitted on, Department, Purchase dates, Business purpose, Certified by. "Certified by" is the employee who ticked the certification, also when the approver bought; "Submitted by" is whoever submitted, the approver when the approver bought. A cell that starts with = + - @ is written with a leading apostrophe, so a spreadsheet never runs it. The category is the category as submitted; "Approved by" names the approver (or the requester, marked self-approved).
 - **Options considered:** filing by the submission date (an old purchase submitted late would land in the wrong year); splitting the CSV in two (Max prefers one CSV, travel D-045).
 - **Where a change goes:** `naming.ts`, `CSV_COLUMNS` in `csv.ts`, `docs/STRATEGY.md` section 7.
 
@@ -214,6 +220,7 @@ The first three are the default rules Max asked to have built and listed.
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max)
+- **Changed 2026-10-01 (P-037, P-040):** when the approver buys, an Approved request is locked to the employee; it is the approver's to change.
 - **Decision:** The employee can edit a request that is Draft, Returned or Approved. A request that is Awaiting approval, Submitted or Processed is locked (travel D-042). An Approved request stays editable because receipts and real prices arrive after the approval; P-019 keeps the approval honest. Returning a request after processing keeps its approval if nothing changed beyond P-019's allowance.
 - **Options considered:** lock after approval (receipts could not be attached); reopen approval on any edit (too many approvals).
 - **Where a change goes:** `isEditable` in `statuses.ts`.
@@ -222,6 +229,7 @@ The first three are the default rules Max asked to have built and listed.
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max)
+- **Changed 2026-10-01 (P-041):** this holds for a request the employee buys. When the approver buys, the employee ticks it when sending the request, because the employee submits nothing later.
 - **Decision:** The certification is ticked at Submit, not when a request is sent for approval. Sending for approval needs no tick, because planned purchases have not been made or reimbursed yet; the certification covers what was actually bought.
 - **Options considered:** certifying at both steps (two ticks; the sentence talks about purchases that "have not been reimbursed elsewhere").
 - **Where a change goes:** `sendForApproval` in the data services and the send dialog.
@@ -290,6 +298,63 @@ The first three are the default rules Max asked to have built and listed.
 - **Options considered:** also record the business purpose and project or grant code with the approval, treat a change as "changed since approval", and warn the administrator in the submission email (a typo fix would also trigger it); lock a request once approved (receipts and real prices could not be attached, P-027).
 - **Recommendation:** record both with the approval and warn the administrator. Not built: it changes what "approved" means, so it waits for Max (question 22).
 - **Where a change goes:** `ApprovalRecord` in `types.ts`, `approvalState` in `purchaseRules.ts`, `submission.ts` and `email.ts`.
+
+---
+
+## The approver buys: Max's decisions of 2026-10-01 and the details built from them
+
+Max said that about 95% of purchases are bought by the person who approves them, and asked for that to be the default. He answered questions 24 to 29 on 2026-10-01. These six entries record it. Where a detail is Claude's, the entry says Provisional (Claude).
+
+## P-037. Who buys: the approver, by default, chosen on each request
+
+- **Date:** 2026-10-01
+- **Status:** Decided (Max): the approver buys by default; question 24, "do recommended" (his words: "this process is correct"). The details marked Provisional (Claude) are Claude's.
+- **Decision:** Each request has "Who buys this?" with **The approver buys it** (the default) and **I will buy it myself**. The employee chooses while the request is a Draft or Returned. When the approver buys: the employee enters what to buy (vendor, what and why, estimated amount, category, the item link, and a quote at $500 or more) and sends it with the certification (P-041). Every such request goes to the approver, whatever the amount, because the approver has to act on it. The approver approves, buys, corrects the actual amounts, attaches the receipt and chooses **Mark purchased**; the app then builds the folder and CSV as it does after a submit (P-040). The employee submits nothing. The $500 approval threshold (P-005), the 10% rule (P-019) and the bought-before-approval flag (P-017) apply only to a request the employee buys, which works as the first build did. The quote rule at $500 or more (P-015) applies to both. "Who paid" is not asked when the approver buys: the company pays every row, the totals and the CSV count it so whatever is stored, and "To reimburse" is $0.00.
+- **Provisional (Claude):** after the approval, a request the approver buys stays Approved however the amounts change when the approver buys (the 10% rule protects the approver from the employee; here the approver is the buyer). A request the approver bought is shown as **Purchased** where the status is Submitted. The bought-before-approval flag is never set for it.
+- **Options considered (question 24):** A. a per-request choice, the approver as the default (chosen); B. one setting for the whole site; C. keep the first build's flow and treat an approver purchase as an exception. A keeps the 5% where an employee buys working as before, and the default means the usual case needs no extra click.
+- **Where a change goes:** `BUYER_OPTIONS`, `DEFAULT_BUYER`, `approvalThresholdCents` in `purchaseRules.ts`; `statuses.ts`; both data services; `docs/DATA_MODEL.md` (the Buyer column).
+
+## P-038. Categories are the QuickBooks accounts
+
+- **Date:** 2026-10-01
+- **Status:** Decided (Max): the accounts (question 1, "B", supplied in his message after he read the account list himself) and the 13-category list (question 27, yes). Equipment and Other, and the Mark processed hold, are Provisional (Claude). Claude did not open the account file.
+- **Decision:** The 13 categories carry the exact QuickBooks account names, so the employee's choice is the account: R&D Materials & Supplies 6182; Equipment 6175 (the administrator decides whether it is expensed or capitalized to 1415 Fixed Assets:Equipment); Advertising/Marketing/Website 6500; Computer, H/W & S/W Supplies 6178; Office Supplies 6180; Training and Education 6155; Shipping/Postage 6184; Business Insurance 6215; Dues and Subscriptions 6150; Telephone/Internet 6185; Repairs & maintenance 6170; Professional Services 6050; Other (no account). Max's message also corrected four of the first build's suggested names and added four categories (Dues and Subscriptions, Telephone/Internet, Repairs & maintenance, Professional Services), and split "R&D Materials & Supplies / Equipment" into two. The CSV has one column, "QuickBooks account", with the number and exact name. There is no class column (P-025). The accounts are labelled "from the May 1, 2026 account list" in the code; **re-export the account list and compare it with `purchaseRules.ts` before go-live** (`docs/CHECKPOINT.md`).
+- **Provisional (Claude):** Equipment and Other show "Administrator decides" where an account would be. Approving confirms the categories shown, so a request the approver buys is confirmed at approval; a request nobody approved (an employee-bought request under $500) is refused at **Mark processed** while a row in either category is unconfirmed, and the administrator uses Confirm categories first. The line between expensing and capitalizing equipment is left to the purchasing policy (the last stage).
+- **Options considered:** keep the first build's eight categories with suggested names (Max supplied the accounts, so no longer needed); several accounts per category with a second choice (more clicks).
+- **Where a change goes:** `CATEGORIES` and `QUICKBOOKS_MAPPING_STATUS` in `purchaseRules.ts`; `rowsToReview` in `serviceRules.ts`.
+
+## P-039. The item link
+
+- **Date:** 2026-10-01
+- **Status:** Decided (Max): question 25 (the employee also gives the web page of the item) and question 28, option A. The checks below are Provisional (Claude).
+- **Decision:** Each row has an **Item link** (the web page of the item) and, if there is none, a short **No-link reason** ("No web page: say why"). When the approver buys, each row needs one or the other before the request can be sent. When the employee buys, it is optional.
+- **Provisional (Claude):** the link is stored in a plain-text column and kept whole; one longer than 2,000 characters is refused, never cut, because a cut address opens another page. Only an address that starts http:// or https://, has a dotted host name, has no spaces and carries no user name or password is shown as a clickable link (opening in a new tab); anything else is shown as plain text and refused at validation. The CSV carries the link and the reason (a cell that starts with = + - @ is escaped). The emails do not carry the link. Because the list text can be edited directly (travel D-002), this is the only place stored text becomes a link.
+- **Where a change goes:** `safeLink`, `ITEM_LINK_MAX_LENGTH`, `NO_LINK_REASONS` in `purchaseRules.ts`; `validation.ts`; the grid.
+
+## P-040. The approver buys: edits, the rows as sent, Mark purchased
+
+- **Date:** 2026-10-01
+- **Status:** Decided (Max): question 25, option A (the approver attaches the receipt and chooses Mark purchased) and question 29, option A (the approver may change everything and add or remove rows, and the rows as sent are kept). The rest is Provisional (Claude).
+- **Decision:** After approving, the approver opens the request (**Open to buy**) and may change every row, add or remove rows (shipping, tax) and attach the receipts and invoices. When the rows are complete, **Mark purchased** builds the folder and CSV and emails the administrator, as a submit does. The rows as the employee sent them are kept with the approval record and shown on the request page next to what was bought ("As sent for approval"), so the administrator sees what changed.
+- **Provisional (Claude):** the Owner who approved the request is the one who buys and finishes it; another administrator can view it but not change it or mark it purchased. The category the approver chooses while buying counts as confirmed by them. The package's submitter is the approver; the certification is the employee's (P-041). The approver's page for a request waiting to be bought is the Approvals page's **To buy** list.
+- **Options considered:** the employee attaches the receipt later (question 25, B: the employee has a step only the approver can trigger); the receipts go through the existing receipt filing (C: the folder would hold only the CSV); the approver edits amounts only (question 29, B: shipping and tax rows could not be added).
+- **Where a change goes:** `markPurchased`, `requestForChange` and `mayBuy` in the data services and `statuses.ts`; `SentRowsCard.tsx`; `AdminRequestPage.tsx`.
+
+## P-041. Certification when the approver buys
+
+- **Date:** 2026-10-01
+- **Status:** Decided (Max): question 26, option A (the employee ticks it when sending the request). The storage and the check are Provisional (Claude).
+- **Decision:** The sentence is the same (P-010). For a request the approver buys, the employee ticks it in the send dialog, and Send stays disabled until it is ticked. For a request the employee buys it stays at Submit (P-028).
+- **Provisional (Claude):** the sentence is kept on the approval request (Purchase Submissions item), with the employee's account. **Mark purchased** reads it from the newest approval request and refuses to build the package if it is missing or is not the exact sentence, telling the approver to return the request so the employee can send it again with the tick. The submission email and the CSV name the employee as certifying. Accepted risk, of the same kind as P-029: the employee can edit their own approval request item directly in SharePoint, so the stored sentence is only as honest as that item; the exact-sentence check and the version history are the controls. Revisit at the security review.
+- **Where a change goes:** `sendForApproval` and `markPurchased` in the data services; `employeeCertification` in `serviceRules.ts`; the send dialog.
+
+## P-042. Integrity and return rules when the approver buys
+
+- **Date:** 2026-10-01
+- **Status:** Provisional (Claude, awaiting Max). Follows from P-037 and P-040; not asked.
+- **Decision:** (1) A row or a submission counts for a request if its owner made it, or, for a request the approver buys, if the approver recorded on the request made it (P-034 widened; the rule stays "a request's rows are made by people with a stake in it"). (2) SharePoint shows people only their own items, so the employee does not see rows the approver adds or the receipts the approver attaches; the employee sees the request's totals and status. Accepted, to be checked at the checkpoint (Unverified). (3) The approver can return an Approved request to the employee (the approval is taken back); this is refused while rows the approver added exist, because they would stop counting once the approval is taken back: delete them first. (4) The administrator's return at processing sends a request the approver bought back to the approver (status Approved), not to the employee; Mark purchased then builds the folder again (`_R2`). (5) When the approver buys, "Who paid" is forced to the company at every write and in the totals and the CSV, and a hidden "Who paid" suggestion (from vendor memory or the receipt reader) never blocks a row. (6) Mark purchased is refused unless the person is an administrator and the one who approved the request.
+- **Options considered:** let the employee see the approver's rows (a second permission model or a copy of the rows on the request: more code and a copy to keep true); let any Owner buy (then the recorded approver no longer says who bought); send a processing return of an approver purchase to the employee (the employee cannot change what the approver bought).
+- **Where a change goes:** `serviceRules.ts` (`authorsOf`, `returnStageFor`, `statusAfterReturn`, `buyRefusal`), both data services, `suggestions.ts` (`visibleSuggestions`).
 
 ---
 

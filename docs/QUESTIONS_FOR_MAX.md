@@ -4,13 +4,13 @@ Written during the overnight build (2026-09-30). Every choice Claude made where 
 
 From your next message the normal rule applies again: Claude pauses and asks, at most five numbered questions at a time. So these are listed in order of how much they matter, and the first five are the ones to answer first.
 
-**Answered by Max on 2026-10-01:** questions 2, 4 and 5: yes. Question 3: "do whatever you think", so the recommendation stands. Question 1: still open, see below. New from Max: about 95% of purchases will be bought by the approver after approving the employee's request, and that should be the default (questions 24 to 26).
+**Answered by Max on 2026-10-01:** questions 2, 4 and 5: yes. Question 3: "do whatever you think", so the recommendation stands. Question 1: answered with the account list (the categories are now the QuickBooks accounts, P-038). Questions 24 (do the recommendation), 25 (A, and the employee also gives the item's web page), 26 (A), 27 (yes), 28 (A) and 29 (A): the approver buys by default, and the approver-buys build is on the branch (P-037 to P-042). **New and open: questions 30 to 32**, at the end of this file. Nothing else in the file is waiting on Max except the provisional choices, which stay in force until he answers.
 
 **The first five, as asked**
 
 | # | Question | Why it is first |
 |---|---|---|
-| 1 | Which QuickBooks account goes with each category? | **Open.** Max asked whether Claude can infer them, and whether to rename the categories (the form was a template). Claude needs the chart of accounts |
+| 1 | Which QuickBooks account goes with each category? | **Answered (2026-10-01).** Max supplied the accounts, four corrections and four more categories: 13 categories, each a QuickBooks account (P-038) |
 | 2 | Is "$500 or more" right for the quote rule, and is the old form's $100 retired? | **Answered: yes.** To go in the new SOP |
 | 3 | Is "send for approval first, then submit" right for a purchase already made? | **Answered: do whatever Claude thinks.** Option A stands |
 | 4 | Keep the rule that a vendor total more than 10% above what was approved needs approval again? | **Answered: yes** |
@@ -18,26 +18,29 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ---
 
-## 1. QuickBooks accounts for the eight categories (Unverified, to confirm with Max)
+## 1. QuickBooks accounts for the categories (answered, P-038)
 
-- **Max, 2026-10-01:** asked what the categories are, whether Claude can infer the accounts or needs more information, and whether to rename the categories, because the policy was only a template. **Status: open.** Claude cannot know the real accounts without the chart of accounts, so the suggestions below stay Unverified. The categories can now be renamed (P-012).
+- **Max, 2026-10-01:** he had already read `Intuit_Account List.xlsx` (the May 1, 2026 export) in another conversation, and gave the accounts in his message: the account number and exact name for each category, four corrections to the first build's suggested names, and four more categories (Dues and Subscriptions, Telephone/Internet, Repairs & maintenance, Professional Services). He also asked to split "R&D Materials & Supplies / Equipment" into two. Claude did not open the file; the app's numbers and names are from his message.
+- **Built:** 13 categories, each one a QuickBooks account (P-038), in one table in `purchaseRules.ts`, labelled "from the May 1, 2026 account list". The CSV has one column, "QuickBooks account", with the number and exact name. Equipment (6175, expensed or capitalized to 1415 Fixed Assets:Equipment) and Other (no account) show "Administrator decides", and Mark processed is refused for a row in one of them that nobody has confirmed. There is no class column.
 
-- **Built:** a suggested account name for each category in the CSV, without account numbers, under a column header that says "Suggested QuickBooks account (Unverified, to confirm with Max)", because Claude could not look up your chart of accounts (the QuickBooks connector is not used, and the travel repository lists travel accounts only).
-
-  | Category | Suggested account (Unverified) |
+  | Category | QuickBooks account |
   |---|---|
-  | R&D Materials & Supplies / Equipment | R&D Materials and Supplies |
-  | Advertising/Marketing/Website | Advertising and Marketing |
-  | Computer, H/W & S/W Supplies | Computer and Software |
-  | Office Supplies | Office Supplies |
-  | Training and Education | Training and Education |
-  | Shipping/Postage | Shipping and Postage |
-  | Business Insurance | Insurance |
-  | Other | (none; the administrator decides) |
+  | R&D Materials & Supplies | 6182 R&D Materials & Supplies |
+  | Equipment | 6175 Equipment (administrator decides: expense it, or capitalize it to 1415 Fixed Assets:Equipment) |
+  | Advertising/Marketing/Website | 6500 Advertising/Marketing/Website |
+  | Computer, H/W & S/W Supplies | 6178 Computer, H/W & S/W Supplies |
+  | Office Supplies | 6180 Office Supplies |
+  | Training and Education | 6155 Training and Education |
+  | Shipping/Postage | 6184 Shipping/Postage |
+  | Business Insurance | 6215 Business Insurance |
+  | Dues and Subscriptions | 6150 Dues and Subscriptions |
+  | Telephone/Internet | 6185 Telephone/Internet |
+  | Repairs & maintenance | 6170 Repairs & maintenance |
+  | Professional Services | 6050 Professional Services (the administrator picks the specific account in QuickBooks) |
+  | Other | Administrator decides |
 
-- **Options:** A. Give Claude the real account names or numbers for each category. B. Leave the column blank until the policy stage. C. Keep these names as plain hints.
-- **Recommendation:** A. It is the only way the CSV column becomes useful. In the meantime C is harmless, because the administrator decides the account, as in travel.
-- **If you choose differently:** `CATEGORIES[].suggestedAccount` and `QUICKBOOKS_MAPPING_STATUS` in `app/src/domain/purchaseRules.ts` (P-025). No other file changes.
+- **Still to do:** export the account list again and compare it with `purchaseRules.ts` before go-live (`docs/CHECKPOINT.md` step 35). Where Equipment is capitalized rather than expensed waits for the purchasing policy (the last stage).
+- **If something is wrong:** `CATEGORIES[]` and `QUICKBOOKS_MAPPING_STATUS` in `app/src/domain/purchaseRules.ts` (P-038). No other file changes.
 
 ## 2. The quote rule, and the attached form's older numbers (P-015, P-005)
 
@@ -106,7 +109,7 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ## 10. Who paid defaults (P-023)
 
-- **Built:** Company or Employee. The first row starts as Company; each new row copies the row above; vendor memory remembers who paid. The travel CSV's "Suggested payment account" column is dropped.
+- **Built:** Company or Employee, asked only when the employee buys it. The first row starts as Company; each new row copies the row above; vendor memory remembers who paid. When the approver buys, nobody is asked: the company pays every row (P-037). The travel CSV's "Suggested payment account" column is dropped.
 - **Options:** A. As built. B. Start as Employee. C. No default.
 - **Recommendation:** A (company card is the common case in travel, 79% to 95%). Tell Claude if purchases differ.
 - **If you choose differently:** `FIRST_ROW_PAID_BY` in `defaults.ts`.
@@ -120,21 +123,21 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 
 ## 12. Folder and file names (P-026)
 
-- **Built:** `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042` using the earliest purchase date (so the date shows the filing year); `_R2` for a resubmission; CSV `PR-0042_Purchases.csv`. The 28 CSV columns are listed in `docs/STRATEGY.md` section 7; the suggested-account column's header carries the words "Unverified, to confirm with Max".
+- **Built:** `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042` using the earliest purchase date (so the date shows the filing year); `_R2` for a resubmission; CSV `PR-0042_Purchases.csv`. The 31 CSV columns are listed in `docs/STRATEGY.md` section 7; the account column is "QuickBooks account" (P-038).
 - **Options:** A. As built. B. Date the folder by the submission date.
 - **Recommendation:** A.
 - **If you choose differently:** `naming.ts`, `csv.ts`.
 
 ## 13. Editing and locking (P-027)
 
-- **Built:** the employee can edit a request that is Draft, Returned or Approved. Awaiting approval, Submitted and Processed are locked. Returned after processing keeps its approval if nothing changed beyond question 4's allowance.
+- **Built:** the employee can edit a request that is Draft or Returned, or Approved when the employee buys it. Awaiting approval, Submitted and Processed are locked, and so is an Approved request the approver buys, because it is the approver's to change (P-040). Returned after processing keeps its approval if nothing changed beyond question 4's allowance.
 - **Options:** A. As built. B. Lock after approval (receipts could not be attached).
 - **Recommendation:** A.
 - **If you choose differently:** `isEditable` in `statuses.ts`.
 
 ## 14. Certification only at Submit (P-028)
 
-- **Built:** the certification sentence (yours, exact) is ticked at Submit, not when sending for approval.
+- **Built:** the certification sentence (yours, exact) is ticked at Submit when the employee buys, and, when the approver buys, by the employee when sending the request (question 26, P-041). It is not ticked when an employee-bought request is sent for approval.
 - **Options:** A. As built. B. Also at sending for approval.
 - **Recommendation:** A. The sentence says the purchases "have not been reimbursed elsewhere", which is about what was actually bought.
 - **If you choose differently:** the send dialog in `RequestWorkspace.tsx` and `sendForApproval` in the data services.
@@ -201,12 +204,15 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 - Whether the flow's new approval branch imports and runs as written (Unverified). Tested at the checkpoint, `docs/CHECKPOINT.md`: the import and turning it on in steps 14 and 15, the branch and the approval email in steps 21 to 31 (several addresses in one message only if a second Owner was added in step 3). The failure scope is not tested at the checkpoint (step 34 explains why) and stays Unverified.
 - Whether SharePoint accepts clearing a Person column and the "Returned at" choice, which the app does when an approver returns a request at the approval step (Unverified; a first send no longer does it, P-034).
 - Whether the Owners can open a row's attachments in the app, which the approver's file preview relies on (Unverified).
+- Whether SharePoint accepts the approver adding rows, files and the package to an employee's request (the approver's account creates items that count for the employee's request, P-042), and whether it then hides those rows from the employee as expected (question 30). Unverified; checkpoint step 33, Checks 7 and 8.
 - Everything Microsoft-side from the travel strategy's evidence table, which was not re-checked.
 
-## 24. The approver buys most purchases: how should the app work? (new, 2026-10-01)
+## 24. The approver buys most purchases: how should the app work? (answered 2026-10-01, built: P-037)
+
+- **Answered (Max, 2026-10-01): do the recommendation.** He also wrote: "this process is correct (the employee enters what to buy ..., and a quote at $500 or more. Every such request goes to the approver, whatever the amount ... The approver approves, buys, corrects the actual amounts, attaches the receipt, and chooses Mark purchased.)" Built as described below, with the details in P-037 and P-042.
 
 - **From Max:** about 95% of purchases will be bought by the person who approves the request. The employee submits a purchase request and the approver buys it. Make that the default if possible.
-- **Today's build** assumes the employee buys after approval, attaches the receipt and submits. The approver cannot edit rows or attach files, and an approval is needed only at $500 or more.
+- **The first build** assumed the employee buys after approval, attaches the receipt and submits. The approver could not edit rows or attach files, and an approval was needed only at $500 or more.
 - **Recommendation (needs approval), per request:**
   1. A choice on Request details, "Who buys this?", with **The approver buys it** as the default and **I will buy it myself** as the other.
   2. If the approver buys: the employee enters what to buy (vendor, what and why, estimated amount, category, and a quote at $500 or more). No receipt is asked for, and "Who paid" is not asked (it is the company).
@@ -217,18 +223,60 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 - **Recommendation:** A. A per-request choice keeps the 5% where an employee buys working as today, and the default means the 95% case needs no extra click.
 - **If you choose differently:** `app/src/ui/pages/RequestWorkspace.tsx`, `AdminRequestPage.tsx`, both data services, `purchaseRules.ts`.
 
-## 25. After the approver buys, who attaches the receipt and finishes the request? (new)
+## 25. After the approver buys, who attaches the receipt and finishes the request? (answered 2026-10-01, built: P-040)
+
+- **Answered (Max, 2026-10-01): A**, and the employee also gives the item's web page (the link, P-039). Built.
 
 - **Options:** A. The approver attaches the receipt or invoice on the request page and chooses "Mark purchased"; the app builds the folder for processing (recommended: one person finishes it, and the receipt is with the person who bought). B. The employee attaches it after the approver forwards it, and submits as today (the app changes least, but the employee has a step only the approver can trigger). C. Receipts go through your existing receipt filing and the request just closes in the app (the folder would hold the CSV only, so the app no longer shows that a receipt exists).
 - **Recommendation:** A.
 - **If you choose differently:** the submit and processing actions in both data services and the request pages.
 
-## 26. Who ticks the certification when the approver buys? (new)
+## 26. Who ticks the certification when the approver buys? (answered 2026-10-01, built: P-041)
+
+- **Answered (Max, 2026-10-01): A.** Built.
 
 - **The sentence** (yours, exact): "I certify that the listed purchases are for official Clarus Labs business purposes, are not personal expenses, have not been reimbursed elsewhere, and that the information provided is accurate to the best of my knowledge."
 - **Options:** A. The employee ticks it when they send the request (recommended: they no longer submit anything, and the sentence is about business purpose and the accuracy of what they entered). B. The approver ticks it when marking the purchase done. C. Both.
 - **Recommendation:** A. For requests an employee buys themselves, the tick stays at Submit as today.
 - **If you choose differently:** `sendForApproval` and `submitRequest` in both data services, the send and submit dialogs.
+
+## 27. The 13-category list (answered 2026-10-01, built: P-038)
+
+- **Asked:** the first build's eight categories become the 13 QuickBooks accounts in question 1's table, with "R&D Materials & Supplies" and "Equipment" separate and the four additions. **Answered (Max, 2026-10-01): yes.** Built.
+
+## 28. The item link on each row (answered 2026-10-01, built: P-039)
+
+- **Asked:** A. The link is required on each row when the approver buys, or a reason there is no web page ("No web page: say why"); optional when the employee buys. B. Always optional. C. Always required. **Answered (Max, 2026-10-01): A.** Built.
+
+## 29. What the approver may change when buying (answered 2026-10-01, built: P-040)
+
+- **Asked:** A. The approver may change every row and add or remove rows (shipping, tax), and the rows as the employee sent them are kept to show what changed. B. Amounts only. **Answered (Max, 2026-10-01): A.** Built.
+
+## 30. The employee will not see the rows or receipts the approver adds (new, 2026-10-01)
+
+- **What happens:** SharePoint shows each person only the items they created. When the approver adds a row or attaches a receipt to an employee's request, the employee does not see it. They see the request's status (Purchased) and its totals, which include the added row. I expect this, but it is **Unverified** until the test-site checkpoint (step 33, Check 8).
+- **Options:** A. Accept it: the employee sees the status and totals, and the folder and CSV are the record (recommended: nothing to build, and the employee has no part in what the approver buys). B. Copy the rows as bought onto the request so the employee can read them (a second copy to keep true). C. Give the employee read access to the approver's rows (a second permission model).
+- **Recommendation:** A. Tell me if employees need to see what was bought.
+- **If you choose differently:** the data layer and `docs/DATA_MODEL.md`.
+
+## 31. Only the Owner who approved a request can buy it (new)
+
+- **What happens:** the Owner who approved the request is the one who can change its rows and mark it purchased. Another Owner can view it. Today you are the only Owner, so nothing changes for you.
+- **Options:** A. As built (recommended: the record says who bought it). B. Any Owner can buy any approved request (then "approved by" no longer says who bought). C. Hand a request to another Owner.
+- **Recommendation:** A until there is a second Owner; then decide whether C is needed.
+- **If you choose differently:** `mayBuy` in `statuses.ts` and `buyRefusal` in `serviceRules.ts`.
+
+## 32. Where Equipment is capitalized, and whether a class is needed (new)
+
+- **What happens:** Equipment shows "Administrator decides" (expense it to 6175, or capitalize it to 1415 Fixed Assets:Equipment), and the app has no dollar threshold for capitalizing. The CSV also has no QuickBooks class column.
+- **Options:** A. Leave both to the purchasing policy, the last stage (recommended). B. Tell me a capitalization threshold now (for example "$5,000 or more"), and the app can mark such a row for review. C. Tell me which class each project or category uses, and a class column can be added.
+- **Recommendation:** A. Neither blocks the test-site checkpoint.
+- **If you choose differently:** `purchaseRules.ts` for B; `csv.ts` and `purchaseRules.ts` for C.
+
+## Reminders (no answer needed)
+
+- Before go-live: export the QuickBooks account list again and compare it with `purchaseRules.ts` (`docs/CHECKPOINT.md` step 35).
+- The suggested-account Unverified label is gone because you supplied the accounts, but the numbers and names are from your message, not from a file Claude opened.
 
 ## Not built, on purpose
 

@@ -357,6 +357,14 @@ Max said that about 95% of purchases are bought by the person who approves them,
 - **Options considered:** let the employee see the approver's rows (a second permission model or a copy of the rows on the request: more code and a copy to keep true); let any Owner buy (then the recorded approver no longer says who bought); send a processing return of an approver purchase to the employee (the employee cannot change what the approver bought).
 - **Where a change goes:** `serviceRules.ts` (`authorsOf`, `returnStageFor`, `statusAfterReturn`, `buyRefusal`), both data services, `suggestions.ts` (`visibleSuggestions`).
 
+## P-043. The checkpoint is done on the real Forms and Apps site, with the Test flow first
+
+- **Date:** 2026-10-01
+- **Status:** Decided (Max, 2026-10-01: "I don't want a test site I want to go straight into making the site for all forms"). The safeguards are Provisional (Claude).
+- **Decision:** The first install (`docs/CHECKPOINT.md`) is made on the new shared site `/sites/FormsAndApps` (a Communication site, named people as Owners; P-007, travel D-075), not on a throwaway test site. Claude had recommended a throwaway site, so that test lists and people would not end up on the real site; Max chose the real site.
+- **Provisional (Claude):** the flow imported first is still the **Test** package (folders go to the site's own Documents library, P-008), so nothing is written to the Accounting folder until the checkpoint passes. Part 8 of the checkpoint then turns the Test flow off, deletes the test items and the `Purchases_Test` folder, makes and imports the **Live** package, and watches one request arrive. Two flows must never be on together, because both watch the same Purchase Submissions list. Test requests use up request numbers on the real lists, so the first real request is not PR-0001. The approvers are the Owners at the time the package is made (P-018), so the Owners are set before the packages are made.
+- **Where a change goes:** `docs/CHECKPOINT.md`, `docs/SOP.md` B8 and B9.
+
 ---
 
 ## Status of strategy items

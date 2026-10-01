@@ -1,7 +1,7 @@
 # Status
 
 **Last updated:** 2026-10-01 (see `docs/CHANGELOG.md` for every change)
-**Current stage:** The overnight build is finished through Stage 9. Stage 10 (review with Max) is under way: on 2026-10-01 Max answered questions 1 to 5 and 24 to 29, and Claude built what he decided: the approver buys by default, the item link, and the 13 QuickBooks-account categories (P-037 to P-042). Everything is on branch `claude/festive-ramanujan-nljy44` and in draft pull request MaxWamsley-ClarusLabs/clarus-purchase-requests#1. Nothing is merged, deployed or installed. Max has since answered questions 30 to 32 (accept; any Owner can return a request, built; Equipment capitalization waits for the policy). Next: Max follows `docs/CHECKPOINT.md` on a test site, and Claude fixes what it finds.
+**Current stage:** The overnight build is finished through Stage 9. Stage 10 (review with Max) is under way: on 2026-10-01 Max answered questions 1 to 5 and 24 to 29, and Claude built what he decided: the approver buys by default, the item link, and the 13 QuickBooks-account categories (P-037 to P-042). Everything is on branch `claude/festive-ramanujan-nljy44` and in draft pull request MaxWamsley-ClarusLabs/clarus-purchase-requests#1. Nothing is merged, deployed or installed. Max has since answered questions 30 to 32 (accept; any Owner can return a request, built; Equipment capitalization waits for the policy). Next: Max follows `docs/CHECKPOINT.md` on the new shared Forms and Apps site (P-043: not a throwaway test site, Test flow first, Live flow in Part 8), and Claude fixes what it finds.
 
 ## Summary
 

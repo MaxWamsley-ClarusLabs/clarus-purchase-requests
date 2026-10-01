@@ -4,7 +4,7 @@ Written during the overnight build (2026-09-30). Every choice Claude made where 
 
 From your next message the normal rule applies again: Claude pauses and asks, at most five numbered questions at a time. So these are listed in order of how much they matter, and the first five are the ones to answer first.
 
-**Answered by Max on 2026-10-01:** questions 2, 4 and 5: yes. Question 3: "do whatever you think", so the recommendation stands. Question 1: answered with the account list (the categories are now the QuickBooks accounts, P-038). Questions 24 (do the recommendation), 25 (A, and the employee also gives the item's web page), 26 (A), 27 (yes), 28 (A) and 29 (A): the approver buys by default, and the approver-buys build is on the branch (P-037 to P-042). **Answered on 2026-10-01 (his second message):** question 30 ("sure": accept it), question 31 (any Owner should be able to return a request, built) and question 32 ("not sure": it stays with the purchasing policy, the last stage). He also pasted the QuickBooks account list again, and the 13 categories were compared with it (all match). Nothing else in the file is waiting on Max except the provisional choices, which stay in force until he answers.
+**Answered by Max on 2026-10-01:** questions 2, 4 and 5: yes. Question 3: "do whatever you think", so the recommendation stands. Question 1: answered with the account list (the categories are now the QuickBooks accounts, P-038). Questions 24 (do the recommendation), 25 (A, and the employee also gives the item's web page), 26 (A), 27 (yes), 28 (A) and 29 (A): the approver buys by default, and the approver-buys build is on the branch (P-037 to P-042). **Answered on 2026-10-01 (his second message):** question 30 ("sure": accept it), question 31 (any Owner should be able to return a request, built) and question 32 ("not sure"; closed later the same day in the policy workshop, P-044). He also pasted the QuickBooks account list again, and the 13 categories were compared with it (all match). Nothing else in the file is waiting on Max except the provisional choices, which stay in force until he answers.
 
 **The first five, as asked**
 
@@ -270,14 +270,22 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 - **Recommendation:** A until there is a second Owner; then decide whether C is needed.
 - **If you choose differently:** `mayBuy` in `statuses.ts` and `buyRefusal` in `serviceRules.ts`.
 
-## 32. Where Equipment is capitalized, and whether a class is needed (deferred 2026-10-01: Max is not sure)
+## 32. Where Equipment is capitalized, and whether a class is needed (closed 2026-10-01 by P-044)
 
-- **Max, 2026-10-01: "not sure".** Option A stands: both wait for the purchasing policy (the last stage); Equipment shows both accounts and the administrator decides. Nothing is blocked.
+- **Closed by the policy workshop (P-044, 2026-10-01).** Max: "equipment on Intuit can be any cost", so there is no capitalization threshold; Equipment shows both accounts and the administrator decides how it is booked. The QuickBooks class was not raised in the workshop, so the CSV has no class column; ask again only if Max wants one (`csv.ts`, `purchaseRules.ts`).
+- Before that, on 2026-10-01 Max had said "not sure", and option A stood.
 
 - **What happens:** Equipment shows "Administrator decides" (expense it to 6175, or capitalize it to 1415 Fixed Assets:Equipment), and the app has no dollar threshold for capitalizing. The CSV also has no QuickBooks class column.
 - **Options:** A. Leave both to the purchasing policy, the last stage (recommended). B. Tell me a capitalization threshold now (for example "$5,000 or more"), and the app can mark such a row for review. C. Tell me which class each project or category uses, and a class column can be added.
 - **Recommendation:** A. Neither blocks the test-site checkpoint.
 - **If you choose differently:** `purchaseRules.ts` for B; `csv.ts` and `purchaseRules.ts` for C.
+
+## 33. Two small flow gaps: the claim step and attachment names (new 2026-10-01, low priority)
+
+- **What happens:** (a) The first step after the trigger marks the submission "Processing". It runs outside the failure handling that the packaging and the approval email have, so if that one step fails, no "failed" email goes to the administrator and the item stays as it was. (b) The flow names each copied file from its attachment name as stored. The app sets those names, so only someone editing the item directly in SharePoint could put an odd name there.
+- **Options:** A. Leave both until the install checkpoint has run, then decide (recommended). B. Move the claim step inside the failure handling and clean the file names in the flow. This changes the generated flow, whose action names were proven at the travel checkpoint, so it needs a second look at import.
+- **Recommendation:** A. Neither blocks the checkpoint, and the flow is easiest to judge once it has run on the real site.
+- **If you choose B:** `app/src/export/flowPackage.ts` (`Claim_the_submission`, `Create_file`), `flow/FLOW.md`, the flow example (`npm run flow-example`), and a checkpoint step.
 
 ## Reminders (no answer needed)
 

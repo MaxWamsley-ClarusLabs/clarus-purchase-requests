@@ -21,7 +21,7 @@ These are decided, not provisional. The new purchasing policy (the last stage) m
 - **Who approves.** The site Owners approve. An Owner may approve their own request; it is recorded as self-approved (2026-10-01).
 - **After approval, when the employee buys.** A vendor total that rises more than 10% above the approved amount, or a new vendor total of $500 or more, needs approval again (2026-10-01).
 - **A purchase the employee already made.** It can still be sent for approval first and submitted afterwards, flagged "Bought before approval". Max left the detail to Claude (2026-10-01).
-- **Still open (policy stage):** where Equipment is capitalized rather than expensed, and whether the account list needs a class. Both wait for the new purchasing policy.
+- **Equipment (closed in the policy workshop, P-044):** QuickBooks has no minimum cost for Equipment, so there is no capitalization threshold; the administrator decides how it is booked. The CSV has no QuickBooks class column, and none was asked for.
 
 ---
 

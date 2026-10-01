@@ -303,7 +303,7 @@ Each stage ends with a commit on the project branch and an entry in `docs/CHANGE
 | 12. Security review and SOP proof pass | Permissions, flow safety, repository check; SOP read against the built app | Claude and Max |
 | 13. Pilot | Production site and flow, used on real purchases by a few employees | Max |
 | 14. Production | Teams app; the Word form and the Teams posting are retired when Max decides | Max |
-| 15. **New purchasing policy (last stage)** | Max writes a new purchasing policy with Claude. The thresholds, quote rule, categories, certification sentence and account mapping in `purchaseRules.ts` are changed to match, in one place; the Instructions, SOP and the form text are updated. Inputs already decided (2026-10-01, `docs/SOP.md` "Rules confirmed by Max"): $500 for approval and the quote rule, the old form's thresholds retired, the Owners approve, the 10% rule, the approver buys by default, the QuickBooks accounts. Still to settle: where Equipment is capitalized rather than expensed | Max and Claude |
+| 15. **New purchasing policy (last stage)** | Max writes a new purchasing policy with Claude. The thresholds, quote rule, categories, certification sentence and account mapping in `purchaseRules.ts` are changed to match, in one place; the Instructions, SOP and the form text are updated. Inputs already decided (2026-10-01, `docs/SOP.md` "Rules confirmed by Max"): $500 for approval and the quote rule, the old form's thresholds retired, the Owners approve, the 10% rule, the approver buys by default, the QuickBooks accounts. Equipment has no capitalization threshold (P-044). Draft R0 is `docs/POLICY.md`; it is not adopted (effective date and record retention period are placeholders) | Max and Claude |
 
 ---
 
@@ -357,3 +357,4 @@ Microsoft's documentation sites are blocked in this environment. Claims below ma
 | 2026-09-30 | First draft, written during the overnight build from Max's prompt and the F2 form |
 | 2026-10-01 | Reconciled with the built app at the end of the overnight build: the stage table, the screens, the flow's structure (`flow/FLOW.md`) and the Owners label |
 | 2026-10-01 | The approver-buys build (P-037 to P-042): who buys, the item link, the 13 QuickBooks categories, the approver's buying screens, the certification at send, the 31-column CSV |
+| 2026-10-01 | The checkpoint runs on the shared Forms and Apps site (P-043); the purchasing policy draft R0 (P-044); the SOP quiz (P-045). Stage table and open items brought up to date |

@@ -127,3 +127,9 @@ Sources: pnp/powerautomate-samples on GitHub (commit c704efd, 2026-01-19) and Mi
 5. **The approver addresses are the site Owners read when the package was made.** Set-up reads them (`getFlowSettings`) and writes them into the package; they are not read again, so someone who stops being an Owner keeps getting the email until a new package is made and imported. Unverified that an administrator can read the Owners group (strategy section 17); if not, Set-up falls back to the administrator's own address, and its green box then says "your own address, because the site Owners could not be read". Seen when: the green box says "the site Owners" and lists their addresses, the Send approval email step in the imported flow lists the same addresses in its To field, and each of them receives the email. With only one Owner, the Owners' address and the fallback are the same address, so only the green box's wording tells them apart.
 
 If any fails, the fix goes into `flowPackage.ts` and a new package is made from the Set-up page; the flow is never edited by hand, so this file and the code stay true.
+
+## Known gaps (recorded 2026-10-01, not changed)
+
+- `Claim_the_submission` (the first step after the trigger) runs outside the `Package` and `On_failure` scopes, and outside the approval branch's scope. A failure there ends the run without the failure email. Power Automate may still notify the flow's owner (Unverified).
+- `Create_file` takes each file's name from the attachment's `DisplayName` as stored, without cleaning it. The app sets those names; a direct edit in SharePoint could change one. SharePoint limits the characters allowed in an attachment name (Unverified).
+- Both are question 33 in `docs/QUESTIONS_FOR_MAX.md` and P-042 (e) and (f). Neither is changed while the install checkpoint runs, so that it tests the flow as delivered.

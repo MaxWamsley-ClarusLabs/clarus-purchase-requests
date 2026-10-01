@@ -8,7 +8,7 @@
 
 Clarus buys what the work needs, at a fair price, with approval before the money is spent and a receipt afterward. Most purchases are made by the approver. You ask in the Purchase Requests app, the approver approves and buys, and the receipt goes on the request. If you buy something yourself, the rules in Section 4 apply.
 
-This policy applies to employees and to anyone else who buys on behalf of Clarus. The numbers below match what the app enforces.
+This policy applies to employees and to anyone else who buys on behalf of Clarus. The numbers below match what the app checks, except two rules the app does not check yet: the 30-day deadline (Section 4) and the grant equipment approval (Section 8).
 
 ## 2. How a purchase is made
 

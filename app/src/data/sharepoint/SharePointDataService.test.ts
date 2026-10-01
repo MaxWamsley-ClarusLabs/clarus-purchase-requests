@@ -706,6 +706,11 @@ describe('Flow package settings (travel D-047, P-018)', () => {
       { Title: 'No Mail', Email: '', PrincipalType: 1 },
       { Title: 'Two addresses', Email: 'a@example.com; b@example.com', PrincipalType: 1 },
       { Title: 'Spaces', Email: 'not an address', PrincipalType: 1 },
+      // Addresses go into the flow as text, so anything that could read as an expression or markup is refused.
+      { Title: 'Braces', Email: 'x@exa{mple}.com', PrincipalType: 1 },
+      { Title: 'Expression', Email: 'x@{outputs(1)}.com', PrincipalType: 1 },
+      { Title: 'Quotes', Email: 'a"b@example.com', PrincipalType: 1 },
+      { Title: 'Markup', Email: '<b>@example.com', PrincipalType: 1 },
       { Title: 'Pat Rivera', Email: ' pat.rivera@example.com ', PrincipalType: 1 }
     ];
     const config = await serviceFor(site, FAKE_MAX).getFlowSettings('test', PAGE);

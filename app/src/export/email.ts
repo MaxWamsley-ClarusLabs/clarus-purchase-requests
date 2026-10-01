@@ -102,7 +102,6 @@ export function buildApprovalEmailSummary(input: ApprovalEmailInput): string {
       `${l.rowNumber}. ${l.date}, ${l.vendor}, ${l.description}, ${l.amountCents === null ? 'no amount' : formatCents(l.amountCents)}, ${paid}, ${categoryText(l.category, l.categoryOther) || 'no category'}`
     );
   }
-  out.push('', 'Open the request in the app to approve it, confirm the categories, or return it with a note.');
   return out.join('\n');
 }
 

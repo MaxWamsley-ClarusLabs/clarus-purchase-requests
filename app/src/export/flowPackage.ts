@@ -1,15 +1,22 @@
-// The packaging flow (strategy section 7) and its import package (D-047).
-// The Set-up page fills in this site's addresses and IDs and downloads the
-// package; Max imports it in Power Automate (Import Package (Legacy)).
+// The Purchase Requests flow (strategy sections 7 and 8) and its import package
+// (travel D-047). The Set-up page fills in this site's addresses and IDs and
+// downloads the package; Max imports it in Power Automate (Import Package
+// (Legacy)).
+//
+// One flow with two branches (P-018). After the trigger and the claim, the
+// submission's type decides: an approval request only emails the approvers; a
+// processing package is handled exactly as in the travel flow (folders, file
+// copies, status, email).
 //
 // Action formats follow working exports (pnp/powerautomate-samples) and
-// Microsoft's connector reference; the unverified points are listed in
-// flow/FLOW.md and checked at the Stage 8 checkpoint.
+// Microsoft's connector reference. The packaging branch is the travel flow,
+// which ran on a real site; the unverified points (the branch and the approval
+// email) are listed in flow/FLOW.md and checked at the test-site checkpoint.
 //
-// Safety (strategy section 7): the destination folder is fixed here, never
-// taken from list data; the folder name written by the app is cleaned again;
-// nothing is overwritten, moved or deleted; the email text stored in the list
-// is escaped before it is sent (D-067).
+// Safety (strategy section 7): the destination folder and the approvers'
+// addresses are fixed here, never taken from list data; the folder name written
+// by the app is cleaned again; nothing is overwritten, moved or deleted; the
+// email text stored in the list is escaped before it is sent (travel D-067).
 
 import { buildZip } from './zip';
 
@@ -20,7 +27,7 @@ export interface FlowConfig {
   /** The Forms and Apps site holding the Purchase Submissions list. */
   siteUrl: string;
   submissionsListId: string;
-  /** Where report folders are created. */
+  /** Where request folders are created. */
   destinationSiteUrl: string;
   /** The destination library's address on its site, for example "Shared Documents". */
   libraryUrlName: string;
@@ -28,9 +35,9 @@ export interface FlowConfig {
   folders: string[];
   /** Who receives the submission and failure emails (v1: the administrator who makes the package, travel D-029). */
   adminEmail: string;
-  /** Who receives the approval email: the site Owners' addresses when the package is made (P-018). */
+  /** Who receives the approval email: the site Owners' addresses when the package is made, fixed in the package (P-018). */
   approverEmails: string[];
-  /** The page the app runs on, for the "open the report" link. */
+  /** The page the app runs on, for the "open the request" links. */
   appPageUrl: string;
 }
 
@@ -47,8 +54,8 @@ export const LIVE_DESTINATION = {
 export const TEST_FOLDERS = ['Purchases_Test', 'Purchases_Test/Purchases_To_Process'];
 
 export const FLOW_NAMES: Record<FlowMode, string> = {
-  test: 'Purchase Requests packaging (test site)',
-  live: 'Purchase Requests packaging'
+  test: 'Purchase Requests flow (test site)',
+  live: 'Purchase Requests flow'
 };
 
 const SP = 'shared_sharepointonline';
@@ -158,7 +165,7 @@ function email(runAfter: Record<string, string[]>, to: string, subject: string, 
 const OK = ['Succeeded'];
 const EMAIL_STYLE = 'font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;';
 
-/** The flow's definition: trigger, steps and failure handling (strategy section 7). */
+/** The flow's definition: trigger, claim, the approval branch and the packaging branch, each with its failure handling (strategy section 8). */
 export function buildFlowDefinition(config: FlowConfig): Record<string, unknown> {
   const destPath = `${sitePath(config.destinationSiteUrl)}/${config.libraryUrlName}`;
   const landing = config.folders[config.folders.length - 1];
@@ -169,16 +176,18 @@ export function buildFlowDefinition(config: FlowConfig): Record<string, unknown>
   const folderLink = `concat(${lit(origin + encodeURI(landingServerPath) + '/')}, encodeUriComponent(${safeName}))`;
   const landingLink = origin + encodeURI(landingServerPath);
   // Folder addresses go in as plain text: the cleaned name has no quotes, # or %.
-  // A folder address inside the REST path: fixed text, or an expression for the report folder.
+  // A folder address inside the REST path: fixed text, or an expression for the request folder.
   const pathPart = (path: { text: string } | { expression: string }) => ('text' in path ? path.text.replace(/'/g, "''") : `@{${path.expression}}`);
   const existsUri = (path: { text: string } | { expression: string }) => `_api/web/GetFolderByServerRelativeUrl('${pathPart(path)}')/Exists`;
   const createUri = (path: { text: string } | { expression: string }) => `_api/web/folders/addUsingPath(decodedurl='${pathPart(path)}')`;
   const appUrl = attr(config.appPageUrl);
+  // Where the app opens a request (the approver's and the administrator's page).
+  const requestLink = `${appUrl}#/admin/request/@{triggerBody()?['RequestId']}`;
   const exists = (action: string) => `@body('${action}')?['d']?['Exists']`;
   const runLink =
     "concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])";
 
-  // Package scope: folders, file copies, status and email.
+  // Package scope (the packaging branch): folders, file copies, status and email.
   const pkg: Record<string, unknown> = {};
   pkg.Cleaned_folder_name = { runAfter: {}, type: 'Compose', inputs: `@${cleanExpression("triggerBody()?['FolderName']")}` };
   pkg.Safe_folder_name = {
@@ -216,13 +225,13 @@ export function buildFlowDefinition(config: FlowConfig): Record<string, unknown>
   pkg.Check_report_folder = http(config, 'GET', existsUri({ expression: reportFolderServerPath }), { [previous]: OK });
 
   const summaryHtml = `@{${htmlTextExpression("triggerBody()?['EmailSummary']")}}`;
-  const heading = "@{if(greater(triggerBody()?['SubmissionNumber'], 1), 'Travel report resubmitted', 'Travel report submitted')}";
+  const heading = "@{if(greater(triggerBody()?['SubmissionNumber'], 1), 'Purchase request resubmitted', 'Purchase request submitted')}";
   const notification =
     `<div style="${EMAIL_STYLE}"><h3>${heading}</h3><p>${summaryHtml}</p>` +
     `<p><b>Folder:</b> <a href="@{${folderLink}}">@{${safeName}}</a><br>` +
-    `<b>All reports waiting:</b> <a href="${landingLink}">${landing.split('/').pop()}</a><br>` +
-    `<b>Open the report in Purchase Requests:</b> <a href="${appUrl}#/admin/report/@{triggerBody()?['ReportId']}">Purchase Requests</a></p></div>`;
-  const reportLabel = "@{coalesce(triggerBody()?['Title'], 'a travel report')}";
+    `<b>All requests waiting:</b> <a href="${landingLink}">${landing.split('/').pop()}</a><br>` +
+    `<b>Open the request in Purchase Requests:</b> <a href="${requestLink}">Purchase Requests</a></p></div>`;
+  const reportLabel = "@{coalesce(triggerBody()?['Title'], 'a purchase request')}";
 
   const packaged: Record<string, unknown> = {
     Create_report_folder: http(config, 'POST', createUri({ expression: reportFolderServerPath }), {}),
@@ -274,7 +283,9 @@ export function buildFlowDefinition(config: FlowConfig): Record<string, unknown>
 
   const stopReason =
     "@{if(equals(body('Check_report_folder')?['d']?['Exists'], true), " +
-    lit('A folder with this name already exists in Trips_To_Process, so nothing was copied or overwritten. Delete that folder, then choose Retry packaging.') +
+    lit(
+      'A folder with this name already exists in Purchases_To_Process, so nothing was copied or overwritten. Delete that folder, then choose Retry packaging.'
+    ) +
     ', ' +
     lit('The submission has no files to copy. Ask the employee to submit again.') +
     ')}';
@@ -283,7 +294,7 @@ export function buildFlowDefinition(config: FlowConfig): Record<string, unknown>
     Send_not_packaged_email: email(
       { Mark_not_packaged: OK },
       config.adminEmail,
-      `Travel report not packaged: ${reportLabel}`,
+      `Purchase request not packaged: ${reportLabel}`,
       `<div style="${EMAIL_STYLE}"><p>${stopReason}</p><p><a href="${appUrl}#/admin/attention">Open Needs attention</a></p></div>`
     )
   };
@@ -303,8 +314,33 @@ export function buildFlowDefinition(config: FlowConfig): Record<string, unknown>
     Send_failure_email: email(
       { Mark_failed: ['Succeeded', 'Failed'] },
       config.adminEmail,
-      `Travel report packaging failed: ${reportLabel}`,
+      `Purchase request packaging failed: ${reportLabel}`,
       `<div style="${EMAIL_STYLE}"><p>Packaging failed: @{${htmlTextExpression(failureText.slice(2, -1))}}</p>` +
+        `<p><a href="@{${runLink}}">Open the flow run</a> &middot; <a href="${appUrl}#/admin/attention">Open Needs attention</a></p></div>`
+    )
+  };
+
+  // Approval scope (the approval branch, P-018): one email to the approvers, then the status. It creates no
+  // folder and no file. The recipients come from the config, fixed in the package, never from the list item.
+  const approvers = config.approverEmails.map((address) => address.trim()).filter((address) => address !== '');
+  const approvalHeading = "@{if(greater(triggerBody()?['SubmissionNumber'], 1), 'Purchase approval needed again', 'Purchase approval needed')}";
+  const approvalNotice =
+    `<div style="${EMAIL_STYLE}"><h3>${approvalHeading}</h3><p>${summaryHtml}</p>` +
+    `<p>Open the request in Purchase Requests to approve it, confirm the categories, or return it with a note: <a href="${requestLink}">Purchase Requests</a></p></div>`;
+  const approval: Record<string, unknown> = {
+    Send_approval_email: email({}, approvers.length > 0 ? approvers.join(';') : config.adminEmail, "@{triggerBody()?['EmailSubject']}", approvalNotice),
+    Mark_approval_sent: patchSubmission({ Send_approval_email: OK }, config, { 'PackageStatus/Value': 'Packaged', PackagedAt: '@{utcNow()}', ErrorMessage: '' })
+  };
+
+  const approvalFailureText = "@{coalesce(first(body('Failed_approval_steps'))?['error']?['message'], 'The approval email was not sent. See the flow run.')}";
+  const onApprovalFailure: Record<string, unknown> = {
+    Failed_approval_steps: { runAfter: {}, type: 'Query', inputs: { from: "@result('Approval_email')", where: "@equals(item()?['status'], 'Failed')" } },
+    Mark_approval_failed: patchSubmission({ Failed_approval_steps: OK }, config, { 'PackageStatus/Value': 'Failed', ErrorMessage: approvalFailureText }),
+    Send_approval_failure_email: email(
+      { Mark_approval_failed: ['Succeeded', 'Failed'] },
+      config.adminEmail,
+      `Purchase approval email failed: ${reportLabel}`,
+      `<div style="${EMAIL_STYLE}"><p>The approval email failed: @{${htmlTextExpression(approvalFailureText.slice(2, -1))}}</p>` +
         `<p><a href="@{${runLink}}">Open the flow run</a> &middot; <a href="${appUrl}#/admin/attention">Open Needs attention</a></p></div>`
     )
   };
@@ -332,8 +368,23 @@ export function buildFlowDefinition(config: FlowConfig): Record<string, unknown>
     },
     actions: {
       Claim_the_submission: patchSubmission({}, config, { 'PackageStatus/Value': 'Processing' }),
-      Package: { runAfter: { Claim_the_submission: OK }, type: 'Scope', actions: pkg },
-      On_failure: { runAfter: { Package: ['Failed', 'TimedOut'] }, type: 'Scope', actions: onFailure }
+      // Choice columns are read through ?['Value'], as PackageStatus is in the trigger. Anything that is not
+      // an approval request (including an empty type) is handled as a processing package.
+      If_this_is_an_approval_request: {
+        runAfter: { Claim_the_submission: OK },
+        type: 'If',
+        expression: { and: [{ equals: ["@triggerBody()?['SubmissionType']?['Value']", 'Approval request'] }] },
+        actions: {
+          Approval_email: { runAfter: {}, type: 'Scope', actions: approval },
+          On_approval_failure: { runAfter: { Approval_email: ['Failed', 'TimedOut'] }, type: 'Scope', actions: onApprovalFailure }
+        },
+        else: {
+          actions: {
+            Package: { runAfter: {}, type: 'Scope', actions: pkg },
+            On_failure: { runAfter: { Package: ['Failed', 'TimedOut'] }, type: 'Scope', actions: onFailure }
+          }
+        }
+      }
     }
   };
 }
@@ -396,7 +447,8 @@ export function buildFlowPackage(config: FlowConfig, newId: () => string = () =>
     schema: '1.0',
     details: {
       displayName,
-      description: 'Creates the report folder for each submitted travel report and emails the administrator. Generated by the Purchase Requests Set-up page.',
+      description:
+        'Emails the approvers when a purchase request needs approval, creates the request folder for each submitted purchase request and emails the administrator. Generated by the Purchase Requests Set-up page.',
       createdTime: now.toISOString(),
       packageTelemetryId: newId(),
       creator: 'N/A',

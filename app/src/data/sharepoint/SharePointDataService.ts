@@ -613,9 +613,13 @@ export class SharePointDataService implements PurchaseDataService {
   }
 }
 
-/** An address that can go into the flow as one recipient: one "@", and no spaces, commas or semicolons. */
+/**
+ * A single plain address. Approver addresses are written into the flow as
+ * text, so anything that could be read as an expression or markup (braces,
+ * quotes, angle brackets) is refused as well as spaces, commas and semicolons.
+ */
 function isEmailAddress(value: string): boolean {
-  return /^[^\s@,;]+@[^\s@,;]+$/.test(value);
+  return /^[^\s@,;{}<>"'`\\]+@[^\s@,;{}<>"'`\\]+$/.test(value);
 }
 
 function byLastChanged(a: PurchaseRequest, b: PurchaseRequest): number {

@@ -23,7 +23,9 @@ const PATHS: Record<string, string> = {
   send: 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z',
   arrowRight: 'M5 12h14M13 6l6 6-6 6',
   refresh: 'M4 4v6h6M20 20v-6h-6M5.5 15a7 7 0 0011.9 2.5L20 14M18.5 9A7 7 0 006.6 6.5L4 10',
-  x: 'M6 6l12 12M18 6L6 18'
+  x: 'M6 6l12 12M18 6L6 18',
+  approve: 'M9 4h6a1 1 0 011 1v1h2a1 1 0 011 1v13a1 1 0 01-1 1H6a1 1 0 01-1-1V7a1 1 0 011-1h2V5a1 1 0 011-1zM9 14l2 2 4-4',
+  clock: 'M12 7v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
 };
 
 export function Icon(props: { name: keyof typeof PATHS | string; size?: number; title?: string }): React.ReactElement {

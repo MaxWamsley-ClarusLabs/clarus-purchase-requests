@@ -1,17 +1,18 @@
-// The employee instructions (SOP Part A, D-036). The Instructions panel shows
-// this text, and docs/SOP.md Part A is generated from it ("npm run sop"); a
-// test fails if the two differ. O20 (wording for non-travel purchases until
-// the Purchase Request App exists) is still open.
+// The employee instructions (SOP Part A, travel D-036). The Instructions panel
+// shows this text, and docs/SOP.md Part A is generated from it ("npm run sop");
+// a test fails if the two differ. Every number and every rule below comes from
+// domain/purchaseRules.ts, so a change of policy changes this text and the SOP
+// check then asks for "npm run sop".
 
-import { CATEGORIES, PAYMENT_TYPES } from '../domain/lists';
-import { rateText } from '../domain/mileage';
-import { formatCents } from '../domain/money';
-import { DAILY_MEAL_LIMIT_CENTS, MILEAGE_CENTS_PER_MILE } from '../domain/rates';
-
-// The latest rates in the tables (D-072). A rate change changes this text, and
-// the SOP check then asks for "npm run sop".
-const MEAL_LIMIT = formatCents(DAILY_MEAL_LIMIT_CENTS[DAILY_MEAL_LIMIT_CENTS.length - 1].value);
-const MILEAGE_RATE = rateText(MILEAGE_CENTS_PER_MILE[MILEAGE_CENTS_PER_MILE.length - 1].value);
+import {
+  APPROVAL_THRESHOLD_TEXT,
+  CATEGORIES,
+  CERTIFICATION,
+  OVERRUN_TOLERANCE_PERCENT,
+  PAID_BY_OPTIONS,
+  PROJECT_QUICK_PICKS,
+  QUOTE_THRESHOLD_TEXT
+} from '../domain/purchaseRules';
 
 export interface InstructionSection {
   heading: string;
@@ -19,78 +20,87 @@ export interface InstructionSection {
   bullets?: string[];
 }
 
+const QUICK_PICKS = PROJECT_QUICK_PICKS.length > 0 ? ` or click the quick pick (${PROJECT_QUICK_PICKS.map((p) => `"${p}"`).join(', ')})` : '';
+
 export const INSTRUCTIONS: InstructionSection[] = [
   {
-    heading: 'What goes in a travel report',
+    heading: 'What goes in a purchase request',
     paragraphs: [
-      'All travel costs of one trip, including those paid before or after it: airfare, lodging, ground transportation, fuel, parking and tolls, meals while travelling, event registration, and baggage and travel fees.',
-      'Materials and supplies do not belong here, even if you bought them for the trip (printing, posters, store purchases, equipment). Use the Purchase Request App for those.'
+      'Purchases that are not travel: materials, supplies and equipment, software, website and marketing costs, office supplies, training, shipping and postage, and insurance. One request covers one business purpose and can hold several purchases.',
+      'Travel costs (airfare, lodging, meals, ground transportation, registration and travel fees) do not belong here. Use the Travel app for those.',
+      'This app replaces the Word purchase request form and posting it in the Purchasing Receipt Team on Teams. The app records the request, the approval and the receipts, so you do not post anything in Teams.'
     ]
   },
   {
-    heading: 'Starting a report',
+    heading: 'Starting a request',
     bullets: [
-      'Click New report and fill in the trip details: trip name, destination, dates, business purpose and what the trip was for.',
-      'Not sure what the trip was for? Choose "Not sure". The administrator will decide.',
+      'Click New request. On Request details, enter your department and the business purpose in one line, for example "Lab supplies for the Phase 1 assay". The business purpose is also the name of the request.',
+      `The project or grant code is optional. Type it${QUICK_PICKS}. Nothing is filled in for you.`,
       'Everything saves automatically. You can leave and come back.'
     ]
   },
   {
-    heading: 'Adding receipts and expenses',
+    heading: 'Adding purchases',
     bullets: [
-      'On the Expenses step, drop all your receipts into the box at once (PDF, JPG, PNG or HEIC, up to 15 MB each). Each receipt becomes a row.',
-      'The app reads each receipt and fills in the date, amount and vendor it finds. For a vendor you have used before, typed or read, it also fills in the category and how you paid last time. Values taken from the receipt, and a "Paid with" changed this way, are highlighted: check each one against the receipt, correct anything wrong, then click Confirm on the row. A row with highlighted values cannot be submitted until you confirm it.',
-      'The app only fills in empty boxes: anything you typed stays as you typed it. Unclear photos and HEIC files are not read; type those rows yourself. Receipts are read on your own computer; nothing is sent anywhere else to read them.',
-      'Fill in or check each row: date, vendor, category, amount and how it was paid. Press Enter to move down a column. Ctrl+D copies the value from the row above.',
-      'One receipt for several expenses (for example a hotel bill with room and restaurant charges)? Add a row for each expense, then use the row menu (the three dots) and choose "Same receipt as row".',
-      'Two files for one expense (for example an itemized receipt and the card slip)? Use the row menu and choose "Add another file".',
-      'Drove your own car? On Trip details, turn on "I drove my own car". Then on Expenses, add each drive: date, from, to and miles (a round trip is one drive with the total miles). The app works out the amount at the GSA rate. No receipt is needed.'
+      'On the Purchases step, add one row for each purchase: date, vendor, what was bought and why, category, amount and who paid. Press Enter to move down a column. Ctrl+D copies the value from the row above. You can paste several rows from a spreadsheet.',
+      'Have the files? Drop receipts, invoices or quotes into the box at once (PDF, JPG, PNG or HEIC, up to 15 MB each). Each file becomes a row. The switch above the box says whether the files are receipts or invoices, or quotes.',
+      'The app reads each receipt or invoice and fills in the date, amount and vendor it finds. For a vendor you have used before, typed or read, it also fills in the category and who paid last time. Values taken from the receipt, and a "Who paid" changed this way, are highlighted: check each one against the receipt, correct anything wrong, then click Confirm on the row. A row with highlighted values cannot be sent or submitted until you confirm it.',
+      'The app only fills in empty boxes: anything you typed stays as you typed it. Quotes, unclear photos and HEIC files are not read; type those rows yourself. Receipts are read on your own computer; nothing is sent anywhere else to read them.',
+      'One receipt for several purchases (for example one invoice for two items)? Add a row for each purchase, then use the row menu (the three dots) and choose "Same receipt as row".',
+      'Another file for a row, such as a quote or a second page? Use the row menu and choose "Attach a receipt or invoice" or "Attach a quote".'
+    ]
+  },
+  {
+    heading: 'Approval and quotes',
+    bullets: [
+      `Approval is worked out by vendor within one request. If the purchases from one vendor add up to ${APPROVAL_THRESHOLD_TEXT} or more, you need the approver's approval before you buy. Splitting a purchase across rows does not avoid it. The Vendor totals table on the Purchases step shows each vendor's total and what it needs.`,
+      `For a vendor total of ${QUOTE_THRESHOLD_TEXT} or more, attach a quote (drop it as a quote, or use the row menu), or say why there is none in the "No quote: say why" box on the vendor's first row.`,
+      'When the request is ready, go to Review and submit and choose Send for approval. The request is locked and the approver (the site Owners) is emailed. Its status is Awaiting approval.',
+      'If the approver returns the request, it shows as Returned with their note. Correct it and send it for approval again.',
+      'Once it is approved, you can buy. Then attach your receipts and invoices, and submit (see Submitting).',
+      `If a vendor total later rises more than ${OVERRUN_TOLERANCE_PERCENT}% above the amount that was approved, or another vendor reaches ${APPROVAL_THRESHOLD_TEXT}, send the request for approval again. A small rise (for example tax or shipping) and any lower amount do not need approval again.`,
+      `If every vendor total is under ${APPROVAL_THRESHOLD_TEXT}, no approval is needed. You still submit the request with your receipts.`
+    ]
+  },
+  {
+    heading: 'Bought something before approval?',
+    bullets: [
+      `If a purchase of ${APPROVAL_THRESHOLD_TEXT} or more has already been made, you can still send the request for approval. The app flags it as "Bought before approval" when a row is dated before today or already has a receipt or invoice attached.`,
+      'The approver and the administrator both see the flag. The approver still has to approve the request, and may return it.',
+      'Ask for approval before you buy whenever you can.'
     ]
   },
   {
     heading: 'Categories',
+    paragraphs: [
+      'You suggest a category for each row. The approver, when approving, or the administrator can confirm or change it. Choose Other only when nothing fits, and describe the category in the box that appears.'
+    ],
     bullets: CATEGORIES.map((c) => `${c.label}: ${c.covers}.`)
   },
   {
-    heading: 'How it was paid',
-    bullets: [
-      ...PAYMENT_TYPES.map((p) => `${p.label}: ${p.reimbursable ? 'you will be reimbursed' : 'not reimbursed to you'}.`),
-      'If the administrator booked something for you (for example a flight), add it as "Paid directly by Clarus" and attach the confirmation.'
-    ]
-  },
-  {
-    heading: 'Shared costs',
-    paragraphs: ['The person whose card paid reports the expense, even if it covered other people too.']
+    heading: 'Who paid',
+    bullets: PAID_BY_OPTIONS.map((p) => `${p.label}: ${p.help}`)
   },
   {
     heading: 'No receipt?',
-    paragraphs: ['Add the expense with "Add expense without receipt" and say why there is no receipt. The administrator will see the reason.']
-  },
-  {
-    heading: 'Travel policy reminders',
-    bullets: [
-      `Meals: the limit is ${MEAL_LIMIT} a day, the GSA standard per diem for meals and incidentals, the same every day of the trip. The app flags a day that is over it, or on track to be: for example one $30 meal, which at that rate would make about $90 for three meals. A flag does not stop you submitting; the administrator sees it.`,
-      'Receipts: itemized receipts are needed for lodging, airfare, rental cars, other ground transportation and meals, and for any other single expense over $25.',
-      'Not reimbursed: alcoholic drinks, entertainment, personal items (such as toiletries or souvenirs), and traffic fines or parking tickets.',
-      'Airfare is economy or coach. Rental cars are compact or intermediate size, unless there is a documented reason.',
-      `Mileage in your own car is paid at the GSA rate (now ${MILEAGE_RATE}). Driving between home and your usual workplace is commuting and is not paid.`
-    ]
-  },
-  {
-    heading: 'What this app does not cover yet',
-    bullets: [
-      'Per diem allowances: enter what meals actually cost, with receipts.',
-      'Foreign currency: enter the dollar amount from your card or bank statement, and note the foreign amount in the description.'
+    paragraphs: [
+      'Every row needs a receipt or invoice before you submit, or a reason there is none, for example "Receipt lost". Type the reason in the "No receipt: say why" box on the row. A quote is not a receipt. Use "Add purchase without a file" to add a row you will fill in by hand.'
     ]
   },
   {
     heading: 'Submitting',
     bullets: [
-      'Submit within 30 days after the trip ends, as the travel policy asks. A later report can still be submitted; it is marked as late for the administrator.',
-      'On Review and submit, fix anything marked in red, and confirm any rows the app filled in. Amber items are warnings: check them, but you can still submit.',
-      'To submit, tick the certification that the expenses were for official business, follow the travel policy and are accurate. It is recorded with your account; no signature is needed.',
-      'After you submit, the report is locked. The administrator is emailed and a folder with your receipts is created for processing.',
-      'If the administrator returns the report, you will see their note. Correct it and submit again.'
+      'On Review and submit, fix anything marked in red, and confirm any rows the app filled in. Amber items are warnings: check them, but you can still go on.',
+      `To submit, tick the certification: "${CERTIFICATION}" It is recorded with your account; no signature is needed.`,
+      'After you submit, the request is locked. The administrator is emailed and a folder with your receipts, quotes and a spreadsheet of the purchases is created for processing.',
+      'If the administrator returns the request, you will see their note. Correct it and submit again.'
+    ]
+  },
+  {
+    heading: 'What this app does not cover',
+    bullets: [
+      'Travel: use the Travel app.',
+      'Foreign currency: enter the dollar amount from your card or bank statement, and note the foreign amount in "What was bought and why".'
     ]
   }
 ];

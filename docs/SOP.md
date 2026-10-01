@@ -14,73 +14,78 @@ This part is the same text as the Instructions panel in the app.
 
 <!-- Part A starts: generated from app/src/content/instructions.ts by "npm run sop". Edit the app text, not this block. -->
 
-### What goes in a travel report
+### What goes in a purchase request
 
-All travel costs of one trip, including those paid before or after it: airfare, lodging, ground transportation, fuel, parking and tolls, meals while travelling, event registration, and baggage and travel fees.
+Purchases that are not travel: materials, supplies and equipment, software, website and marketing costs, office supplies, training, shipping and postage, and insurance. One request covers one business purpose and can hold several purchases.
 
-Materials and supplies do not belong here, even if you bought them for the trip (printing, posters, store purchases, equipment). Use the Purchase Request App for those.
+Travel costs (airfare, lodging, meals, ground transportation, registration and travel fees) do not belong here. Use the Travel app for those.
 
-### Starting a report
+This app replaces the Word purchase request form and posting it in the Purchasing Receipt Team on Teams. The app records the request, the approval and the receipts, so you do not post anything in Teams.
 
-- Click New report and fill in the trip details: trip name, destination, dates, business purpose and what the trip was for.
-- Not sure what the trip was for? Choose "Not sure". The administrator will decide.
+### Starting a request
+
+- Click New request. On Request details, enter your department and the business purpose in one line, for example "Lab supplies for the Phase 1 assay". The business purpose is also the name of the request.
+- The project or grant code is optional. Type it or click the quick pick ("NSF SBIR Phase 1 (Award # 2528301)"). Nothing is filled in for you.
 - Everything saves automatically. You can leave and come back.
 
-### Adding receipts and expenses
+### Adding purchases
 
-- On the Expenses step, drop all your receipts into the box at once (PDF, JPG, PNG or HEIC, up to 15 MB each). Each receipt becomes a row.
-- The app reads each receipt and fills in the date, amount and vendor it finds. For a vendor you have used before, typed or read, it also fills in the category and how you paid last time. Values taken from the receipt, and a "Paid with" changed this way, are highlighted: check each one against the receipt, correct anything wrong, then click Confirm on the row. A row with highlighted values cannot be submitted until you confirm it.
-- The app only fills in empty boxes: anything you typed stays as you typed it. Unclear photos and HEIC files are not read; type those rows yourself. Receipts are read on your own computer; nothing is sent anywhere else to read them.
-- Fill in or check each row: date, vendor, category, amount and how it was paid. Press Enter to move down a column. Ctrl+D copies the value from the row above.
-- One receipt for several expenses (for example a hotel bill with room and restaurant charges)? Add a row for each expense, then use the row menu (the three dots) and choose "Same receipt as row".
-- Two files for one expense (for example an itemized receipt and the card slip)? Use the row menu and choose "Add another file".
-- Drove your own car? On Trip details, turn on "I drove my own car". Then on Expenses, add each drive: date, from, to and miles (a round trip is one drive with the total miles). The app works out the amount at the GSA rate. No receipt is needed.
+- On the Purchases step, add one row for each purchase: date, vendor, what was bought and why, category, amount and who paid. Press Enter to move down a column. Ctrl+D copies the value from the row above. You can paste several rows from a spreadsheet.
+- Have the files? Drop receipts, invoices or quotes into the box at once (PDF, JPG, PNG or HEIC, up to 15 MB each). Each file becomes a row. The switch above the box says whether the files are receipts or invoices, or quotes.
+- The app reads each receipt or invoice and fills in the date, amount and vendor it finds. For a vendor you have used before, typed or read, it also fills in the category and who paid last time. Values taken from the receipt, and a "Who paid" changed this way, are highlighted: check each one against the receipt, correct anything wrong, then click Confirm on the row. A row with highlighted values cannot be sent or submitted until you confirm it.
+- The app only fills in empty boxes: anything you typed stays as you typed it. Quotes, unclear photos and HEIC files are not read; type those rows yourself. Receipts are read on your own computer; nothing is sent anywhere else to read them.
+- One receipt for several purchases (for example one invoice for two items)? Add a row for each purchase, then use the row menu (the three dots) and choose "Same receipt as row".
+- Another file for a row, such as a quote or a second page? Use the row menu and choose "Attach a receipt or invoice" or "Attach a quote".
+
+### Approval and quotes
+
+- Approval is worked out by vendor within one request. If the purchases from one vendor add up to $500 or more, you need the approver's approval before you buy. Splitting a purchase across rows does not avoid it. The Vendor totals table on the Purchases step shows each vendor's total and what it needs.
+- For a vendor total of $500 or more, attach a quote (drop it as a quote, or use the row menu), or say why there is none in the "No quote: say why" box on the vendor's first row.
+- When the request is ready, go to Review and submit and choose Send for approval. The request is locked and the approver (the site Owners) is emailed. Its status is Awaiting approval.
+- If the approver returns the request, it shows as Returned with their note. Correct it and send it for approval again.
+- Once it is approved, you can buy. Then attach your receipts and invoices, and submit (see Submitting).
+- If a vendor total later rises more than 10% above the amount that was approved, or another vendor reaches $500, send the request for approval again. A small rise (for example tax or shipping) and any lower amount do not need approval again.
+- If every vendor total is under $500, no approval is needed. You still submit the request with your receipts.
+
+### Bought something before approval?
+
+- If a purchase of $500 or more has already been made, you can still send the request for approval. The app flags it as "Bought before approval" when a row is dated before today or already has a receipt or invoice attached.
+- The approver and the administrator both see the flag. The approver still has to approve the request, and may return it.
+- Ask for approval before you buy whenever you can.
 
 ### Categories
 
-- Airfare: Tickets, airline baggage and seat fees.
-- Lodging: Hotels, short-term rentals.
-- Meals: Meals while travelling, alone or with other Clarus staff.
-- Business meal with guests: Meals with non-Clarus guests (customers, partners).
-- Transportation: Taxi, rideshare, train, bus, rental car, fuel, parking, tolls.
-- Registration and conferences: Event and conference registration.
-- Other travel: Travel costs that fit none of the above.
+You suggest a category for each row. The approver, when approving, or the administrator can confirm or change it. Choose Other only when nothing fits, and describe the category in the box that appears.
 
-### How it was paid
+- R&D Materials & Supplies / Equipment: Materials, supplies and equipment for research and development work.
+- Advertising/Marketing/Website: Advertising, marketing materials, and website or domain costs.
+- Computer, H/W & S/W Supplies: Computer hardware, software and related supplies.
+- Office Supplies: Everyday office supplies.
+- Training and Education: Courses, training and educational materials.
+- Shipping/Postage: Shipping and postage.
+- Business Insurance: Business insurance premiums.
+- Other: Anything that fits none of the above. Describe it.
 
-- Personal card or cash (reimburse me): you will be reimbursed.
-- Company card: not reimbursed to you.
-- Paid directly by Clarus: not reimbursed to you.
-- If the administrator booked something for you (for example a flight), add it as "Paid directly by Clarus" and attach the confirmation.
+### Who paid
 
-### Shared costs
-
-The person whose card paid reports the expense, even if it covered other people too.
+- Company: Paid by Clarus (company card or invoice). Not reimbursed to you.
+- Employee: You paid, so Clarus reimburses you.
 
 ### No receipt?
 
-Add the expense with "Add expense without receipt" and say why there is no receipt. The administrator will see the reason.
-
-### Travel policy reminders
-
-- Meals: the limit is $68.00 a day, the GSA standard per diem for meals and incidentals, the same every day of the trip. The app flags a day that is over it, or on track to be: for example one $30 meal, which at that rate would make about $90 for three meals. A flag does not stop you submitting; the administrator sees it.
-- Receipts: itemized receipts are needed for lodging, airfare, rental cars, other ground transportation and meals, and for any other single expense over $25.
-- Not reimbursed: alcoholic drinks, entertainment, personal items (such as toiletries or souvenirs), and traffic fines or parking tickets.
-- Airfare is economy or coach. Rental cars are compact or intermediate size, unless there is a documented reason.
-- Mileage in your own car is paid at the GSA rate (now 76 cents a mile). Driving between home and your usual workplace is commuting and is not paid.
-
-### What this app does not cover yet
-
-- Per diem allowances: enter what meals actually cost, with receipts.
-- Foreign currency: enter the dollar amount from your card or bank statement, and note the foreign amount in the description.
+Every row needs a receipt or invoice before you submit, or a reason there is none, for example "Receipt lost". Type the reason in the "No receipt: say why" box on the row. A quote is not a receipt. Use "Add purchase without a file" to add a row you will fill in by hand.
 
 ### Submitting
 
-- Submit within 30 days after the trip ends, as the travel policy asks. A later report can still be submitted; it is marked as late for the administrator.
-- On Review and submit, fix anything marked in red, and confirm any rows the app filled in. Amber items are warnings: check them, but you can still submit.
-- To submit, tick the certification that the expenses were for official business, follow the travel policy and are accurate. It is recorded with your account; no signature is needed.
-- After you submit, the report is locked. The administrator is emailed and a folder with your receipts is created for processing.
-- If the administrator returns the report, you will see their note. Correct it and submit again.
+- On Review and submit, fix anything marked in red, and confirm any rows the app filled in. Amber items are warnings: check them, but you can still go on.
+- To submit, tick the certification: "I certify that the listed purchases are for official Clarus Labs business purposes, are not personal expenses, have not been reimbursed elsewhere, and that the information provided is accurate to the best of my knowledge." It is recorded with your account; no signature is needed.
+- After you submit, the request is locked. The administrator is emailed and a folder with your receipts, quotes and a spreadsheet of the purchases is created for processing.
+- If the administrator returns the request, you will see their note. Correct it and submit again.
+
+### What this app does not cover
+
+- Travel: use the Travel app.
+- Foreign currency: enter the dollar amount from your card or bank statement, and note the foreign amount in "What was bought and why".
 
 <!-- Part A ends -->
 

@@ -2,7 +2,7 @@ import * as React from 'react';
 import { INSTRUCTIONS } from '../../content/instructions';
 import { Icon } from './Icon';
 
-/** The Instructions panel (D-036). */
+/** The Instructions panel (travel D-036). */
 export function InstructionsDrawer(props: { onClose: () => void }): React.ReactElement {
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -16,7 +16,7 @@ export function InstructionsDrawer(props: { onClose: () => void }): React.ReactE
       <div className="ctx-backdrop" onClick={props.onClose} />
       <aside className="ctx-drawer" role="dialog" aria-modal="true" aria-label="Instructions">
         <div className="ctx-row-flex" style={{ justifyContent: 'space-between' }}>
-          <h2>How to report travel expenses</h2>
+          <h2>How to make a purchase request</h2>
           <button className="ctx-btn ctx-btn-ghost ctx-btn-small" onClick={props.onClose} aria-label="Close instructions">
             <Icon name="x" />
           </button>

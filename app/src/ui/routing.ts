@@ -1,41 +1,48 @@
 // Pages are addressed by the part of the web address after "#", so a link or
-// a refresh opens the same page.
+// a refresh opens the same page. The flow's emails link to the administrator
+// addresses below (#/admin/request/<id>, #/admin/approvals), so they must not
+// change without changing the flow.
 
 import * as React from 'react';
 
-export type ReportStep = 'trip' | 'expenses' | 'review';
+export type RequestStep = 'details' | 'purchases' | 'review';
 
 export type Route =
   | { name: 'home' }
-  | { name: 'report'; reportId: number; step: ReportStep }
+  | { name: 'request'; requestId: number; step: RequestStep }
+  | { name: 'adminApprovals' }
   | { name: 'adminProcess' }
   | { name: 'adminAttention' }
   | { name: 'adminAll' }
-  | { name: 'adminReport'; reportId: number }
+  | { name: 'adminRequest'; requestId: number }
   | { name: 'setup' };
 
 export interface Location {
   route: Route;
-  /** Optional panel to open, for example "#/report/41/expenses?panel=instructions". */
+  /** Optional panel to open, for example "#/request/41/purchases?panel=instructions". */
   panel: string;
+}
+
+/** A request number in an address: digits only, so "41" but not "41x", "", "-1" or "4.1". */
+function requestId(part: string | undefined): number | null {
+  return part !== undefined && /^\d+$/.test(part) ? Number(part) : null;
 }
 
 export function parseHash(hash: string): Location {
   const [path, query = ''] = hash.replace(/^#/, '').split('?');
   const parts = path.split('/').filter((p) => p.length > 0);
   const panel = new URLSearchParams(query).get('panel') ?? '';
-  const id = Number(parts[2] ?? parts[1]);
   let route: Route = { name: 'home' };
-  if (parts[0] === 'report' && Number.isInteger(Number(parts[1]))) {
-    const step = parts[2] === 'expenses' || parts[2] === 'review' ? parts[2] : 'trip';
-    route = { name: 'report', reportId: Number(parts[1]), step };
+  if (parts[0] === 'request' && requestId(parts[1]) !== null) {
+    const step = parts[2] === 'purchases' || parts[2] === 'review' ? parts[2] : 'details';
+    route = { name: 'request', requestId: Number(parts[1]), step };
   } else if (parts[0] === 'admin') {
-    if (parts[1] === 'process') route = { name: 'adminProcess' };
+    if (parts[1] === 'approvals') route = { name: 'adminApprovals' };
+    else if (parts[1] === 'process') route = { name: 'adminProcess' };
     else if (parts[1] === 'attention') route = { name: 'adminAttention' };
     else if (parts[1] === 'all') route = { name: 'adminAll' };
-    // 'flow-setup' was this page's address in the prototype.
-    else if (parts[1] === 'setup' || parts[1] === 'flow-setup') route = { name: 'setup' };
-    else if (parts[1] === 'report' && Number.isInteger(id)) route = { name: 'adminReport', reportId: id };
+    else if (parts[1] === 'setup') route = { name: 'setup' };
+    else if (parts[1] === 'request' && requestId(parts[2]) !== null) route = { name: 'adminRequest', requestId: Number(parts[2]) };
   }
   return { route, panel };
 }
@@ -44,16 +51,18 @@ export function toHash(route: Route): string {
   switch (route.name) {
     case 'home':
       return '#/';
-    case 'report':
-      return `#/report/${route.reportId}/${route.step}`;
+    case 'request':
+      return `#/request/${route.requestId}/${route.step}`;
+    case 'adminApprovals':
+      return '#/admin/approvals';
     case 'adminProcess':
       return '#/admin/process';
     case 'adminAttention':
       return '#/admin/attention';
     case 'adminAll':
       return '#/admin/all';
-    case 'adminReport':
-      return `#/admin/report/${route.reportId}`;
+    case 'adminRequest':
+      return `#/admin/request/${route.requestId}`;
     case 'setup':
       return '#/admin/setup';
   }

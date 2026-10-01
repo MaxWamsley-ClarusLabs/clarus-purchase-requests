@@ -3,7 +3,7 @@
 // is loaded only when a receipt is first read, as its own script, so the app
 // opens as fast as before. Nothing here leaves the browser.
 //
-// Settings measured in docs/research/receipt-reading/README.md:
+// Settings measured in the travel project's receipt-reading research (travel repository, docs/research/receipt-reading/README.md):
 // - a PDF with a text layer is read directly; a scanned PDF is drawn as an image;
 // - an image read with confidence under 60, or without a total or date, is
 //   read again after clean-up (larger, grey, smoothed, black and white);

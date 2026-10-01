@@ -1,19 +1,43 @@
-// Captures the prototype screens into docs/prototype/ for review.
+// Captures the prototype screens into docs/prototype/ for review, and checks the
+// behaviour that matters in a real browser: the defaults, the quote rule, the
+// receipt reader, and the whole approval path (Jane sends a request, Max
+// approves it, Jane attaches her receipts and submits it, Max processes it).
+// The browser's clock is fixed at 2026-10-12, the day the sample data is set
+// on, so the screenshots and the "dated before today" checks do not depend on
+// the day the script is run.
 // Start the preview first (npm run preview), then: node preview/tools/screenshots.mjs
 import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 
 const BASE = process.env.PREVIEW_URL || 'http://127.0.0.1:5173/';
 const outDir = fileURLToPath(new URL('../../../docs/prototype/', import.meta.url));
-const receipts = fileURLToPath(new URL('../../../test/fixtures/receipts/', import.meta.url));
+const fixtures = fileURLToPath(new URL('../../../test/fixtures/receipts/', import.meta.url));
+const fixture = (name) => fixtures + name;
+const TODAY = new Date('2026-10-12T09:00:00');
 mkdirSync(outDir, { recursive: true });
+// Start from nothing, so a screenshot that is no longer taken does not stay behind.
+for (const f of readdirSync(outDir)) if (f.endsWith('.png')) unlinkSync(outDir + f);
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium' });
 const problems = [];
 
+/** A check that does not stop the run: every failure is reported at the end. */
+function check(ok, message, details = '') {
+  console.log(`${ok ? 'ok   ' : 'FAIL '}${message}`);
+  if (!ok) problems.push(`${message}${details ? `: ${details}` : ''}`);
+}
+
+/**
+ * Opens a page as one of the sample people. Every page is its own browser
+ * context, so it starts with its own copy of the sample data and its own
+ * session storage; `goTo` keeps the data between people within one page.
+ */
 async function open(user, hash, width = 1440, height = 900, extra = '') {
-  const page = await browser.newPage({ viewport: { width, height } });
+  const context = await browser.newContext({ viewport: { width, height } });
+  await context.clock.setFixedTime(TODAY);
+  const page = await context.newPage();
+  page.setDefaultTimeout(20000);
   page.on('console', (m) => m.type() === 'error' && problems.push(`${user} ${hash}: ${m.text()}`));
   page.on('pageerror', (e) => problems.push(`${user} ${hash}: ${e.message}`));
   await page.goto(`${BASE}?user=${user}&shot=1${extra ? `&${extra}` : ''}${hash}`);
@@ -22,166 +46,305 @@ async function open(user, hash, width = 1440, height = 900, extra = '') {
   return page;
 }
 
+/** Goes to another address in the same page, so the sample data kept in the session carries over. */
+async function goTo(page, user, hash) {
+  await page.goto(`${BASE}?user=${user}&shot=1${hash}`);
+  await page.waitForSelector('.ctx-main');
+  await page.waitForTimeout(700);
+}
+
 async function shot(page, name, fullPage = true) {
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${outDir}${name}.png`, fullPage });
   console.log('saved', name);
 }
 
-// Employee
-let p = await open('jane', '#/');
-await shot(p, '01-my-reports');
-await p.getByRole('button', { name: 'New report' }).click();
-await p.waitForSelector('text=New trip report');
-await shot(p, '02-new-report-trip-details');
-// Check the defaults (D-057) in a real browser: first row Company card, category from a known vendor.
-await p.getByRole('button', { name: 'Next: Expenses' }).click();
-await p.getByRole('button', { name: 'Add expense without receipt' }).click();
-await p.getByLabel('Row 1 vendor').fill('Skyway Airlines');
-await p.waitForTimeout(300);
-const paid = await p.getByLabel('Row 1 paid with').inputValue();
-const category = await p.getByLabel('Row 1 category').inputValue();
-await p.getByRole('button', { name: 'Add expense without receipt' }).click();
-await p.getByLabel('Row 1 paid with').selectOption('personal');
-await p.waitForTimeout(700);
-await p.getByRole('button', { name: 'Add expense without receipt' }).click();
-const thirdPaid = await p.getByLabel('Row 3 paid with').inputValue();
-const checks = { firstRowPaidWith: paid === 'companyCard', categoryFromVendor: category === 'airfare', newRowCopiesRowAbove: thirdPaid === 'companyCard' };
-console.log('default checks', JSON.stringify(checks));
-if (!Object.values(checks).every(Boolean)) problems.push('default checks failed: ' + JSON.stringify({ paid, category, thirdPaid }));
-await p.close();
+const exact = { exact: true };
+const header = (page) => page.locator('.ctx-header');
 
-// Receipt suggestions (D-074, D-078): three receipts dropped on a new report are
-// read in the browser, and what the app filled in is marked until confirmed.
-p = await open('jane', '#/');
-await p.getByRole('button', { name: 'New report' }).click();
-await p.getByRole('button', { name: 'Next: Expenses' }).click();
-await p
-  .locator('input[type=file][multiple]')
-  .setInputFiles(['city-cab-receipt.png', 'skyway-airlines-eticket.pdf', 'metro-parking.png'].map((f) => receipts + f));
-await p.getByText('Suggestions filled in on 3 rows').waitFor({ timeout: 60000 });
-const suggested = {
-  cells: await p.locator('.ctx-cell.suggested').count(),
-  cabVendor: await p.getByLabel('Row 1 vendor').inputValue(),
-  cabAmount: await p.getByLabel('Row 1 amount').inputValue()
-};
-if (suggested.cells < 9 || suggested.cabVendor !== 'City Cab Co.' || suggested.cabAmount !== '45.00')
-  problems.push('receipt suggestion checks failed: ' + JSON.stringify(suggested));
-await p.mouse.move(0, 0);
-await shot(p, '26-expenses-receipt-suggestions', false);
-await p.close();
+try {
+  // ---- Employee: the home page and a new request -------------------------------
 
-p = await open('jane', '#/report/41/trip');
-await shot(p, '03-trip-details');
-await p.close();
+  let p = await open('jane', '#/');
+  await shot(p, '01-my-requests');
+  await p.getByRole('button', { name: 'New request' }).click();
+  await p.getByText('New purchase request').first().waitFor();
+  await shot(p, '02-new-request-details');
 
-// A typical laptop screen (1440 wide): the grid takes the full width; the receipt slides over.
-p = await open('jane', '#/report/41/expenses');
-await shot(p, '04-expenses-laptop');
-await p.getByRole('button', { name: /blue-door-bistro/ }).click();
-await shot(p, '05-expenses-receipt-slide-over', false);
-await p.keyboard.press('Escape');
-await p.getByLabel('Row 4 menu').click();
-await shot(p, '06-expenses-row-menu', false);
-await p.close();
+  // The defaults, and the quote rule, in a real browser (travel D-057; P-015, P-023).
+  await p.getByLabel('Business purpose', exact).fill('Assay supplies');
+  await p.getByRole('button', { name: 'Next: Purchases' }).click();
+  await p.getByRole('button', { name: 'Add purchase without a file' }).click();
+  const firstRowPaid = await p.getByLabel('Row 1 who paid', exact).inputValue();
+  check(firstRowPaid === 'company', 'The first row Who paid defaults to Company', firstRowPaid);
+  await p.getByLabel('Row 1 vendor', exact).fill('Acme Lab Supply');
+  await p.waitForTimeout(300);
+  const rememberedCategory = await p.getByLabel('Row 1 category', exact).inputValue();
+  check(rememberedCategory === 'rdMaterials', 'The category comes from the vendor used before', rememberedCategory);
+  await p.getByLabel('Row 1 date', exact).fill('2026-10-14');
+  await p.getByLabel('Row 1 what was bought and why', exact).fill('Pipette tips and centrifuge tubes');
+  await p.getByLabel('Row 1 amount', exact).fill('640');
+  await p.waitForTimeout(300);
+  check(
+    await p.getByText('Attach a quote, or say why there is none.').first().isVisible(),
+    'The quote rule message shows for a $640 vendor total with no quote'
+  );
+  check(await p.getByLabel('Row 1 reason there is no quote', exact).isVisible(), 'The "No quote: say why" box shows on the first row of that vendor');
+  check((await p.getByLabel('Row 1 reason there is no receipt', exact).count()) === 0, 'The "No receipt: say why" box waits until approval is done');
+  await p.getByRole('button', { name: 'Add purchase without a file' }).click();
+  await p.getByLabel('Row 2 who paid', exact).selectOption('employee');
+  await p.waitForTimeout(700);
+  await p.getByRole('button', { name: 'Add purchase without a file' }).click();
+  const thirdRowPaid = await p.getByLabel('Row 3 who paid', exact).inputValue();
+  check(thirdRowPaid === 'employee', 'A new row copies Who paid from the row above', thirdRowPaid);
+  // A quote dropped with the switch on Quotes becomes a row with a quote file, and is not read (P-021).
+  await p.getByRole('radio', { name: 'Quotes' }).click();
+  await p.locator('input[type=file][multiple]').setInputFiles(fixture('harbor-software-quote.pdf'));
+  await p.getByText('1 quote added as a new row.').waitFor();
+  await p.waitForTimeout(1500);
+  check((await p.locator('.ctx-receipt-chip.quote').count()) === 1, 'A dropped quote is attached to its row as a quote');
+  check((await p.getByLabel('Row 4 vendor', exact).inputValue()) === '', 'A quote is not read for suggestions');
+  await p.close();
 
-// A wide screen (1920): the receipt sits beside the grid.
-p = await open('jane', '#/report/41/expenses', 1920, 1080);
-await p.getByLabel('Row 6 vendor').click();
-await shot(p, '07-expenses-wide-screen');
-await p.close();
+  // ---- Employee: the purchases step ----------------------------------------------
 
-p = await open('jane', '#/report/41/review');
-await shot(p, '08-review-with-problems');
-// Fix the two problems in the grid, then submit.
-await p.getByRole('button', { name: 'Fix' }).first().click();
-await p.getByLabel('Row 7 paid with').selectOption('companyCard');
-await p.waitForTimeout(800);
-await p.getByRole('button', { name: 'Next: Review' }).click();
-await shot(p, '09-review-ready');
-await p.getByRole('button', { name: 'Submit report' }).click();
-// Submit stays disabled until the certification is ticked (D-064).
-const dialogSubmit = p.getByRole('dialog').getByRole('button', { name: 'Submit report' });
-if (!(await dialogSubmit.isDisabled())) throw new Error('Submit should be disabled until the certification is ticked');
-await p.getByRole('dialog').getByRole('checkbox').check();
-await shot(p, '10-submit-confirm', false);
-await dialogSubmit.click();
-await p.waitForTimeout(3600);
-await shot(p, '11-submitted');
-await p.close();
+  // A typical laptop screen (1440 wide): the grid takes the full width; the files slide over.
+  p = await open('jane', '#/request/41/purchases');
+  check(await p.getByText('Needed').first().isVisible(), 'Vendor totals show that the $640 vendor needs approval');
+  check(await p.getByText('Attached').first().isVisible(), 'Vendor totals show that the quote is attached');
+  await shot(p, '03-purchases-laptop');
+  // Attach a receipt from the row menu, then open it: it slides in from the right.
+  await p.getByLabel('Row 2 menu', exact).click();
+  await p.locator('.ctx-menu input[type=file]').first().setInputFiles(fixture('northwind-office-receipt.png'));
+  await p.getByRole('button', { name: /northwind-office-receipt/ }).click();
+  await p.getByRole('dialog', { name: 'Files' }).waitFor();
+  await p.waitForTimeout(500);
+  await shot(p, '04-purchases-receipt-slide-over', false);
+  await p.keyboard.press('Escape');
+  await p.getByLabel('Row 1 menu', exact).click();
+  check(await p.getByRole('menuitem', { name: 'Attach a quote' }).isVisible(), 'The row menu offers "Attach a quote"');
+  await shot(p, '05-purchases-row-menu', false);
+  await p.close();
 
-// Mileage (D-071): turn on the switch, then add a drive on the Expenses step.
-p = await open('jane', '#/report/41/trip');
-await p.getByLabel('I drove my own car on this trip.', { exact: false }).check();
-await p.waitForTimeout(700);
-await p.goto(`${BASE}?user=jane&shot=1#/report/41/expenses`);
-await p.getByRole('button', { name: 'Add a drive' }).click();
-await p.getByLabel('Mileage M1 date').fill('2026-09-14');
-await p.getByLabel('Mileage M1 from').fill('Office');
-await p.getByLabel('Mileage M1 to').fill('Boston Logan Airport');
-await p.getByLabel('Mileage M1 miles').fill('42');
-await p.waitForTimeout(700);
-const mileageAmount = await p.locator('table.ctx-mileage tbody tr').first().locator('td.num').innerText();
-if (mileageAmount.trim() !== '$31.92') throw new Error(`Mileage amount should be $31.92 at 76 cents a mile, got ${mileageAmount}`);
-await p.getByText('Mileage (1)').scrollIntoViewIfNeeded();
-await shot(p, '25-expenses-mileage', false);
-await p.close();
+  // A wide screen (1920): the files sit beside the grid.
+  p = await open('jane', '#/request/41/purchases', 1920, 1080);
+  await p.getByLabel('Row 2 menu', exact).click();
+  await p.locator('.ctx-menu input[type=file]').first().setInputFiles(fixture('northwind-office-receipt.png'));
+  await p.getByRole('button', { name: /northwind-office-receipt/ }).waitFor();
+  await p.getByLabel('Row 2 vendor', exact).click();
+  await p.waitForTimeout(500);
+  await shot(p, '06-purchases-wide-screen');
+  await p.close();
 
-p = await open('jane', '#/report/41/expenses?panel=instructions');
-await shot(p, '12-instructions', false);
-await p.close();
+  // Receipt suggestions (travel D-074, D-078): three receipts dropped on a new request are
+  // read in the browser, and what the app filled in is marked until it is confirmed.
+  p = await open('jane', '#/');
+  await p.getByRole('button', { name: 'New request' }).click();
+  await p.getByRole('button', { name: 'Next: Purchases' }).click();
+  await p
+    .locator('input[type=file][multiple]')
+    .setInputFiles(['northwind-office-receipt.png', 'quickship-postage-receipt.png', 'summit-training-receipt.pdf'].map(fixture));
+  await p.getByText('Suggestions filled in on 3 rows').waitFor({ timeout: 90000 });
+  const rowValues = async (n) => ({
+    vendor: await p.getByLabel(`Row ${n} vendor`, exact).inputValue(),
+    amount: await p.getByLabel(`Row ${n} amount`, exact).inputValue(),
+    date: await p.getByLabel(`Row ${n} date`, exact).inputValue()
+  });
+  const [northwind, quickship, summit] = [await rowValues(1), await rowValues(2), await rowValues(3)];
+  const suggestedCells = await p.locator('.ctx-cell.suggested').count();
+  check(
+    northwind.vendor === 'Northwind Office Supply' && northwind.amount === '86.45' && northwind.date === '2026-10-07',
+    'The reader fills in the Northwind receipt',
+    JSON.stringify(northwind)
+  );
+  check(
+    quickship.vendor === 'QuickShip Postage' && quickship.amount === '24.60' && quickship.date === '2026-10-08',
+    'The reader fills in the QuickShip receipt',
+    JSON.stringify(quickship)
+  );
+  check(
+    summit.vendor === 'Summit Training Institute' && summit.amount === '450.00' && summit.date === '2026-10-05',
+    'The reader fills in the Summit receipt',
+    JSON.stringify(summit)
+  );
+  check(suggestedCells >= 9, 'What the reader filled in is marked as suggested', String(suggestedCells));
+  await p.mouse.move(0, 0);
+  await shot(p, '07-purchases-receipt-suggestions', false);
+  await p.close();
 
-p = await open('sam', '#/');
-await shot(p, '13-returned-report');
-await p.close();
+  // ---- Employee: review, send for approval --------------------------------------
 
-// Administrator
-p = await open('admin', '#/admin/process');
-await shot(p, '14-admin-reports-to-process');
-await p.close();
+  // Sam's PR-0033 was returned at approval: a $900 vendor total has no quote and no reason,
+  // and the purchase is dated before today, so it looks already bought (P-017).
+  p = await open('sam', '#/request/33/review');
+  check(await p.getByRole('heading', { name: 'Before you send' }).isVisible(), 'Review is checking the request for sending, not for submitting');
+  check(await p.getByRole('button', { name: 'Send for approval', exact: true }).isDisabled(), 'Send for approval is disabled while a problem is open');
+  await shot(p, '08-review-with-problems');
+  await p.getByRole('button', { name: 'Fix' }).first().click();
+  await p.getByLabel('Row 2 reason there is no quote', exact).fill('The supplier does not give quotes');
+  await p.waitForTimeout(800);
+  await p.getByRole('button', { name: 'Next: Review' }).click();
+  await p.getByText('Check these. You can still send the request for approval:').waitFor();
+  check(await p.getByRole('button', { name: 'Send for approval', exact: true }).isEnabled(), 'Send for approval is enabled once the quote reason is given');
+  await shot(p, '09-review-ready-to-send');
+  await p.getByRole('button', { name: 'Send for approval', exact: true }).click();
+  const flagged = p.getByRole('dialog');
+  check(await flagged.getByText('Redwood Fabrication').isVisible(), 'The send dialog lists the vendor total that needs approval');
+  check(
+    await flagged.getByText('This looks already bought. It will be flagged Bought before approval. You can still send it.').isVisible(),
+    'The send dialog says a purchase dated before today looks already bought'
+  );
+  await shot(p, '10-send-dialog-bought-before-approval', false);
+  await p.close();
 
-p = await open('admin', '#/admin/report/38');
-await shot(p, '15-admin-report-expenses');
-await p.getByRole('tab', { name: 'Email' }).click();
-await shot(p, '16-admin-report-email');
-await p.getByRole('tab', { name: 'CSV file' }).click();
-await shot(p, '17-admin-report-csv');
-await p.getByRole('tab', { name: 'Folder contents' }).click();
-await shot(p, '18-admin-report-folder');
-await p.getByRole('button', { name: 'Return with a note' }).click();
-await p.getByLabel('What needs correcting? The employee sees this note.').fill('Row 2: please attach the itemized hotel bill.');
-await shot(p, '19-admin-return-dialog', false);
-await p.close();
+  p = await open('jane', '#/request/41/purchases?panel=instructions');
+  await shot(p, '11-instructions', false);
+  await p.close();
 
-p = await open('admin', '#/admin/attention');
-await shot(p, '20-admin-needs-attention');
-await p.close();
+  p = await open('sam', '#/');
+  check(
+    (await p.getByText('was returned to you by the approver.').count()) === 1 && (await p.getByText('was returned to you by the administrator.').count()) === 1,
+    'Each returned request says who returned it'
+  );
+  await shot(p, '12-returned-requests');
+  await p.close();
 
-p = await open('admin', '#/admin/report/39');
-await shot(p, '21-admin-failed-package');
-await p.close();
+  // ---- The approval path, in one page, with the sample data kept between people ---
 
-// A new travel site: the administrator sees only Set-up until the lists exist (D-063).
-p = await open('admin', '#/admin/process', 1440, 900, 'setup=new');
-await shot(p, '22-admin-setup-new-site');
-await p.getByRole('button', { name: 'Create the lists' }).click();
-await p.getByText('The lists are ready.').waitFor();
-await shot(p, '23-admin-setup-done');
-// Step 2: the flow package for the test site (D-047).
-const download = p.waitForEvent('download');
-await p.getByRole('button', { name: 'Download flow package' }).click();
-const file = await download;
-if (file.suggestedFilename() !== 'PurchaseRequests_Flow_Test.zip') throw new Error(`Unexpected package name ${file.suggestedFilename()}`);
-await p.getByText('downloaded.').waitFor();
-await shot(p, '24-admin-flow-package');
-await p.close();
+  p = await open('jane', '#/request/41/review', 1440, 900, 'reset=1');
+  await p.getByRole('button', { name: 'Send for approval', exact: true }).click();
+  const plain = p.getByRole('dialog');
+  check((await plain.getByText('This looks already bought').count()) === 0, 'A purchase dated after today is not flagged as bought');
+  await shot(p, '13-send-for-approval-dialog', false);
+  await plain.getByRole('button', { name: 'Send for approval', exact: true }).click();
+  await p.getByText('Sent for approval. The approver has been emailed.').waitFor();
+  await header(p).getByText('Awaiting approval', exact).waitFor();
+  check(true, 'Jane sent PR-0041 for approval: Awaiting approval');
+  check((await p.getByRole('button', { name: 'Send for approval', exact: true }).count()) === 0, 'A request awaiting approval has no Send button');
 
-// An employee on a site that is not set up yet.
-p = await open('jane', '#/', 1440, 900, 'setup=new');
-if (!(await p.getByText('Purchase Requests is not set up on this site yet').isVisible())) throw new Error('Employee should see the not-set-up message');
-await p.close();
+  await goTo(p, 'admin', '#/admin/approvals');
+  check(await p.getByRole('row', { name: /PR-0041/ }).isVisible(), 'Max sees PR-0041 under Approvals');
+  await shot(p, '14-admin-approvals');
+  await p.getByRole('row', { name: /PR-0041/ }).click();
+  await header(p).getByText('PR-0041').waitFor();
+  await p.getByLabel('Row 2 category', exact).selectOption('rdMaterials');
+  await p.getByRole('button', { name: 'Approve', exact: true }).click();
+  const approveDialog = p.getByRole('dialog');
+  check(await approveDialog.getByText('You changed 1 category.').isVisible(), 'The approve dialog counts the categories changed');
+  await approveDialog.getByLabel('Note for the employee (optional)').fill('OK, go ahead.');
+  await approveDialog.getByRole('button', { name: 'Approve request' }).click();
+  await p.getByText('PR-0041 approved.').waitFor();
+  await header(p).getByText('Approved', exact).waitFor();
+  check(true, 'Max approved PR-0041, with a changed category: Approved');
 
-await p.close();
+  await goTo(p, 'jane', '#/request/41/purchases');
+  check(await p.getByText('Approved by Max Wamsley').isVisible(), 'Jane sees who approved it');
+  check(await p.getByText('OK, go ahead.').isVisible(), 'Jane sees the approver note');
+  await shot(p, '15-approved-request');
+  // After the approval she buys, then attaches her receipts and invoices from the row menu.
+  await p.getByLabel('Row 1 menu', exact).click();
+  await p.locator('.ctx-menu input[type=file]').first().setInputFiles(fixture('acme-lab-supply-invoice.pdf'));
+  await p.getByRole('button', { name: /acme-lab-supply-invoice/ }).waitFor();
+  await p.getByLabel('Row 2 menu', exact).click();
+  await p.locator('.ctx-menu input[type=file]').first().setInputFiles(fixture('northwind-office-receipt.png'));
+  await p.getByRole('button', { name: /northwind-office-receipt/ }).waitFor();
+  await p.getByRole('button', { name: 'Next: Review' }).click();
+  await p.getByText('Everything is complete. You can submit.').waitFor();
+  await p.getByRole('button', { name: 'Submit request', exact: true }).click();
+  const submitDialog = p.getByRole('dialog');
+  const submitButton = submitDialog.getByRole('button', { name: 'Submit request', exact: true });
+  check(await submitButton.isDisabled(), 'Submit stays disabled until the certification is ticked');
+  await submitDialog.getByRole('checkbox').check();
+  check(await submitButton.isEnabled(), 'Submit is enabled once the certification is ticked');
+  await shot(p, '16-submit-dialog', false);
+  await submitButton.click();
+  await p.getByText('Request submitted. The administrator has been notified.').waitFor();
+  await header(p).getByText('Submitted', exact).waitFor();
+  check(true, 'Jane submitted PR-0041: Submitted');
+  await p.waitForTimeout(3600);
+  await shot(p, '17-submitted');
+
+  await goTo(p, 'admin', '#/admin/process');
+  check(await p.getByRole('row', { name: /PR-0041/ }).isVisible(), 'Max sees PR-0041 under Requests to process');
+  await shot(p, '18-admin-requests-to-process');
+  await p.getByRole('row', { name: /PR-0041/ }).click();
+  await header(p).getByText('PR-0041').waitFor();
+  await p.getByRole('button', { name: 'Mark processed' }).click();
+  await p.getByText('PR-0041 marked processed.').waitFor();
+  await header(p).getByText('Processed', exact).waitFor();
+  check(true, 'Max marked PR-0041 processed: Processed');
+  await shot(p, '19-admin-request-processed');
+  await p.close();
+
+  // ---- Administrator ------------------------------------------------------------
+
+  p = await open('admin', '#/admin/request/40');
+  await shot(p, '20-admin-request-awaiting-approval');
+  await p.getByLabel('Row 2 category', exact).selectOption('computer');
+  await p.getByRole('button', { name: 'Approve', exact: true }).click();
+  await p.getByLabel('Note for the employee (optional)').fill('OK, use the company card.');
+  await shot(p, '21-admin-approve-dialog', false);
+  await p.keyboard.press('Escape');
+  await p.getByRole('button', { name: 'Return with a note' }).click();
+  await p.getByLabel('What needs correcting? The employee sees this note.').fill('Please add a second quote for the software licence.');
+  await shot(p, '22-admin-return-dialog', false);
+  await p.keyboard.press('Escape');
+  await p.getByRole('tab', { name: 'Approval email' }).click();
+  check(await p.getByText('Needs your approval').isVisible(), 'The approval email shows what needs approval');
+  await shot(p, '23-admin-approval-email');
+  await p.close();
+
+  p = await open('admin', '#/admin/request/37');
+  check(await p.getByText('Bought before approval:').first().isVisible(), 'A request bought before approval is flagged for the administrator');
+  await p.getByRole('tab', { name: 'Submission email' }).click();
+  await shot(p, '24-admin-submission-email');
+  await p.getByRole('tab', { name: 'CSV file' }).click();
+  await shot(p, '25-admin-csv');
+  await p.getByRole('tab', { name: 'Folder contents' }).click();
+  await shot(p, '26-admin-folder-contents');
+  await p.close();
+
+  p = await open('admin', '#/admin/attention');
+  check(
+    (await p.getByText('Approval email failed').count()) > 0 && (await p.getByText('Packaging failed').count()) > 0,
+    'Needs attention lists a failed approval email and a failed package'
+  );
+  check(await p.getByText('Same file').isVisible(), 'Needs attention lists the duplicate between two employees');
+  await shot(p, '27-admin-needs-attention');
+  await p.close();
+
+  p = await open('admin', '#/admin/request/35');
+  await shot(p, '28-admin-failed-package');
+  await p.close();
+
+  p = await open('admin', '#/admin/all');
+  await shot(p, '29-admin-all-requests');
+  await p.close();
+
+  // A new site: the administrator sees only Set-up until the lists exist (travel D-063).
+  p = await open('admin', '#/admin/process', 1440, 900, 'setup=new');
+  await shot(p, '30-admin-setup-new-site');
+  await p.getByRole('button', { name: 'Create the lists' }).click();
+  await p.getByText('The lists are ready.').waitFor();
+  await shot(p, '31-admin-setup-done');
+  // Step 2: the flow package for the test site (travel D-047).
+  const download = p.waitForEvent('download');
+  await p.getByRole('button', { name: 'Download flow package' }).click();
+  const file = await download;
+  check(file.suggestedFilename() === 'PurchaseRequests_Flow_Test.zip', 'The test flow package has its name', file.suggestedFilename());
+  await p.getByText('downloaded.').waitFor();
+  check(await p.getByText(/Approval emails go to/).isVisible(), 'Set-up says where the approval emails go');
+  await shot(p, '32-admin-flow-package');
+  await p.close();
+
+  // An employee on a site that is not set up yet.
+  p = await open('jane', '#/', 1440, 900, 'setup=new');
+  check(await p.getByText('Purchase Requests is not set up on this site yet').isVisible(), 'An employee on a new site sees the not-set-up message');
+  await shot(p, '33-employee-site-not-set-up', false);
+  await p.close();
+} catch (e) {
+  problems.push(`The run stopped early: ${e instanceof Error ? e.message : String(e)}`);
+}
 
 await browser.close();
 if (problems.length) {

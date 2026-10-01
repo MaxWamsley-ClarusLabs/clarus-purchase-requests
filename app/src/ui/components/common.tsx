@@ -8,6 +8,15 @@ export function Badge(props: { tone: BadgeTone; children: React.ReactNode }): Re
   return <span className={`ctx-badge ${props.tone}`}>{props.children}</span>;
 }
 
+/** A small label next to a value, for example "Bought before approval" (P-017). */
+export function Tag(props: { tone?: 'amber' | 'lavender'; title?: string; children: React.ReactNode }): React.ReactElement {
+  return (
+    <span className={`ctx-tag ${props.tone ?? 'amber'}`} title={props.title}>
+      {props.children}
+    </span>
+  );
+}
+
 export function HeaderCard(props: { title: string; subtitle?: React.ReactNode; badges?: React.ReactNode; actions?: React.ReactNode }): React.ReactElement {
   return (
     <header className="ctx-header">
@@ -44,9 +53,11 @@ export interface StatusMetric {
 }
 
 /**
- * Totals under the header on every step (D-033). The fourth card shows what
- * needs attention; a brand-new report shows "To fill in" rather than red, and
- * a locked report shows its status instead.
+ * Totals under the header on every step (travel D-033, P-011). The fourth card
+ * shows what needs attention; a brand-new request shows "To fill in" rather
+ * than red, and a locked request shows its status instead. `approvalNote` is
+ * the approval state's label when it is worth showing (needed, pending or
+ * changed since approval).
  */
 export function TotalsStrip(props: {
   totals: Totals;
@@ -54,25 +65,28 @@ export function TotalsStrip(props: {
   warningCount: number;
   fresh?: boolean;
   status?: StatusMetric;
+  approvalNote?: string;
 }): React.ReactElement {
   const { totals, blockingCount, warningCount } = props;
   const attention = blockingCount > 0 && !props.fresh;
+  const warningText = warningCount === 1 ? '1 warning to check' : `${warningCount} warnings to check`;
+  const attentionNote = props.approvalNote ? (warningCount > 0 ? `${props.approvalNote}. ${warningText}` : props.approvalNote) : warningText;
   return (
     <div className="ctx-totals" aria-label="Totals">
       <div className="ctx-metric">
         <div className="ctx-metric-label">To reimburse</div>
         <div className="ctx-metric-value">{formatCents(totals.reimburseCents)}</div>
-        <div className="ctx-metric-note">Paid personally</div>
+        <div className="ctx-metric-note">Paid by the employee</div>
       </div>
       <div className="ctx-metric">
-        <div className="ctx-metric-label">Company-paid</div>
+        <div className="ctx-metric-label">Paid by Clarus</div>
         <div className="ctx-metric-value">{formatCents(totals.companyCents)}</div>
-        <div className="ctx-metric-note">Company card or paid by Clarus</div>
+        <div className="ctx-metric-note">Company card or invoice</div>
       </div>
       <div className="ctx-metric">
-        <div className="ctx-metric-label">Trip total</div>
-        <div className="ctx-metric-value">{formatCents(totals.tripCents)}</div>
-        <div className="ctx-metric-note">All expenses</div>
+        <div className="ctx-metric-label">Request total</div>
+        <div className="ctx-metric-value">{formatCents(totals.requestCents)}</div>
+        <div className="ctx-metric-note">All purchases</div>
       </div>
       {props.status ? (
         <div className="ctx-metric">
@@ -86,13 +100,13 @@ export function TotalsStrip(props: {
         <div className="ctx-metric">
           <div className="ctx-metric-label">Needs attention</div>
           <div className="ctx-metric-value">To fill in</div>
-          <div className="ctx-metric-note">Start with the trip details</div>
+          <div className="ctx-metric-note">Start with the request details</div>
         </div>
       ) : (
         <div className={`ctx-metric ${attention ? 'attention' : 'clear'}`}>
           <div className="ctx-metric-label">Needs attention</div>
           <div className="ctx-metric-value">{attention ? `${blockingCount} to fix` : 'Nothing to fix'}</div>
-          <div className="ctx-metric-note">{warningCount === 1 ? '1 warning to check' : `${warningCount} warnings to check`}</div>
+          <div className="ctx-metric-note">{attentionNote}</div>
         </div>
       )}
     </div>

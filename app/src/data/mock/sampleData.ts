@@ -226,7 +226,7 @@ export function createSampleStore(): SampleStore {
 
     // PR-0037: bought before approval, approved, then submitted. One receipt covers both rows.
     row(37, 1, {
-      date: '2026-09-15',
+      date: '2026-09-18',
       vendor: 'Blue Fern Web Co.',
       description: 'Website hosting for the year',
       category: 'advertising',
@@ -237,7 +237,7 @@ export function createSampleStore(): SampleStore {
       files: [FILES.blueFernInvoice()]
     }),
     row(37, 2, {
-      date: '2026-09-16',
+      date: '2026-09-18',
       vendor: 'Blue Fern Web Co.',
       description: 'Search marketing package',
       category: 'advertising',
@@ -258,7 +258,7 @@ export function createSampleStore(): SampleStore {
       files: [FILES.northwindReceipt('f36-1')]
     }),
     row(36, 2, {
-      date: '2026-10-07',
+      date: '2026-10-08',
       vendor: 'QuickShip Postage',
       description: 'Postage for the sample return shipment',
       category: 'shipping',
@@ -280,7 +280,7 @@ export function createSampleStore(): SampleStore {
 
     // PR-0034: returned at processing. Row 2 has no receipt.
     row(34, 1, {
-      date: '2026-10-01',
+      date: '2026-10-05',
       vendor: 'Summit Training Institute',
       description: 'Two-day laboratory safety course',
       category: 'training',

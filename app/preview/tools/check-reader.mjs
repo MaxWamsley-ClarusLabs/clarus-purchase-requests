@@ -3,15 +3,17 @@
 // Start the preview first (npm run preview), then:
 //   node preview/tools/check-reader.mjs [folder]
 // The folder holds the receipts and a truth.json listing { file, kind, date,
-// total, vendor } for each. The default is the accuracy test's set, made by
-// docs/research/receipt-reading/gen.mjs. Prints one line per receipt and a
-// summary; exits with 1 if any field is read wrong (empty is allowed).
+// total, vendor } for each. The default is the sample files in
+// test/fixtures/receipts, whose truth.json is made by generate-sample-receipts.mjs.
+// (The travel project's larger accuracy test, 54 receipts, is in the travel
+// repository under docs/research/receipt-reading.) Prints one line per receipt
+// and a summary; exits with 1 if any field is read wrong (empty is allowed).
 import { chromium } from 'playwright-core';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const BASE = process.env.PREVIEW_URL || 'http://127.0.0.1:5173/';
-const folder = process.argv[2] || fileURLToPath(new URL('../../../docs/research/receipt-reading/work/receipts/', import.meta.url));
+const folder = process.argv[2] || fileURLToPath(new URL('../../../test/fixtures/receipts/', import.meta.url));
 const cases = JSON.parse(readFileSync(`${folder.replace(/\/?$/, '/')}truth.json`, 'utf8'));
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium' });

@@ -350,8 +350,8 @@ describe('the sample data (P-031)', () => {
     expect(byId(5).emailSummary).toContain('- Redwood Fabrication: $900.00 (no quote)');
     expect(byId(3).packageFileNames.sort()).toEqual(['PR-0037_Purchases.csv', 'R01_blue-fern-web-invoice.pdf']);
     expect(byId(3)).toMatchObject({
-      folderName: '2026-09-15_Jane-Doe_Website-hosting-and-marketing_PR-0037',
-      folderLink: 'Accounting > Purchases > Purchases_To_Process > 2026-09-15_Jane-Doe_Website-hosting-and-marketing_PR-0037',
+      folderName: '2026-09-18_Jane-Doe_Website-hosting-and-marketing_PR-0037',
+      folderLink: 'Accounting > Purchases > Purchases_To_Process > 2026-09-18_Jane-Doe_Website-hosting-and-marketing_PR-0037',
       receiptCount: 1,
       quoteCount: 0,
       rowsWithoutReceipt: 0,
@@ -359,7 +359,7 @@ describe('the sample data (P-031)', () => {
       approvedBy: 'Max Wamsley',
       approvedOn: '2026-09-22 14:30',
       totalCompanyCents: 114000,
-      purchaseDates: '2026-09-15 to 2026-09-16'
+      purchaseDates: '2026-09-18'
     });
     expect(byId(3).emailSummary).toContain('Approval: approved by Max Wamsley on 2026-09-22 14:30.');
     expect(byId(3).emailSummary).toContain('FLAG, bought before approval: Blue Fern Web Co. ($1,140.00).');
@@ -561,8 +561,8 @@ describe('MockDataService on the sample data, as the preview uses it', () => {
   it('lets Sam resubmit the returned training course as it stands, as R2', async () => {
     const store = createSampleStore();
     const second = await asSam(store).submitRequest(34, CERTIFICATION);
-    expect(second).toMatchObject({ submissionNumber: 2, previousFolderName: '2026-10-01_Sam-Lee_Training-course_PR-0034' });
-    expect(second.folderName).toBe('2026-10-01_Sam-Lee_Training-course_PR-0034_R2');
+    expect(second).toMatchObject({ submissionNumber: 2, previousFolderName: '2026-10-02_Sam-Lee_Training-course_PR-0034' });
+    expect(second.folderName).toBe('2026-10-02_Sam-Lee_Training-course_PR-0034_R2');
     expect(second.packageFileNames).toContain('PR-0034_R2_Purchases.csv');
     expect(store.requests.find((r) => r.id === 34)).toMatchObject({ status: 'Submitted', submissionCount: 2, returnNote: '', returnStage: '' });
   });

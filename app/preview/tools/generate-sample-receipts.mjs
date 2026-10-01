@@ -1,79 +1,132 @@
-// Generates the synthetic sample receipts in test/fixtures/receipts.
-// Every file is marked as a synthetic test sample; vendors are made up.
+// Generates the synthetic sample files in test/fixtures/receipts: quotes,
+// invoices and receipts for the sample requests (src/data/mock/sampleData.ts).
+// Every file is marked as a synthetic test sample; vendors are made up. Each has
+// the vendor at the top, a date line and a Total line, a layout the receipt
+// reader reads (src/domain/receiptText.ts). Also writes truth.json, the answers
+// for preview/tools/check-reader.mjs.
 // Run: node preview/tools/generate-sample-receipts.mjs (from app/)
 import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 
 const outDir = fileURLToPath(new URL('../../../test/fixtures/receipts/', import.meta.url));
 mkdirSync(outDir, { recursive: true });
 
-const receipts = [
+const documents = [
   {
-    file: 'skyway-airlines-eticket.pdf',
-    vendor: 'Skyway Airlines',
-    date: '2026-08-20',
+    file: 'acme-lab-supply-quote.pdf',
+    kind: 'quote',
+    vendor: 'Acme Lab Supply',
+    date: '2026-09-28',
     lines: [
-      ['Round trip, economy', '412.30'],
-      ['Seat selection', '40.00']
+      ['Pipette tips, 10 racks', '412.00'],
+      ['Centrifuge tubes, 50 mL, 500 count', '228.00']
     ],
-    total: '452.30',
-    paid: 'Visa ending 0000'
+    total: '640.00',
+    footer: 'Valid for 30 days.'
   },
   {
-    file: 'harbor-view-hotel-folio.pdf',
-    vendor: 'Harbor View Hotel',
-    date: '2026-09-17',
+    file: 'acme-lab-supply-invoice.pdf',
+    kind: 'invoice',
+    vendor: 'Acme Lab Supply',
+    date: '2026-10-14',
     lines: [
-      ['Room, 3 nights', '537.00'],
-      ['Room tax', '75.24'],
-      ['Harbor Grill restaurant', '42.10']
+      ['Pipette tips, 10 racks', '412.00'],
+      ['Centrifuge tubes, 50 mL, 500 count', '228.00']
     ],
-    total: '654.34',
-    paid: 'Mastercard ending 0000'
+    total: '640.00',
+    footer: 'Terms: net 30.'
   },
   {
-    file: 'northeast-science-conference-registration.pdf',
-    vendor: 'Northeast Science Conference',
-    date: '2026-08-10',
-    lines: [['Full registration', '395.00']],
-    total: '395.00',
-    paid: 'Visa ending 0000'
+    file: 'harbor-software-quote.pdf',
+    kind: 'quote',
+    vendor: 'Harbor Software',
+    date: '2026-09-27',
+    lines: [['Annual licence, analysis software, 5 seats', '870.00']],
+    total: '870.00',
+    footer: 'Valid for 30 days.'
   },
   {
-    file: 'city-cab-receipt.png',
-    vendor: 'City Cab Co.',
-    date: '2026-09-14',
+    file: 'harbor-software-invoice.pdf',
+    kind: 'invoice',
+    vendor: 'Harbor Software',
+    date: '2026-10-06',
+    lines: [['Annual licence, analysis software, 5 seats', '870.00']],
+    total: '870.00',
+    footer: 'Terms: net 30.'
+  },
+  {
+    file: 'blue-fern-web-invoice.pdf',
+    kind: 'invoice',
+    vendor: 'Blue Fern Web Co.',
+    date: '2026-09-18',
     lines: [
-      ['Airport to hotel', '38.50'],
-      ['Tip', '6.50']
+      ['Website hosting, 12 months', '620.00'],
+      ['Search marketing package', '520.00']
     ],
-    total: '45.00',
-    paid: 'Cash'
+    total: '1,140.00',
+    footer: 'Terms: due on receipt.'
   },
   {
-    file: 'blue-door-bistro.png',
-    vendor: 'Blue Door Bistro',
-    date: '2026-09-15',
+    file: 'northwind-office-receipt.png',
+    kind: 'receipt',
+    vendor: 'Northwind Office Supply',
+    date: '2026-10-07',
     lines: [
-      ['Dinner for 3', '118.40'],
-      ['Tip', '21.60']
+      ['Printer paper, 5 reams', '38.45'],
+      ['Toner cartridge', '40.00'],
+      ['Tax', '8.00']
     ],
-    total: '140.00',
-    paid: 'Visa ending 0000'
+    total: '86.45',
+    footer: 'Paid: Card ending 0000'
   },
   {
-    file: 'metro-parking.png',
-    vendor: 'Metro Parking',
-    date: '2026-09-17',
-    lines: [['Airport parking, 4 days', '72.00']],
-    total: '72.00',
-    paid: 'Mastercard ending 0000'
+    file: 'quickship-postage-receipt.png',
+    kind: 'receipt',
+    vendor: 'QuickShip Postage',
+    date: '2026-10-08',
+    lines: [
+      ['Priority parcel, 2 lb', '14.20'],
+      ['Insurance', '4.40'],
+      ['Tracking label', '6.00']
+    ],
+    total: '24.60',
+    footer: 'Paid: Card ending 0000'
+  },
+  {
+    file: 'summit-training-receipt.pdf',
+    kind: 'receipt',
+    vendor: 'Summit Training Institute',
+    date: '2026-10-05',
+    lines: [['Laboratory safety course, 2 days', '450.00']],
+    total: '450.00',
+    footer: 'Paid: Card ending 0000'
+  },
+  {
+    file: 'kestrel-instruments-quote.pdf',
+    kind: 'quote',
+    vendor: 'Kestrel Instruments',
+    date: '2026-09-20',
+    lines: [['Benchtop sensor kit, model KI-200', '1,150.00']],
+    total: '1,150.00',
+    footer: 'Valid for 30 days.'
+  },
+  {
+    file: 'kestrel-instruments-invoice.pdf',
+    kind: 'invoice',
+    vendor: 'Kestrel Instruments',
+    date: '2026-10-02',
+    lines: [['Benchtop sensor kit, model KI-200', '1,150.00']],
+    total: '1,150.00',
+    footer: 'Terms: net 30.'
   }
 ];
 
-function html(r) {
-  const rows = r.lines.map(([d, a]) => `<tr><td>${d}</td><td class="amt">$${a}</td></tr>`).join('');
+const TITLE = { quote: 'Quote', invoice: 'Invoice', receipt: 'Receipt' };
+
+function html(d) {
+  const rows = d.lines.map(([text, amount]) => `<tr><td>${text}</td><td class="amt">$${amount}</td></tr>`).join('');
+  const title = TITLE[d.kind];
   return `<!doctype html><html><head><style>
     body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#fff;color:#222}
     .r{width:360px;padding:24px;border:1px dashed #999;margin:12px}
@@ -83,23 +136,27 @@ function html(r) {
     .total{font-weight:bold;font-size:16px}
     .stamp{margin-top:14px;padding:6px;border:2px solid #b42318;color:#b42318;font-weight:bold;text-align:center;font-size:12px}
   </style></head><body><div class="r">
-    <h1>${r.vendor}</h1>
-    <div class="muted">Receipt date ${r.date}</div>
-    <table>${rows}<tr class="total"><td>Total</td><td class="amt">$${r.total}</td></tr></table>
-    <div class="muted">Paid: ${r.paid}</div>
-    <div class="stamp">SYNTHETIC SAMPLE FOR TESTING. NOT A REAL RECEIPT.</div>
+    <h1>${d.vendor}</h1>
+    <div class="muted">${title} date ${d.date}</div>
+    <table>${rows}<tr class="total"><td>Total</td><td class="amt">$${d.total}</td></tr></table>
+    <div class="muted">${d.footer}</div>
+    <div class="stamp">SYNTHETIC SAMPLE FOR TESTING. NOT A REAL ${title.toUpperCase()}.</div>
   </div></body></html>`;
 }
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium' });
 const page = await browser.newPage({ viewport: { width: 420, height: 520 }, deviceScaleFactor: 2 });
-for (const r of receipts) {
-  await page.setContent(html(r));
-  if (r.file.endsWith('.pdf')) {
-    await page.pdf({ path: outDir + r.file, width: '4.5in', height: '6in', printBackground: true });
+for (const d of documents) {
+  await page.setContent(html(d));
+  if (d.file.endsWith('.pdf')) {
+    await page.pdf({ path: outDir + d.file, width: '4.5in', height: '6in', printBackground: true });
   } else {
-    await page.locator('.r').screenshot({ path: outDir + r.file });
+    await page.locator('.r').screenshot({ path: outDir + d.file });
   }
 }
 await browser.close();
-console.log(`Wrote ${receipts.length} synthetic receipts to ${outDir}`);
+
+// What the reader should find on each file, in the format check-reader.mjs reads.
+const truth = documents.map((d) => ({ file: d.file, kind: d.kind, date: d.date, total: d.total.replace(/,/g, ''), vendor: d.vendor }));
+writeFileSync(outDir + 'truth.json', JSON.stringify(truth, null, 2) + '\n');
+console.log(`Wrote ${documents.length} synthetic files and truth.json to ${outDir}`);

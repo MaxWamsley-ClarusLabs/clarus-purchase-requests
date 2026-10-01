@@ -9,6 +9,9 @@ import { CategoryId, PurchaseLine, PurchaseRequest, RequestStatus, Submission, S
 import { CategoryChoice, LineChanges, RequestChanges } from '../PurchaseDataService';
 import { line255, parseSuggested } from './mapping';
 
+/** The services and the screens use one rule for who may confirm categories (P-024). */
+export { canConfirmCategories } from '../../domain/statuses';
+
 /** A call the signed-in person may not make: someone else's request, a locked request, or an administrator-only action. */
 export class NotAllowedError extends Error {}
 
@@ -23,13 +26,6 @@ export const notAllowed = {
   confirmWhen: 'Categories can be confirmed only on a request that is awaiting approval, approved or submitted.',
   processWhen: 'Only submitted requests can be marked processed.'
 } as const;
-
-/** The statuses in which an approver or administrator can confirm or change categories (P-024). */
-const CONFIRMABLE: readonly RequestStatus[] = ['Awaiting approval', 'Approved', 'Submitted'];
-
-export function canConfirmCategories(status: RequestStatus): boolean {
-  return CONFIRMABLE.includes(status);
-}
 
 /**
  * Which step a return comes at (P-006): the approver returns a request that is

@@ -5,11 +5,6 @@ import { Badge, Card, HeaderCard } from '../../components/common';
 import { Icon } from '../../components/Icon';
 import { BadgeTone } from '../../../domain/statuses';
 import { FlowConfig, FlowMode, buildFlowPackage } from '../../../export/flowPackage';
-import { RATE_TABLES, outdatedRateTables } from '../../../domain/rates';
-import { rateText } from '../../../domain/mileage';
-import { formatCents } from '../../../domain/money';
-import { messages } from '../../../domain/messages';
-import { todayIso } from '../../../domain/dates';
 import { downloadFile } from '../../download';
 
 /** How one list looks on the Set-up page. */
@@ -35,8 +30,8 @@ function listState(list: ListCheck): { label: string; tone: BadgeTone; details: 
 }
 
 /**
- * Set-up (D-063, D-047): what the administrator does once on a new travel
- * site. Step 1 creates the lists; step 2 makes the flow package.
+ * Set-up (travel D-063, D-047, P-018): what the administrator does once on a
+ * new site. Step 1 creates the lists; step 2 makes the flow package.
  */
 export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): React.ReactElement {
   const app = useApp();
@@ -79,7 +74,7 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
     }
   };
 
-  // Builds the package from this site's details and downloads it (D-047).
+  // Builds the package from this site's details and downloads it (travel D-047).
   const makePackage = async (): Promise<void> => {
     setMaking(true);
     setMade(null);
@@ -95,13 +90,12 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
     }
   };
 
-  const outdated = outdatedRateTables(todayIso());
   const noneExist = !!status && status.lists.every((l) => !l.exists);
   const permissionsMissing = !!status && status.lists.some((l) => l.exists && !l.notOurs && !l.ownItemsOnly);
 
   return (
     <>
-      <HeaderCard title="Set-up" subtitle="What the administrator does once for this travel site." />
+      <HeaderCard title="Set-up" subtitle="What the administrator does once for this site." />
       {status && !status.ready && !noneExist ? (
         <div className="ctx-banner amber" role="status">
           <Icon name="alert" />
@@ -111,7 +105,7 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
       <div className="ctx-two-col">
         <Card title="1. Lists on this site">
           <p className="ctx-hint" style={{ marginTop: 0 }}>
-            The app keeps reports in three lists on this site. Create them once. After installing a new version of the app, open this page to check them again.
+            The app keeps requests in three lists on this site. Create them once. After installing a new version of the app, open this page to check them again.
           </p>
           {status === null ? (
             <div className="ctx-empty">Checking</div>
@@ -175,19 +169,20 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
         </Card>
         <Card title="2. Flow package">
           <p className="ctx-hint" style={{ marginTop: 0 }}>
-            The flow creates each report&apos;s folder and emails you. Make the package here, then import it in Power Automate.
+            The flow emails the approvers when a request is sent for approval, and creates each submitted request&apos;s folder and emails you. Make the package
+            here, then import it in Power Automate.
           </p>
-          <div className="ctx-choice-list" role="radiogroup" aria-label="Where report folders go">
+          <div className="ctx-choice-list" role="radiogroup" aria-label="Where request folders go">
             <label className="ctx-choice">
               <input type="radio" name="flow-mode" checked={mode === 'test'} onChange={() => setMode('test')} />
               <span>
-                <strong>Test.</strong> Folders go to this site&apos;s Documents library, in Trips_Test &gt; Trips_To_Process. Use this on the test site.
+                <strong>Test.</strong> Folders go to this site&apos;s Documents library, in Purchases_Test &gt; Purchases_To_Process. Use this on the test site.
               </span>
             </label>
             <label className="ctx-choice">
               <input type="radio" name="flow-mode" checked={mode === 'live'} onChange={() => setMode('live')} />
               <span>
-                <strong>Live.</strong> Folders go to Accounting &gt; Trips &gt; Trips_To_Process on the ExecutiveTeam site.
+                <strong>Live.</strong> Folders go to Accounting &gt; Purchases &gt; Purchases_To_Process on the ExecutiveTeam site.
               </span>
             </label>
           </div>
@@ -203,9 +198,10 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
             ) : null}
           </div>
           {made ? (
-            <div className="ctx-banner green" role="status" style={{ marginTop: 16, display: 'block' }}>
+            <div className="ctx-banner green" role="status" style={{ marginTop: 16, display: 'block', overflowWrap: 'anywhere' }}>
               <strong>{made.fileName}</strong> downloaded. Submissions list {made.config.submissionsListId}; folders go to {made.config.destinationSiteUrl}/
-              {made.config.libraryUrlName}/{made.config.folders[made.config.folders.length - 1]}; emails go to {made.config.adminEmail}.
+              {made.config.libraryUrlName}/{made.config.folders[made.config.folders.length - 1]}. Submission emails go to {made.config.adminEmail}. Approval
+              emails go to {made.config.approverEmails.join(', ')}.
             </div>
           ) : null}
           <ol className="ctx-hint" style={{ margin: '16px 0 0', paddingLeft: 18 }}>
@@ -214,46 +210,18 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
             <li>Choose Import. Then open the flow and turn it on (imported flows start off).</li>
           </ol>
           <ul style={{ margin: '12px 0 0', paddingLeft: 18 }} className="ctx-hint">
-            <li>The flow runs on your account when a report is submitted.</li>
-            <li>It creates the report folder, copies the receipts and the CSV file into it, and emails you.</li>
+            <li>The flow runs on your account when a request is sent for approval or submitted.</li>
+            <li>
+              For an approval it emails the approvers. For a submission it creates the request folder, copies the files and the CSV file into it, and emails
+              you.
+            </li>
             <li>It never overwrites, moves or deletes anything.</li>
           </ul>
+          <p className="ctx-hint" style={{ margin: '12px 0 0' }}>
+            To add an approver, add them as an Owner of this site, then make a new flow package here and import it.
+          </p>
         </Card>
       </div>
-      <Card title="3. GSA rates in the app">
-        <p className="ctx-hint" style={{ marginTop: 0 }}>
-          The daily meal limit and the mileage rate come from GSA (D-072). They are kept in the app&apos;s code; Claude adds new rates when GSA publishes them
-          (meals each October, mileage each January and sometimes mid-year), and you upload the new app package.
-        </p>
-        {outdated.length > 0 ? (
-          <div className="ctx-banner amber" role="status" style={{ marginBottom: 12 }}>
-            <Icon name="alert" />
-            {messages.ratesOutdated(outdated.join(', '))}
-          </div>
-        ) : null}
-        <table className="ctx-table">
-          <thead>
-            <tr>
-              <th>Rate</th>
-              <th>From</th>
-              <th>To</th>
-              <th className="num">Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {RATE_TABLES.map((t) =>
-              t.table.map((p) => (
-                <tr key={`${t.name}-${p.from}`}>
-                  <td className="ctx-strong">{t.name}</td>
-                  <td className="nowrap">{p.from}</td>
-                  <td className="nowrap">{p.to}</td>
-                  <td className="num">{t.name === 'Mileage' ? rateText(p.value) : `${formatCents(p.value)} a day`}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </Card>
     </>
   );
 }

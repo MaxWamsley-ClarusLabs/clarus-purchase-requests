@@ -1,12 +1,12 @@
 import * as React from 'react';
 import { CrossEmployeeMatch, findCrossEmployeeDuplicates } from '../../../domain/duplicates';
 import { formatCents } from '../../../domain/money';
-import { PACKAGE_STATUS_DISPLAY } from '../../../domain/statuses';
+import { submissionStatusDisplay } from '../../../domain/statuses';
 import { Submission } from '../../../domain/types';
 import { useApp } from '../../AppContext';
 import { Badge, Card, HeaderCard } from '../../components/common';
 import { Icon } from '../../components/Icon';
-import { latestByReport, needsAttention } from './adminData';
+import { stuckSubmissions } from './adminData';
 
 export function NeedsAttentionPage(): React.ReactElement {
   const app = useApp();
@@ -14,9 +14,9 @@ export function NeedsAttentionPage(): React.ReactElement {
   const [duplicates, setDuplicates] = React.useState<CrossEmployeeMatch[]>([]);
 
   React.useEffect(() => {
-    Promise.all([app.service.listSubmissions(), app.service.listAllLineRefs()])
-      .then(([subs, refs]) => {
-        setStuck(Array.from(latestByReport(subs).values()).filter((s) => needsAttention(s)));
+    Promise.all([app.service.listAllRequests(), app.service.listSubmissions(), app.service.listAllLineRefs()])
+      .then(([requests, subs, refs]) => {
+        setStuck(stuckSubmissions(requests, subs));
         setDuplicates(findCrossEmployeeDuplicates(refs));
       })
       .catch(app.reportError);
@@ -24,25 +24,26 @@ export function NeedsAttentionPage(): React.ReactElement {
 
   return (
     <>
-      <HeaderCard title="Needs attention" subtitle="Folders that were not created, and possible duplicates between employees." />
-      <Card title="Folders not created">
+      <HeaderCard title="Needs attention" subtitle="Approval emails not sent, folders not created, and possible duplicates between employees." />
+      <Card title="Emails and folders not completed">
         {stuck === null ? (
           <div className="ctx-empty">Loading</div>
         ) : stuck.length === 0 ? (
           <div className="ctx-banner green">
             <Icon name="check" />
-            Every submission has its folder.
+            Every approval email was sent and every folder was created.
           </div>
         ) : (
           <>
             <div className="ctx-hint" style={{ marginBottom: 10 }}>
-              A submission appears here if packaging failed, or if its folder was not created within 30 minutes. That usually means the flow&apos;s connection
-              needs signing in again, or the flow was turned off. The SOP explains both.
+              A submission appears here if its approval email was not sent, or its folder was not created, because it failed or took more than 30 minutes. That
+              usually means the flow&apos;s connection needs signing in again, or the flow was turned off. Open the request to try again. The SOP explains both.
             </div>
             <table className="ctx-table">
               <thead>
                 <tr>
-                  <th>Report</th>
+                  <th>Request</th>
+                  <th>Type</th>
                   <th>Submitted by</th>
                   <th>Submitted</th>
                   <th>Status</th>
@@ -50,17 +51,21 @@ export function NeedsAttentionPage(): React.ReactElement {
                 </tr>
               </thead>
               <tbody>
-                {stuck.map((s) => (
-                  <tr key={s.id} className="clickable" onClick={() => app.navigate({ name: 'adminReport', reportId: s.reportId })}>
-                    <td className="ctx-strong">{s.reportNumber}</td>
-                    <td>{s.submitterName}</td>
-                    <td className="ctx-muted">{s.submittedOn}</td>
-                    <td>
-                      <Badge tone={PACKAGE_STATUS_DISPLAY[s.packageStatus].tone}>{PACKAGE_STATUS_DISPLAY[s.packageStatus].label}</Badge>
-                    </td>
-                    <td>{s.errorMessage}</td>
-                  </tr>
-                ))}
+                {stuck.map((s) => {
+                  const display = submissionStatusDisplay(s.type, s.packageStatus);
+                  return (
+                    <tr key={s.id} className="clickable" onClick={() => app.navigate({ name: 'adminRequest', requestId: s.requestId })}>
+                      <td className="ctx-strong nowrap">{s.requestNumber}</td>
+                      <td className="nowrap">{s.type === 'approval' ? 'Approval email' : 'Package'}</td>
+                      <td>{s.submitterName}</td>
+                      <td className="ctx-muted nowrap">{s.submittedOn}</td>
+                      <td>
+                        <Badge tone={display.tone}>{display.label}</Badge>
+                      </td>
+                      <td>{s.errorMessage}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </>
@@ -75,7 +80,7 @@ export function NeedsAttentionPage(): React.ReactElement {
         ) : (
           <>
             <div className="ctx-hint" style={{ marginBottom: 10 }}>
-              The same receipt file, or the same date, vendor and amount, in two employees&apos; reports. Employees cannot see each other&apos;s reports, so
+              The same receipt file, or the same date, vendor and amount, in two employees&apos; requests. Employees cannot see each other&apos;s requests, so
               only you see these.
             </div>
             <table className="ctx-table">
@@ -96,10 +101,10 @@ export function NeedsAttentionPage(): React.ReactElement {
                       <Badge tone="amber">{d.kind === 'file' ? 'Same file' : 'Same date, vendor, amount'}</Badge>
                     </td>
                     <td>
-                      {d.a.reportNumber} row {d.a.line.rowNumber}
+                      {d.a.requestNumber} row {d.a.line.rowNumber}
                     </td>
                     <td>
-                      {d.b.reportNumber} row {d.b.line.rowNumber}
+                      {d.b.requestNumber} row {d.b.line.rowNumber}
                     </td>
                     <td>{d.a.line.vendor}</td>
                     <td>{d.a.line.date}</td>

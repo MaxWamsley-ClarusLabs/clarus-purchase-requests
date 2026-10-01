@@ -61,5 +61,12 @@ export function isEditable(status: RequestStatus): boolean {
   return status === 'Draft' || status === 'Returned' || status === 'Approved';
 }
 
+/** The statuses in which an approver or administrator can confirm or change categories (P-012, P-024). */
+export const CONFIRMABLE_STATUSES: readonly RequestStatus[] = ['Awaiting approval', 'Approved', 'Submitted'];
+
+export function canConfirmCategories(status: RequestStatus): boolean {
+  return CONFIRMABLE_STATUSES.includes(status);
+}
+
 /** Minutes after which a submission that is not Packaged needs attention (travel strategy section 7, P-030). */
 export const PACKAGE_ATTENTION_MINUTES = 30;

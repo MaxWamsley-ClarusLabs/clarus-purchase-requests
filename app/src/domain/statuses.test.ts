@@ -4,6 +4,7 @@ import {
   PACKAGE_ATTENTION_MINUTES,
   REQUEST_STATUSES,
   REQUEST_STATUS_DISPLAY,
+  canConfirmCategories,
   isEditable,
   submissionStatusDisplay
 } from './statuses';
@@ -16,6 +17,10 @@ describe('request statuses (P-006, P-027)', () => {
 
   it('the employee can edit a Draft, Returned or Approved request only', () => {
     expect(REQUEST_STATUSES.filter(isEditable)).toEqual(['Draft', 'Approved', 'Returned']);
+  });
+
+  it('categories can be confirmed while awaiting approval, approved or submitted, and not at other times (P-024)', () => {
+    expect(REQUEST_STATUSES.filter(canConfirmCategories)).toEqual(['Awaiting approval', 'Approved', 'Submitted']);
   });
 
   it('shows an approval request and a package in their own words', () => {

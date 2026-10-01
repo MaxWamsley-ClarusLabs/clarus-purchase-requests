@@ -127,7 +127,7 @@ The first three are the default rules Max asked to have built and listed.
 - **Status:** Provisional (Claude, awaiting Max). Max's prompt names this as a recommended default.
 - **Decision:** A purchase of $500 or more already made without approval can still go through. When the request is sent for approval, a vendor total of $500 or more is flagged **Bought before approval** if any of its lines is dated before the day it is sent, or already has a receipt or invoice attached. The request still goes to the approver first. The flag stays on the request after approval. The administrator sees it in the submission email and in the CSV (a "Bought before approval" column). The employee submits for processing after the approval, as for any approved request.
 - **Options considered:** block the request (Max said it can still be submitted); let the employee submit straight to processing while approval is pending (the folder and CSV would be made before the approval exists, so the CSV would be out of date after approval); ask the employee to tick "already bought" (an honest answer is needed; the date and receipt tests need no extra click). Chosen: two steps, send for approval flagged, then submit, because the folder and CSV are then built once with the approval in them.
-- **Where a change goes:** `isAlreadyBought` and `flagBoughtBefore` in `purchaseRules.ts`; the wording in `messages.ts`; the send dialog in `ReportWorkspace`.
+- **Where a change goes:** `isAlreadyBought` and `flagBoughtBefore` in `purchaseRules.ts`; the wording in `messages.ts`; the send dialog in `RequestWorkspace`.
 
 ## P-018. The approval email is a branch of the same flow
 
@@ -185,7 +185,7 @@ The first three are the default rules Max asked to have built and listed.
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max)
-- **Decision:** Choosing Other needs a short description of the category (the form's "Other: ____"), kept apart from "what was bought and why". Each line records who last confirmed or changed its category (the approver when approving, or the administrator later). The CSV has a "Category confirmed by" column, empty when only the employee has suggested the category. The administrator's change after submission is saved in the app, but the CSV already in the folder keeps the category as submitted.
+- **Decision:** Choosing Other needs a short description of the category (the form's "Other: ____"), kept apart from "what was bought and why". Each line records who last confirmed or changed its category (the approver when approving, or the administrator later). The CSV has a "Category confirmed by" column, empty when only the employee has suggested the category. The approver or administrator can confirm or change categories while a request is Awaiting approval, Approved or Submitted (`CONFIRMABLE_STATUSES` in `statuses.ts`); approving confirms every category shown. The administrator's change after submission is saved in the app, but the CSV already in the folder keeps the category as submitted.
 - **Options considered:** rewriting the CSV after processing (a second write into Accounting, travel D-050 rejected the same idea); no record of who confirmed (Max asked for confirm or change by the approver or administrator).
 - **Where a change goes:** `CategoryOther` and `CategoryConfirmedBy` in `docs/DATA_MODEL.md`; `confirmCategories` in the data services.
 
@@ -233,9 +233,9 @@ The first three are the default rules Max asked to have built and listed.
 
 - **Date:** 2026-09-30
 - **Status:** Provisional (Claude, awaiting Max)
-- **Decision:** An approval request whose email was not sent within 30 minutes, or whose sending failed, appears under Needs attention like a failed package, with Retry. The sidebar shows a count on **Approvals** (requests awaiting approval) and on **Requests to process**.
-- **Options considered:** leaving approval emails unmonitored (an unnoticed failed email would stall a purchase).
-- **Where a change goes:** `adminData.ts`, the Needs attention page.
+- **Decision:** An approval request whose email was not sent within 30 minutes, or whose sending failed, appears under Needs attention like a failed package, with Retry. Only the newest approval request of a request that is still Awaiting approval, and the newest package of a request that is still Submitted, are listed: once the request has moved on (approved in the app anyway, returned, processed) a stuck submission no longer matters and is not shown. The sidebar shows a count on **Approvals** (requests awaiting approval), **Requests to process** and **Needs attention**.
+- **Options considered:** leaving approval emails unmonitored (an unnoticed failed email would stall a purchase); listing every failed submission for ever (old failures would bury the current ones).
+- **Where a change goes:** `adminData.ts` (`stuckSubmissions`), the Needs attention page.
 
 ## P-031. Preview data is fictional
 
@@ -243,6 +243,14 @@ The first three are the default rules Max asked to have built and listed.
 - **Status:** Provisional (Claude, awaiting Max)
 - **Decision:** The preview's people are Jane Doe (employee), Sam Lee (employee) and Max Wamsley (administrator and approver) at `example.com`, as in travel; vendors are made up; sample receipts are generated and stamped "synthetic sample for testing". Note that Max Wamsley is a real person's name already used in the travel app's sample data; no real address or data is used.
 - **Where a change goes:** `app/src/data/mock/sampleData.ts`.
+
+## P-032. Screens: how approval shows to the employee and to the approver
+
+- **Date:** 2026-10-01
+- **Status:** Provisional (Claude, awaiting Max)
+- **Decision:** The request is made in three steps, as in travel: Details, Purchases and Review. The Purchases step has the drop box (with a Receipts or invoices / Quotes switch), the grid and a **Vendor totals** table that shows, for each vendor, the total, whether it needs approval, and whether it has a quote. The Review step lists what to fix, then a card for the approval (what needs approval, and what changed since it was approved). Send for approval and Submit are two different buttons; the one that applies is the one that is enabled. The "No quote: say why" box appears on the first row of a vendor total of $500 or more while the request is waiting to be sent, and the "No receipt" box appears once approval is done. A request that is Approved opens again for receipts and real prices (P-027). The administrator's side has an **Approvals** page (requests awaiting approval), and one request page with tabs (Purchases, Vendor totals, Approval email, Submission email, CSV file, Folder contents). While a request awaits approval, each category there is a drop-down; Approve confirms the categories shown, says how many were changed, and takes an optional note; Return needs a note. A returned request says who returned it (approver or administrator) and shows the note. Every wording is in `messages.ts` and `content/instructions.ts`.
+- **Options considered:** one screen for everything (a long page to scroll on a laptop); the approver approving each line (Max decided approval is by request; thresholds count by vendor total, P-016); a separate approver app (a second web part).
+- **Where a change goes:** `app/src/ui/` (`RequestWorkspace.tsx`, `PurchaseGrid.tsx`, `VendorTotals.tsx`, `pages/admin/AdminRequestPage.tsx`); screenshots in `docs/prototype/`.
 
 ---
 

@@ -125,7 +125,7 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 - **Built:** the certification sentence (yours, exact) is ticked at Submit, not when sending for approval.
 - **Options:** A. As built. B. Also at sending for approval.
 - **Recommendation:** A. The sentence says the purchases "have not been reimbursed elsewhere", which is about what was actually bought.
-- **If you choose differently:** the send dialog in `ReportWorkspace.tsx` and `sendForApproval` in the data services.
+- **If you choose differently:** the send dialog in `RequestWorkspace.tsx` and `sendForApproval` in the data services.
 
 ## 15. An employee could mark their own request Approved in SharePoint (P-029)
 

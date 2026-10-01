@@ -1,7 +1,7 @@
 // Guesses a receipt's date, total and vendor from its text (D-074). The text
 // comes from the receipt reader in app/src/reading, one line per printed line,
 // top to bottom. Anything not found is left empty rather than guessed wildly.
-// First written and measured in docs/research/receipt-reading/parse.mjs.
+// First written and measured in the travel project's receipt-reading research (travel repository, docs/research/receipt-reading/parse.mjs).
 
 import { IsoDate } from './types';
 

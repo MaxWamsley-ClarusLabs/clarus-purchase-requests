@@ -1,13 +1,13 @@
 import * as React from 'react';
 import { CurrentUser } from '../domain/types';
-import { TravelDataService } from '../data/TravelDataService';
+import { PurchaseDataService } from '../data/PurchaseDataService';
 import { ReceiptReader } from '../reading/ReceiptReader';
-import { ReportNav } from './components/Sidebar';
+import { RequestNav } from './components/Sidebar';
 import { Route } from './routing';
 
 export interface AppContextValue {
-  service: TravelDataService;
-  /** Reads receipts for suggestions (D-074); null where there is no reader, as in tests. */
+  service: PurchaseDataService;
+  /** Reads receipts for suggestions (travel D-074); null where there is no reader, as in tests. */
   reader: ReceiptReader | null;
   user: CurrentUser;
   navigate: (route: Route) => void;
@@ -15,7 +15,7 @@ export interface AppContextValue {
   /** Shows a warning for a failed action or load. */
   reportError: (e: unknown) => void;
   openInstructions: () => void;
-  setReportNav: (nav: ReportNav | null) => void;
+  setRequestNav: (nav: RequestNav | null) => void;
   refreshAdminCounts: () => void;
 }
 

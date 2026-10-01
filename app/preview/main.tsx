@@ -1,8 +1,11 @@
 // Prototype preview (Stage 6). Runs the real app on synthetic sample data.
 // Query options: ?user=jane|sam|admin chooses who is signed in; &shot=1 hides
-// the preview bar (used for screenshots); &setup=new shows a travel site whose
-// lists do not exist yet; &reader=off turns receipt suggestions off. Nothing
-// here ships in the app.
+// the preview bar (used for screenshots); &setup=new shows a site whose lists
+// do not exist yet; &reader=off turns receipt suggestions off; &reset=1 starts
+// again from the sample data. The sample data is kept in this tab's session
+// storage, so switching between people shows the same requests and the approval
+// can be followed end to end: Jane sends a request, Max approves it, Jane
+// submits it, Max processes it. Nothing here ships in the app.
 import * as React from 'react';
 import * as ReactDOM from 'react-dom';
 import '@fontsource/inter/400.css';
@@ -11,16 +14,44 @@ import '@fontsource/inter/700.css';
 import '@fontsource/inter/800.css';
 import { App } from '../src/ui/App';
 import { MockDataService, notSetUp } from '../src/data/mock/MockDataService';
-import { createSampleStore, SAMPLE_USERS } from '../src/data/mock/sampleData';
+import { SAMPLE_USERS, SampleStore, createSampleStore, finishPendingWork } from '../src/data/mock/sampleData';
 import { readerAssetsIn } from '../src/reading/assets';
 import { createReceiptReader } from '../src/reading/ReceiptReader';
 import logoUrl from '../src/ui/assets/clarus-logo.png';
 
 type UserKey = keyof typeof SAMPLE_USERS;
+const STORE_KEY = 'purchase-requests-preview-store';
+
 const params = new URLSearchParams(window.location.search);
 const userKey = (params.get('user') as UserKey) in SAMPLE_USERS ? (params.get('user') as UserKey) : 'jane';
-const store = createSampleStore();
-const service = new MockDataService(store, SAMPLE_USERS[userKey]);
+
+// Storage can be unavailable (private windows, blocked site data): the preview
+// then works from the sample data as it was at the start, and each page load starts again.
+function saveStore(store: SampleStore): void {
+  try {
+    window.sessionStorage.setItem(STORE_KEY, JSON.stringify(store));
+  } catch {
+    // Not kept; the preview still works.
+  }
+}
+
+/** The kept sample data, with the work the simulated flow had still to do finished (its timers died with the last page). */
+function restoreStore(): SampleStore | null {
+  try {
+    const text = window.sessionStorage.getItem(STORE_KEY);
+    if (!text) return null;
+    const saved = JSON.parse(text) as SampleStore;
+    if (!Array.isArray(saved.requests) || !Array.isArray(saved.lines) || !Array.isArray(saved.submissions)) return null;
+    finishPendingWork(saved);
+    return saved;
+  } catch {
+    return null;
+  }
+}
+
+const store = (params.get('reset') ? null : restoreStore()) ?? createSampleStore();
+saveStore(store);
+const service = new MockDataService(store, SAMPLE_USERS[userKey], 1500, () => saveStore(store));
 if (params.get('setup') === 'new') service.setupStatus = notSetUp();
 // The receipt reader's files are served at /reader/ (vite.config.mts).
 const reader =
@@ -34,7 +65,20 @@ function PreviewBar(): React.ReactElement {
   const switchTo = (key: UserKey) => {
     const next = new URLSearchParams(window.location.search);
     next.set('user', key);
+    // Switching people keeps the sample data; only "Reset sample data" starts again.
+    next.delete('reset');
     window.location.search = next.toString();
+  };
+  const reset = () => {
+    try {
+      window.sessionStorage.removeItem(STORE_KEY);
+    } catch {
+      // Nothing was kept.
+    }
+    const next = new URLSearchParams(window.location.search);
+    next.delete('reset');
+    window.history.replaceState(null, '', `${window.location.pathname}?${next.toString()}#/`);
+    window.location.reload();
   };
   return (
     <div className="preview-bar">
@@ -45,7 +89,7 @@ function PreviewBar(): React.ReactElement {
           {SAMPLE_USERS[k].isAdministrator ? ' (admin)' : ''}
         </button>
       ))}
-      <button onClick={() => window.location.reload()}>Reset sample data</button>
+      <button onClick={reset}>Reset sample data</button>
     </div>
   );
 }

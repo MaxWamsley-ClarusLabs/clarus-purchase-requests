@@ -1,0 +1,79 @@
+[
+  {
+    "file": "acme-lab-supply-quote.pdf",
+    "kind": "quote",
+    "date": "2026-09-28",
+    "total": "640.00",
+    "vendor": "Acme Lab Supply"
+  },
+  {
+    "file": "acme-lab-supply-invoice.pdf",
+    "kind": "invoice",
+    "date": "2026-10-14",
+    "total": "640.00",
+    "vendor": "Acme Lab Supply"
+  },
+  {
+    "file": "harbor-software-quote.pdf",
+    "kind": "quote",
+    "date": "2026-09-27",
+    "total": "870.00",
+    "vendor": "Harbor Software"
+  },
+  {
+    "file": "harbor-software-invoice.pdf",
+    "kind": "invoice",
+    "date": "2026-10-06",
+    "total": "870.00",
+    "vendor": "Harbor Software"
+  },
+  {
+    "file": "blue-fern-web-invoice.pdf",
+    "kind": "invoice",
+    "date": "2026-09-18",
+    "total": "1140.00",
+    "vendor": "Blue Fern Web Co."
+  },
+  {
+    "file": "northwind-office-receipt.png",
+    "kind": "receipt",
+    "date": "2026-10-07",
+    "total": "86.45",
+    "vendor": "Northwind Office Supply"
+  },
+  {
+    "file": "quickship-postage-receipt.png",
+    "kind": "receipt",
+    "date": "2026-10-08",
+    "total": "24.60",
+    "vendor": "QuickShip Postage"
+  },
+  {
+    "file": "summit-training-receipt.pdf",
+    "kind": "receipt",
+    "date": "2026-10-05",
+    "total": "450.00",
+    "vendor": "Summit Training Institute"
+  },
+  {
+    "file": "kestrel-instruments-quote.pdf",
+    "kind": "quote",
+    "date": "2026-09-20",
+    "total": "1150.00",
+    "vendor": "Kestrel Instruments"
+  },
+  {
+    "file": "cobalt-biosupply-invoice.pdf",
+    "kind": "invoice",
+    "date": "2026-10-09",
+    "total": "215.50",
+    "vendor": "Cobalt Biosupply"
+  },
+  {
+    "file": "kestrel-instruments-invoice.pdf",
+    "kind": "invoice",
+    "date": "2026-10-02",
+    "total": "1150.00",
+    "vendor": "Kestrel Instruments"
+  }
+]

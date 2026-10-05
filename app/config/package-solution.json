@@ -1,0 +1,41 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "clarus-purchase-requests-client-side-solution",
+    "title": "Clarus Purchase Requests",
+    "id": "d8fc7a2a-d49d-45be-8a7d-17c1f76f0631",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "Clarus Labs LLC",
+      "websiteUrl": "",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.23.2"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "Clarus Labs purchase requests and approvals"
+      },
+      "longDescription": {
+        "default": "Employees enter a purchase request. A vendor total of $500 or more goes to the approver first. On submission, a request folder with receipt copies and a CSV file is created for the administrator."
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "Clarus Purchase Requests",
+        "description": "Adds the Purchase Requests app.",
+        "id": "0cac14e7-dfa4-47a5-971e-140b770b6366",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/clarus-purchase-requests.sppkg"
+  }
+}

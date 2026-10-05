@@ -384,6 +384,17 @@ Max said that about 95% of purchases are bought by the person who approves them,
 - **Not verified:** how Forms behaves (quiz scoring, option comments, recording names, email receipts and notifications, Quick import). All of it is Unverified, since Microsoft's documentation is blocked here; the build instructions say to stop and report if a screen does not match.
 - **Where a change goes:** the questions in `docs/TRAINING_QUIZ.md` first, then the Form. Whoever changes `purchaseRules.ts`, the Instructions text or the SOP checks the quiz (the drift rule is in the quiz file, section 6).
 
+
+## P-046. A separate chat helps enter processed requests in QuickBooks
+
+- **Date:** 2026-10-05
+- **Status:** Decided (Max asked for it, 2026-10-05). How it works is open: the five first questions are in the briefing.
+- **Decision:** One separate Claude chat, outside the app, helps Max (administrator) enter each processed purchase request in QuickBooks. `docs/QUICKBOOKS_HANDOFF.md` is the briefing Max pastes into it. It carries the folder and CSV format, the 13 category accounts, what each CSV column means, the existing process it must fit (SOP B4, `Clarus_Accounting_SOP.md`, the receipt skill), the hard rules and the first questions.
+- **What does not change:** the app, the CSV and the flow still do not touch QuickBooks (P-025, P-038, `docs/STRATEGY.md` non-goals), and the build chat still does not use the QuickBooks connector. The new chat may write to QuickBooks only with Max's approval of each batch, starting with one test entry, and asks before any Microsoft 365 read.
+- **Open (first batch, for Max and the new chat):** what "push" means (prepare an entry sheet, use the connector's import, or both), which account paid each row, how employee-paid rows are recorded, who decides Equipment and Other rows, and how duplicates and resubmissions are told apart.
+- **Not verified:** what the QuickBooks connector can do. From tool names and one tool description (read 2026-10-05, no call made): its transaction import lists no account or attachment field and says it auto-categorizes, so it may not follow the 13-category mapping. All Unverified.
+- **Where a change goes:** the briefing first. If a decision needs the app to change (a payment account or class column, a changed category), it goes to `app/src/export/csv.ts` or `app/src/domain/purchaseRules.ts` and then the records here.
+
 ---
 
 ## Status of strategy items

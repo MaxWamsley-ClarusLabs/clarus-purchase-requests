@@ -148,3 +148,13 @@ Max answered the open questions and told Claude to build. This entry covers two 
 | Commit | What | Why |
 |---|---|---|
 | Records sync commit | `docs/POLICY.md` section 1: the sentence "The numbers below match what the app enforces" was wrong, because the 30-day deadline and the $5,000 grant equipment approval are policy only; it now says so. Question 32 and `docs/SOP.md` ("Still open") closed by P-044; `docs/STRATEGY.md` stage 15 and revision history; `docs/STATUS.md` (current stage, installed row, stage 11 now under way, 40 steps, the new items); `CLAUDE.md` and `README.md` (the checkpoint is on the shared Forms and Apps site, not a throwaway test site). Two flow gaps found by reading `app/src/export/flowPackage.ts` are recorded, not fixed: P-042 (e) and (f), question 33, `flow/FLOW.md` "Known gaps", STATUS. **Outside systems:** none read or written | A review of the records found stale wording after P-043 and P-044 and one inaccurate sentence in the policy draft. The records are the handover, so they are corrected now. The flow is left alone so the install checkpoint tests it as delivered |
+
+## 2026-10-05. Briefing for a QuickBooks processing chat
+
+| Commit | What | Why |
+|---|---|---|
+| Handoff commit | New `docs/QUICKBOOKS_HANDOFF.md`: a briefing Max pastes into one separate chat that helps him enter processed requests in QuickBooks (role, hard rules, the folder and the 31-column CSV, the 13 category accounts, what each column means, the existing process it must fit, five first questions, what the connector may and may not do, a first-session plan, how decisions come back to the app). New decision P-046 in `docs/DECISIONS.md`; a pending item in `docs/STATUS.md` | Max asked for a file to hand to a different chat for pushing purchase requests into Intuit. The app, the CSV and the flow are unchanged |
+
+- **Outside systems:** no QuickBooks, Microsoft 365 or Outlook call was made. The schema of one QuickBooks connector tool (`quickbooks_transaction_import`) was loaded to read its fields, which is a tool description, not company data. Its limits are recorded as Unverified.
+- **Also this day, no files changed:** two questions from Max about a colleague's errors (a permission message, and a request stuck on Draft) were answered from the code. The cause of the first is most likely a Visitor account (Read only) on the site; the second worked without a change.
+

@@ -3,7 +3,8 @@ import { LineRef } from '../../domain/duplicates';
 import { departmentSuggestions, vendorSuggestions } from '../../domain/defaults';
 import { dateRangeText, todayIso } from '../../domain/dates';
 import { messages } from '../../domain/messages';
-import { formatCents } from '../../domain/money';
+import { ExtraKind, planExtraCharge } from '../../domain/extraCharges';
+import { formatCents, parseAmountToCents } from '../../domain/money';
 import {
   APPROVAL_THRESHOLD_TEXT,
   BUYER_OPTIONS,
@@ -638,6 +639,32 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     }
   };
 
+  /**
+   * A vendor's shipping or tax box was filled in or emptied while buying (P-048): it keeps one ordinary row for
+   * that vendor, or removes it. Nothing is made while the amount is not an amount.
+   */
+  const setExtraCharge = async (key: string, kind: ExtraKind, text: string): Promise<void> => {
+    const typed = text.trim();
+    const cents = typed === '' ? null : parseAmountToCents(typed);
+    if (typed !== '' && cents === null) {
+      app.toast(messages.extraAmountInvalid, 'warning');
+      return;
+    }
+    const plan = planExtraCharge(lines, key, kind, cents, todayIso());
+    if (plan.refusal) {
+      app.toast(plan.refusal, 'warning');
+      return;
+    }
+    await structural(async () => {
+      for (const id of plan.remove) await service.deleteLine(id);
+      if (plan.update) await service.updateLine(plan.update.lineId, plan.update.changes);
+      if (plan.create) {
+        const line = await service.addEmptyLine(request.id);
+        await service.updateLine(line.id, plan.create);
+      }
+    });
+  };
+
   const deleteDraft = async (): Promise<void> => {
     setConfirm(null);
     try {
@@ -834,7 +861,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
                     onClick={() => structural(() => service.addEmptyLine(request.id))}
                   >
                     <Icon name="plus" size={15} />
-                    {buying ? 'Add a row, such as shipping or tax' : 'Add purchase without a file'}
+                    {buying ? 'Add another row' : 'Add purchase without a file'}
                   </button>
                   <span className="ctx-hint">
                     Enter moves down a column. Ctrl+D copies the row above. You can paste rows from a spreadsheet, its columns in the grid&apos;s order, without
@@ -844,7 +871,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
               ) : null}
             </Card>
             <Card title="Vendor totals">
-              <VendorTotals lines={lines} request={request} showIntro />
+              <VendorTotals lines={lines} request={request} showIntro extras={buying ? { busy, onSet: setExtraCharge } : undefined} />
             </Card>
             <SentRowsCard request={request} lines={lines} forApprover={buying || app.user.isAdministrator} />
           </div>

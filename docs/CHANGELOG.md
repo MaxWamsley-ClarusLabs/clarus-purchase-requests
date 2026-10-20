@@ -168,3 +168,12 @@ Max answered the open questions and told Claude to build. This entry covers two 
 - **Not done yet:** the shipping and tax boxes in Open to buy. Max chose two optional boxes instead of buttons; two design questions (per vendor or per request, and what a filled box creates) went back to him.
 - **For Max, when he installs:** upload the new `clarus-purchase-requests.sppkg` (version 1.0.1.0), open Set-up, choose **Check again** and update the lists when asked (this adds the Quantity column).
 
+## 2026-10-20. Shipping and tax boxes in Open to buy (P-048)
+
+| Commit | What | Why |
+|---|---|---|
+| Shipping and tax commit | New `domain/extraCharges.ts` (the rules: what a box change makes, changes or removes, with 9 tests); `PurchaseLine.rowKind` and the `RowKind` column (`schema.ts`, `mapping.ts`, `serviceRules.ts`, the select list, the mock service, sample data); two optional **Shipping** and **Tax** boxes per vendor in `VendorTotals.tsx` while the approver buys; `setExtraCharge` in `RequestWorkspace.tsx`; the grid's "Add a row, such as shipping or tax" button is now "Add another row"; messages for an amount that is not an amount and for a vendor with no receipt yet. Instructions, SOP B4, `CHECKPOINT.md` step 27, `DATA_MODEL.md`, `QUICKBOOKS_HANDOFF.md` and `prototype/README.md` brought in step; the browser script walks shipping, tax, emptying a box and a bad amount | Max, after using the installed app: he could not make the total match the receipts once shipping and tax were added. He chose two optional boxes instead of buttons, per vendor, with the recommended rules (792 unit tests, 124 browser checks) |
+
+- **Outside systems:** none read or written. Decision P-048.
+- **For Max, when he installs:** the same package as the Files and quantity change (1.0.1.0, rebuilt); Set-up, Check again, adds two columns now (Quantity and Row type).
+

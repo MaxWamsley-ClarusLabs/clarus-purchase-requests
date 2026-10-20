@@ -78,7 +78,7 @@ const REQUEST_SELECT =
   'ApprovedBy/Title,ApprovedBy/EMail,ProcessedBy/Title&$expand=Author,ApprovedBy,ProcessedBy';
 const LINE_FIELDS =
   'Id,AuthorId,RequestId,RowNumber,PurchaseDate,Vendor,Description,Category,CategoryOther,CategoryConfirmedBy,Quantity,Amount,PaidBy,NoQuoteReason,NoReceiptReason,' +
-  'ItemLink,NoLinkReason,SameReceiptAsRow,FileFingerprints,SuggestedFields';
+  'ItemLink,NoLinkReason,SameReceiptAsRow,FileFingerprints,SuggestedFields,RowKind';
 const LINE_SELECT = `$select=${LINE_FIELDS},AttachmentFiles&$expand=AttachmentFiles`;
 const SUBMISSION_SELECT =
   '$select=Id,AuthorId,RequestId,SubmissionType,SubmissionNumber,PackageStatus,FolderName,PreviousFolderName,SubmitterName,SubmitterEmail,CertificationText,' +

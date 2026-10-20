@@ -127,7 +127,9 @@ export const LISTS: Record<ListKey, ListDef> = {
       num('SameReceiptAsRow', 'Same receipt as row'),
       note('FileFingerprints', 'File fingerprints'),
       // Values the app filled in that the employee has not confirmed (travel D-078).
-      text('SuggestedFields', 'Suggested, not confirmed')
+      text('SuggestedFields', 'Suggested, not confirmed'),
+      // 'shipping' or 'tax' for a row a Vendor totals box keeps while the approver buys (P-048); empty for a purchase.
+      text('RowKind', 'Row type')
     ]
   },
   submissions: {

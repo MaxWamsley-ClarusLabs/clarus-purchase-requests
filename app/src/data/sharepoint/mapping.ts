@@ -4,6 +4,7 @@
 
 import { toLocalDateTime } from '../../domain/dates';
 import { requestNumber } from '../../domain/naming';
+import { normalizeRowKind } from '../../domain/extraCharges';
 import { normalizeQuantity } from '../../domain/quantity';
 import { BUYER_OPTIONS, CATEGORIES, DEFAULT_BUYER, ITEM_LINK_MAX_LENGTH, PAID_BY_OPTIONS, vendorKey } from '../../domain/purchaseRules';
 import { REQUEST_STATUSES } from '../../domain/statuses';
@@ -92,6 +93,8 @@ export interface LineItem {
   SameReceiptAsRow: number | null;
   FileFingerprints: string | null;
   SuggestedFields?: string | null;
+  /** Absent until Set-up adds the column: reads as an ordinary purchase. */
+  RowKind?: string | null;
   AttachmentFiles?: SpAttachment[];
 }
 
@@ -476,7 +479,8 @@ export function lineFromItem(item: LineItem): PurchaseLine {
     // Without the attachment list (a lighter query), the stored fingerprints
     // still describe the files, which is all the duplicate checks need.
     files: item.AttachmentFiles ? filesFromAttachments(item.AttachmentFiles, prints) : prints.map(fileFromPrint),
-    suggested: parseSuggested(item.SuggestedFields)
+    suggested: parseSuggested(item.SuggestedFields),
+    rowKind: normalizeRowKind(item.RowKind)
   };
 }
 
@@ -508,6 +512,7 @@ export function lineFields(changes: Partial<PurchaseLine>): Record<string, unkno
   if (changes.noLinkReason !== undefined) out.NoLinkReason = line255(changes.noLinkReason);
   if (changes.sameReceiptAsRow !== undefined) out.SameReceiptAsRow = changes.sameReceiptAsRow;
   if (changes.suggested !== undefined) out.SuggestedFields = parseSuggested(changes.suggested.join(',')).join(',');
+  if (changes.rowKind !== undefined) out.RowKind = normalizeRowKind(changes.rowKind);
   return out;
 }
 

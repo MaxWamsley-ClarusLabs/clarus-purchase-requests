@@ -15,6 +15,7 @@ import {
   findCategory,
   findPaidBy
 } from '../../domain/purchaseRules';
+import { normalizeRowKind } from '../../domain/extraCharges';
 import { normalizeQuantity } from '../../domain/quantity';
 import { receiptFiles } from '../../domain/receipts';
 import { PACKAGE_ATTENTION_MINUTES, STATUS_FOR_SUBMISSION, mayBuy, submissionNeedsAttention } from '../../domain/statuses';
@@ -174,7 +175,8 @@ const LINE_CHANGE_KEYS: readonly (keyof LineChanges)[] = [
   'itemLink',
   'noLinkReason',
   'sameReceiptAsRow',
-  'suggested'
+  'suggested',
+  'rowKind'
 ];
 
 /**
@@ -198,6 +200,7 @@ function normalizeLineChanges(changes: LineChanges): LineChanges {
   if (out.itemLink !== undefined) out.itemLink = typeof out.itemLink === 'string' ? out.itemLink.slice(0, ITEM_LINK_MAX_LENGTH + 1) : '';
   if (out.category !== undefined && !findCategory(out.category)) out.category = '';
   if (out.quantity !== undefined) out.quantity = normalizeQuantity(out.quantity);
+  if (out.rowKind !== undefined) out.rowKind = normalizeRowKind(out.rowKind);
   if (out.paidBy !== undefined && !findPaidBy(out.paidBy)) out.paidBy = '';
   if (out.amountCents !== undefined)
     out.amountCents = typeof out.amountCents === 'number' && Number.isFinite(out.amountCents) ? Math.round(out.amountCents) : null;

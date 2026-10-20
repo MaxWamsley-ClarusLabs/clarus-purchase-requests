@@ -655,6 +655,7 @@ export class MockDataService implements PurchaseDataService {
       sameReceiptAsRow: null,
       files: [],
       suggested: [],
+      rowKind: '',
       ...fields
     };
   }

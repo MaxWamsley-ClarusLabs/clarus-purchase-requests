@@ -264,6 +264,8 @@ select.ctx-cell { cursor: pointer; appearance: auto; }
 .ctx-receipt-chip strong { font-weight: 800; flex: none; }
 .ctx-files-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: 100%; }
 .ctx-files-cell .ctx-reading { margin-left: 0; }
+.ctx-extra-box { width: 96px; max-width: 100%; border-color: var(--c-border); background: #fff; }
+.ctx-extra-box:disabled { background: var(--c-light-lavender); cursor: not-allowed; }
 .ctx-attach-btn { display: inline-flex; align-items: center; gap: 4px; background: #fff; color: var(--c-purple); border: 1px dashed var(--c-accent); border-radius: 8px; padding: 4px 8px; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
 .ctx-attach-btn.more { padding: 4px 6px; }
 .ctx-attach-btn:hover:not(:disabled) { background: var(--c-lavender); border-style: solid; }

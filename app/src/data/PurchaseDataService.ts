@@ -24,6 +24,7 @@ export type LineChanges = Partial<
     | 'category'
     | 'categoryOther'
     | 'quantity'
+    | 'rowKind'
     | 'amountCents'
     | 'paidBy'
     | 'noQuoteReason'

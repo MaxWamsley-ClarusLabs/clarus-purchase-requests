@@ -405,7 +405,18 @@ Max said that about 95% of purchases are bought by the person who approves them,
 - **Provisional (Claude):** Qty is left out of a spreadsheet paste, so a paste still means Date to Total; Ctrl+D copies it. A typed quantity that is not a whole number from 1 keeps the last good one. A new row, or a row made before the column existed, reads as 1. The package version is raised to 1.0.1.0 so the site takes the update, and Set-up (Check again) adds the Quantity column to the lines list.
 - **Not verified:** that Set-up adds the column on the real site (the code does, and the in-memory fake of SharePoint tests it); how the new button looks in SharePoint's own page frame.
 - **Where a change goes:** `AttachButton` and the Qty cell in `PurchaseGrid.tsx`; `domain/quantity.ts`; `schema.ts`, `mapping.ts`, `serviceRules.ts`; `csv.ts`.
-- **Still open:** shipping and tax boxes in Open to buy (Max asked for two optional boxes instead of buttons, 2026-10-20; the design questions went back to him).
+- **Shipping and tax:** see P-048.
+
+
+## P-048. Shipping and tax boxes in Open to buy
+
+- **Date:** 2026-10-20
+- **Status:** Decided (Max, 2026-10-20): the approver wants to make the amounts match the receipts, as two optional boxes rather than buttons ("two empty boxes that are optional to put info in"), per vendor and with the rules below ("recommended for both").
+- **Decision:** While the approver buys (Open to buy), the **Vendor totals** card has two optional boxes for each vendor, **Shipping** and **Tax**. A box with an amount keeps one ordinary row for that vendor: **Shipping** in Shipping/Postage (6184), **Sales tax** in the category of that vendor's largest purchase that has one, with the vendor, the date of its first purchase and its receipt (the row shares it, shown as "Same as row N"), quantity 1, paid by the company. An emptied box, or 0, removes the row. The row is an ordinary row in the grid and the person buying can still change it. Each is its own line in the CSV and in QuickBooks, so the accounts stay right. The rows are labelled with a new `RowKind` column (`shipping` or `tax`, empty for a purchase), which is how a box finds its row again; the label changes no total, rule or file.
+- **Provisional (Claude):** a box is greyed out until its vendor has a receipt attached to one of its rows (Max said the receipts come first, and the row needs one to share); an amount that is not an amount makes no row and the box goes back to what is kept; an amount is read when the box is left or Enter is pressed, not while it is typed; the category of a tax row is chosen when the row is made and does not follow a later change to the purchases; the grid's "Add a row, such as shipping or tax" button is now **Add another row**, for anything else; only the approver buying sees the boxes (an employee who buys adds rows as before).
+- **Known limits:** if the receipt a shipping or tax row shares is removed later, the row's "Same receipt as row" pointer breaks and Review flags it, as for any shared receipt. An employee who edits a list item directly could label their own row `shipping` or `tax`; the boxes would then change that row for its vendor, which only the person buying can see happen. A vendor with no name yet has no boxes.
+- **Not verified:** that Set-up adds the Quantity and Row type columns on the real site (the code does, and the in-memory fake of SharePoint tests it); how the boxes look inside SharePoint's own page frame.
+- **Where a change goes:** `domain/extraCharges.ts` (the rules, with tests), `VendorTotals.tsx` (the boxes), `setExtraCharge` in `RequestWorkspace.tsx`; the column in `schema.ts` and `mapping.ts`.
 
 ---
 

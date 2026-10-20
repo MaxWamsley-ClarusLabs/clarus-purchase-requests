@@ -166,7 +166,8 @@ describe('list definitions (docs/DATA_MODEL.md)', () => {
       'NoLinkReason',
       'SameReceiptAsRow',
       'FileFingerprints',
-      'SuggestedFields'
+      'SuggestedFields',
+      'RowKind'
     ]);
     expect(LISTS.submissions.fields.map((f) => f.name)).toEqual([
       'RequestId',
@@ -460,6 +461,22 @@ describe('the quantity of a row', () => {
     expect(lineFields({ quantity: 0 })).toEqual({ Quantity: 1 });
     expect(lineFields({ quantity: 5000 })).toEqual({ Quantity: 999 });
     expect(lineFields({ vendor: 'Acme' })).not.toHaveProperty('Quantity');
+  });
+});
+
+describe('the kind of a row (P-048)', () => {
+  it('reads shipping and tax, and anything else, or nothing, as an ordinary purchase', () => {
+    expect(lineFromItem(lineItem({ RowKind: 'shipping' })).rowKind).toBe('shipping');
+    expect(lineFromItem(lineItem({ RowKind: 'tax' })).rowKind).toBe('tax');
+    for (const bad of [undefined, null, '', 'Shipping', 'fee', 'tax '])
+      expect(lineFromItem(lineItem({ RowKind: bad as string | null | undefined })).rowKind).toBe('');
+  });
+
+  it('writes only a known kind, and nothing when the row change has none', () => {
+    expect(lineFields({ rowKind: 'tax' })).toEqual({ RowKind: 'tax' });
+    expect(lineFields({ rowKind: '' })).toEqual({ RowKind: '' });
+    expect(lineFields({ rowKind: 'fee' as never })).toEqual({ RowKind: '' });
+    expect(lineFields({ vendor: 'Acme' })).not.toHaveProperty('RowKind');
   });
 });
 

@@ -116,6 +116,7 @@ function row(requestId: number, rowNumber: number, l: Partial<PurchaseLine>): Pu
     sameReceiptAsRow: null,
     files: [],
     suggested: [],
+    rowKind: '',
     ...l
   };
 }
@@ -723,6 +724,7 @@ export function finishPendingWork(store: SampleStore, now: Date = new Date()): v
   }
   for (const l of store.lines) {
     if (typeof l.quantity !== 'number') l.quantity = 1;
+    if (l.rowKind !== 'shipping' && l.rowKind !== 'tax') l.rowKind = '';
     if (typeof l.itemLink !== 'string') l.itemLink = '';
     if (typeof l.noLinkReason !== 'string') l.noLinkReason = '';
   }

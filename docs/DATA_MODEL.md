@@ -79,6 +79,7 @@ There is no separate requester field (travel D-039). The purchase dates are not 
 | SameReceiptAsRow | Same receipt as row | Number | | | Set from the row menu when one receipt covers several rows (travel D-038) |
 | FileFingerprints | File fingerprints | Multiple lines of plain text | Set by app | | JSON: for each attached file, its name, size, a SHA-256 fingerprint, and its **kind** (receipt or quote, P-021). A file with no recorded kind is treated as a quote and never counts as the receipt; if the kind cannot be recorded when a file is attached, the file is removed again |
 | SuggestedFields | Suggested, not confirmed | Single line of text | Must be empty | | Values the app filled in from a receipt or vendor memory that the employee has not confirmed, for example `date,vendor,amount` (travel D-078) |
+| RowKind | Row type | Single line of text | | | Empty for a purchase. `shipping` or `tax` for a row that a Shipping or Tax box in the Vendor totals card keeps while the approver buys (P-048). It only tells the boxes which row is theirs: it changes no total, rule or file. Read back as one of the two known kinds or empty, whatever is stored (an employee can edit the item directly) |
 
 **Defaults (P-023):** when the employee buys, a new row's Who paid is the row above's, or Company for the first row; Category is filled from the last time the employee used the same vendor, when empty. When the approver buys, Who paid is not shown and vendor memory leaves it alone (P-037).
 

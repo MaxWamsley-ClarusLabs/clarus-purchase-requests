@@ -70,6 +70,9 @@ export interface AttachedFile {
   url?: string;
 }
 
+/** What kind of row a line is: an ordinary purchase, or the shipping or sales tax row a Vendor totals box keeps while the approver buys (P-048). */
+export type RowKind = '' | 'shipping' | 'tax';
+
 export interface PurchaseLine {
   id: string;
   requestId: number;
@@ -83,6 +86,8 @@ export interface PurchaseLine {
   categoryOther: string;
   /** The approver or administrator who confirmed or changed the category; '' while it is only the employee's suggestion. */
   categoryConfirmedBy: string;
+  /** '' for an ordinary purchase. Only labels the row for the shipping and tax boxes; it changes no total or rule. */
+  rowKind: RowKind;
   /** How many of the item this row is for, from 1 to QUANTITY_MAX. The amount below is still the total for the whole row. */
   quantity: number;
   /** Whole cents, the total for the whole row; null when not yet entered or not a valid amount. */

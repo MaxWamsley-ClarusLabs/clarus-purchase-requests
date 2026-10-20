@@ -1807,6 +1807,20 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect((await jane.getRequest(id)).request.totalRequestCents).toBeGreaterThan(0);
     });
 
+    it("keeps a row's kind (shipping or tax) for the boxes, and reads anything else as an ordinary purchase (rowKind)", async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id, lines } = await fill(jane, [NORTHWIND]);
+      expect(lines[0].rowKind).toBe('');
+      await jane.updateLine(lines[0].id, { rowKind: 'shipping' });
+      expect((await jane.getRequest(id)).lines[0].rowKind).toBe('shipping');
+      await jane.updateLine(lines[0].id, { vendor: 'Northwind Office Supply' });
+      expect((await jane.getRequest(id)).lines[0].rowKind).toBe('shipping');
+      await jane.updateLine(lines[0].id, { rowKind: 'surprise' as never });
+      expect((await jane.getRequest(id)).lines[0].rowKind).toBe('');
+      expect((await jane.addEmptyLine(id)).rowKind).toBe('');
+    });
+
     it('never keeps "who paid" as an unconfirmed suggestion when the approver buys, but keeps the others', async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);

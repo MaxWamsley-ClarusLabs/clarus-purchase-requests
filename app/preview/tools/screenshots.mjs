@@ -425,18 +425,57 @@ try {
   await p.getByLabel('Row 2 menu', exact).click();
   await p.locator('.ctx-menu input[type=file]').first().setInputFiles(fixture('northwind-office-receipt.png'));
   await p.getByRole('button', { name: /northwind-office-receipt/ }).waitFor();
-  // The shipping is a row the employee did not ask for; it shares the first invoice.
-  await p.getByRole('button', { name: 'Add a row, such as shipping or tax' }).click();
-  await p.getByLabel('Row 3 vendor', exact).fill('Acme Lab Supply');
-  await p.getByLabel('Row 3 what was bought and why', exact).fill('Shipping');
-  await p.getByLabel('Row 3 category', exact).selectOption('shipping');
-  await p.getByLabel('Row 3 total', exact).fill('15.20');
-  await p.getByLabel('Row 3 menu', exact).click();
-  await p.getByLabel('Row 3 same receipt as row').selectOption('1');
+  // Shipping and tax are typed in the boxes beside each vendor in Vendor totals, once its receipt is attached.
+  // Each makes an ordinary row that shares the vendor's receipt.
+  const shippingBox = p.getByLabel('Shipping for Acme Lab Supply', exact);
+  check(await shippingBox.isEnabled(), "After the vendor's receipt is attached, its shipping box can be used");
+  await shippingBox.fill('15.20');
+  await shippingBox.press('Enter');
+  await p.getByLabel('Row 3 total', exact).waitFor();
+  const shippingRow = {
+    vendor: await p.getByLabel('Row 3 vendor', exact).inputValue(),
+    what: await p.getByLabel('Row 3 what was bought and why', exact).inputValue(),
+    category: await p.getByLabel('Row 3 category', exact).inputValue(),
+    total: await p.getByLabel('Row 3 total', exact).inputValue(),
+    quantity: await p.getByLabel('Row 3 quantity', exact).inputValue()
+  };
+  check(
+    shippingRow.vendor === 'Acme Lab Supply' &&
+      shippingRow.what === 'Shipping' &&
+      shippingRow.category === 'shipping' &&
+      shippingRow.total === '15.20' &&
+      shippingRow.quantity === '1',
+    'A filled shipping box makes a Shipping row for that vendor in the shipping category',
+    JSON.stringify(shippingRow)
+  );
+  check((await p.getByText('Same as row 1', exact).count()) === 1, "The shipping row shares the vendor's receipt");
+  check((await shippingBox.inputValue()) === '15.20', 'The shipping box shows what is kept');
+  const northwindCategory = await p.getByLabel('Row 2 category', exact).inputValue();
+  const taxBox = p.getByLabel('Tax for Northwind Office Supply', exact);
+  await taxBox.fill('2.10');
+  await taxBox.press('Enter');
+  await p.getByLabel('Row 4 total', exact).waitFor();
+  check(
+    (await p.getByLabel('Row 4 what was bought and why', exact).inputValue()) === 'Sales tax' &&
+      (await p.getByLabel('Row 4 category', exact).inputValue()) === northwindCategory &&
+      (await p.getByLabel('Row 4 total', exact).inputValue()) === '2.10',
+    "A filled tax box makes a Sales tax row in the category of that vendor's purchase"
+  );
+  await taxBox.fill('');
+  await taxBox.press('Enter');
+  await p.getByLabel('Row 4 total', exact).waitFor({ state: 'detached' });
+  check((await taxBox.inputValue()) === '', 'An emptied tax box removes its row');
   await p.waitForTimeout(900);
   check((await p.getByRole('heading', { name: 'As sent for approval' }).count()) === 1, 'The rows as the employee sent them are kept on the page');
   check(await p.getByText('The rows above were changed when the request was bought.').isVisible(), 'The page says the rows were changed when bought');
   await shot(p, '35-buying-purchases');
+  await taxBox.fill('abc');
+  await taxBox.press('Enter');
+  await p.getByText('Enter an amount like 15.20, or leave the box empty.').first().waitFor();
+  check(
+    (await p.getByLabel('Row 4 total', exact).count()) === 0 && (await taxBox.inputValue()) === '',
+    'A tax amount that is not an amount makes no row, and the box goes back to what is kept'
+  );
   await p.getByRole('button', { name: 'Next: Review' }).click();
   await p.getByText('Everything is complete. You can mark it purchased.').waitFor();
   await p.getByRole('button', { name: 'Mark purchased', exact: true }).click();

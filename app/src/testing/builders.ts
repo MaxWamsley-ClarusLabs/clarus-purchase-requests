@@ -33,6 +33,7 @@ export function line(overrides: Partial<PurchaseLine> = {}): PurchaseLine {
     sameReceiptAsRow: null,
     files: [file()],
     suggested: [],
+    rowKind: '',
     ...overrides
   };
 }

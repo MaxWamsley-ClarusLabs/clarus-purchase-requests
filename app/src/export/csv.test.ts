@@ -63,6 +63,7 @@ describe('buildPurchasesCsv', () => {
       files: [quote({ fileName: 'quote.pdf' }), file({ fileName: 'invoice.pdf' })],
       category: 'rdMaterials',
       categoryConfirmedBy: 'Max Wamsley',
+      quantity: 10,
       amountCents: 61244,
       paidBy: 'company'
     }),
@@ -128,16 +129,18 @@ describe('buildPurchasesCsv', () => {
 
   it('has one header row and one row per purchase, with the agreed columns', () => {
     expect(rows[0]).toEqual([...CSV_COLUMNS]);
-    expect(CSV_COLUMNS).toHaveLength(31);
+    expect(CSV_COLUMNS).toHaveLength(32);
     expect(rows).toHaveLength(5);
     expect(rows.every((r) => r.length === CSV_COLUMNS.length)).toBe(true);
   });
 
-  it('names the QuickBooks account column exactly (P-038), in the ninth column', () => {
+  it('names the QuickBooks account column exactly (P-038), in the ninth column, with the quantity and then the row total after it', () => {
     expect(ACCOUNT_COLUMN).toBe('QuickBooks account');
     expect(rows[0][8]).toBe('QuickBooks account');
-    expect(csv.slice(1).split('\r\n')[0]).toContain(',QuickBooks account,Amount,');
-    expect(rows[0].slice(0, 10)).toEqual([
+    expect(csv.slice(1).split('\r\n')[0]).toContain(',QuickBooks account,Quantity,Amount,');
+    expect(rows[0][9]).toBe('Quantity');
+    expect(rows[0][10]).toBe('Amount');
+    expect(rows[0].slice(0, 11)).toEqual([
       'Request',
       'Row',
       'Date',
@@ -147,6 +150,7 @@ describe('buildPurchasesCsv', () => {
       'Category',
       'Category confirmed by',
       ACCOUNT_COLUMN,
+      'Quantity',
       'Amount'
     ]);
   });
@@ -162,6 +166,8 @@ describe('buildPurchasesCsv', () => {
     expect(at('Approval status')).toBe('Approved');
     expect(at('Approved by')).toBe('Max Wamsley');
     expect(at('Approved on')).toBe('2026-10-14 10:05');
+    // The amount is the total for the whole row; the quantity says how many that total covers.
+    expect(at('Quantity')).toBe('10');
     expect(at('Amount')).toBe('612.44');
     expect(at('Who bought')).toBe('Employee');
     expect(at('Who paid')).toBe('Company');

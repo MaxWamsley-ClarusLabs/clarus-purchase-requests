@@ -15,6 +15,7 @@ import {
   findCategory,
   findPaidBy
 } from '../../domain/purchaseRules';
+import { normalizeQuantity } from '../../domain/quantity';
 import { receiptFiles } from '../../domain/receipts';
 import { PACKAGE_ATTENTION_MINUTES, STATUS_FOR_SUBMISSION, mayBuy, submissionNeedsAttention } from '../../domain/statuses';
 import {
@@ -165,6 +166,7 @@ const LINE_CHANGE_KEYS: readonly (keyof LineChanges)[] = [
   'description',
   'category',
   'categoryOther',
+  'quantity',
   'amountCents',
   'paidBy',
   'noQuoteReason',
@@ -195,6 +197,7 @@ function normalizeLineChanges(changes: LineChanges): LineChanges {
   // A web address is kept whole, never cut to a shorter one that opens another page: one past the longest allowed is kept so the check can refuse it.
   if (out.itemLink !== undefined) out.itemLink = typeof out.itemLink === 'string' ? out.itemLink.slice(0, ITEM_LINK_MAX_LENGTH + 1) : '';
   if (out.category !== undefined && !findCategory(out.category)) out.category = '';
+  if (out.quantity !== undefined) out.quantity = normalizeQuantity(out.quantity);
   if (out.paidBy !== undefined && !findPaidBy(out.paidBy)) out.paidBy = '';
   if (out.amountCents !== undefined)
     out.amountCents = typeof out.amountCents === 'number' && Number.isFinite(out.amountCents) ? Math.round(out.amountCents) : null;

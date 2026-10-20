@@ -735,4 +735,15 @@ describe('the rows as sent (P-040)', () => {
     expect(sameAsSent([rows[0]], sent)).toBe(false);
     expect(sameAsSent([{ ...rows[0], itemLink: 'https://example.com/y' }, rows[1]], sent)).toBe(false);
   });
+
+  it("keeps each row's quantity, and treats a record kept before quantities existed as quantity 1", () => {
+    const sent = sentRowsOf([{ ...rows[0], quantity: 2 }, rows[1]]);
+    // In row order: row 1 is the second of the two rows given.
+    expect(sent.map((r) => r.quantity)).toEqual([1, 2]);
+    expect(sameAsSent([{ ...rows[0], quantity: 2 }, rows[1]], sent)).toBe(true);
+    expect(sameAsSent(rows, sent)).toBe(false);
+    const old = sentRowsOf(rows).map(({ quantity: _quantity, ...rest }) => rest);
+    expect(sameAsSent(rows, old)).toBe(true);
+    expect(sameAsSent([{ ...rows[0], quantity: 3 }, rows[1]], old)).toBe(false);
+  });
 });

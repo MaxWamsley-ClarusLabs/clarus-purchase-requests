@@ -116,6 +116,7 @@ export const LISTS: Record<ListKey, ListDef> = {
       { name: 'Category', displayName: 'Category', type: 'Choice', choices: CATEGORIES.map((c) => c.label) },
       text('CategoryOther', 'Other category'),
       text('CategoryConfirmedBy', 'Category confirmed by'),
+      num('Quantity', 'Quantity'),
       money('Amount', 'Amount'),
       { name: 'PaidBy', displayName: 'Who paid', type: 'Choice', choices: PAID_BY_OPTIONS.map((p) => p.label) },
       text('NoQuoteReason', 'No-quote reason'),

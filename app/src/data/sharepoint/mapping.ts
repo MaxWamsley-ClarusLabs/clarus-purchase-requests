@@ -4,6 +4,7 @@
 
 import { toLocalDateTime } from '../../domain/dates';
 import { requestNumber } from '../../domain/naming';
+import { normalizeQuantity } from '../../domain/quantity';
 import { BUYER_OPTIONS, CATEGORIES, DEFAULT_BUYER, ITEM_LINK_MAX_LENGTH, PAID_BY_OPTIONS, vendorKey } from '../../domain/purchaseRules';
 import { REQUEST_STATUSES } from '../../domain/statuses';
 import { SUGGESTED_FIELDS } from '../../domain/suggestions';
@@ -80,6 +81,8 @@ export interface LineItem {
   Category: string | null;
   CategoryOther: string | null;
   CategoryConfirmedBy: string | null;
+  /** Absent until Set-up adds the column, and empty on rows made before it: both read as 1. */
+  Quantity?: number | null;
   Amount: number | null;
   PaidBy: string | null;
   NoQuoteReason: string | null;
@@ -283,6 +286,7 @@ function parseSentRows(value: unknown): SentRow[] {
       vendor: text(r.vendor),
       description: text(r.description),
       category: text(r.category),
+      ...(typeof r.quantity === 'number' ? { quantity: normalizeQuantity(r.quantity) } : {}),
       amountCents: typeof r.amountCents === 'number' && Number.isFinite(r.amountCents) ? Math.round(r.amountCents) : null,
       itemLink: text(r.itemLink),
       noLinkReason: text(r.noLinkReason)
@@ -461,6 +465,7 @@ export function lineFromItem(item: LineItem): PurchaseLine {
     category: idForLabel(CATEGORIES, item.Category),
     categoryOther: str(item.CategoryOther),
     categoryConfirmedBy: str(item.CategoryConfirmedBy),
+    quantity: normalizeQuantity(item.Quantity),
     amountCents: typeof item.Amount === 'number' && Number.isFinite(item.Amount) ? Math.round(item.Amount * 100) : null,
     paidBy: idForLabel(PAID_BY_OPTIONS, item.PaidBy),
     noQuoteReason: str(item.NoQuoteReason),
@@ -494,6 +499,7 @@ export function lineFields(changes: Partial<PurchaseLine>): Record<string, unkno
   if (changes.category !== undefined) out.Category = labelForId(CATEGORIES, changes.category);
   if (changes.categoryOther !== undefined) out.CategoryOther = line255(changes.categoryOther);
   if (changes.categoryConfirmedBy !== undefined) out.CategoryConfirmedBy = line255(changes.categoryConfirmedBy);
+  if (changes.quantity !== undefined) out.Quantity = normalizeQuantity(changes.quantity);
   if (changes.amountCents !== undefined) out.Amount = changes.amountCents === null ? null : centsToDollars(changes.amountCents);
   if (changes.paidBy !== undefined) out.PaidBy = labelForId(PAID_BY_OPTIONS, changes.paidBy);
   if (changes.noQuoteReason !== undefined) out.NoQuoteReason = line255(changes.noQuoteReason);

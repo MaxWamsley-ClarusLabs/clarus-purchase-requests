@@ -669,6 +669,7 @@ export function sentRowsOf(lines: readonly PurchaseLine[]): SentRow[] {
       vendor: l.vendor,
       description: l.description,
       category: categoryText(l.category, l.categoryOther),
+      quantity: l.quantity,
       amountCents: l.amountCents,
       itemLink: l.itemLink,
       noLinkReason: l.noLinkReason
@@ -688,6 +689,7 @@ export function sameAsSent(lines: readonly PurchaseLine[], sent: readonly SentRo
         row.vendor === was.vendor &&
         row.description === was.description &&
         row.category === was.category &&
+        (row.quantity ?? 1) === (was.quantity ?? 1) &&
         row.amountCents === was.amountCents &&
         row.itemLink === was.itemLink &&
         row.noLinkReason === was.noLinkReason

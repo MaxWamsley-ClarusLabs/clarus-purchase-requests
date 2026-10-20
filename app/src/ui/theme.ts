@@ -6,7 +6,7 @@
  * The purchases grid's narrowest width. On a narrower screen the grid scrolls
  * sideways inside its card, and its last column, the row menu, stays in view.
  */
-export const GRID_MIN_WIDTH_PX = 1090;
+export const GRID_MIN_WIDTH_PX = 1146;
 /** The item link column (P-039). When the approver buys, it takes the place of the "Who paid" column, which is 102 pixels wide. */
 export const GRID_LINK_COLUMN_PX = 150;
 const GRID_PAID_BY_COLUMN_PX = 102;
@@ -264,6 +264,11 @@ select.ctx-cell { cursor: pointer; appearance: auto; }
 .ctx-receipt-chip strong { font-weight: 800; flex: none; }
 .ctx-files-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: 100%; }
 .ctx-files-cell .ctx-reading { margin-left: 0; }
+.ctx-attach-btn { display: inline-flex; align-items: center; gap: 4px; background: #fff; color: var(--c-purple); border: 1px dashed var(--c-accent); border-radius: 8px; padding: 4px 8px; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+.ctx-attach-btn.more { padding: 4px 6px; }
+.ctx-attach-btn:hover:not(:disabled) { background: var(--c-lavender); border-style: solid; }
+.ctx-attach-btn:focus-visible { outline: 2px solid var(--c-purple); outline-offset: 1px; }
+.ctx-attach-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .ctx-approval-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .ctx-link-cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .ctx-link-row { display: flex; align-items: center; gap: 4px; min-width: 0; }

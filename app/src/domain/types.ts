@@ -83,7 +83,9 @@ export interface PurchaseLine {
   categoryOther: string;
   /** The approver or administrator who confirmed or changed the category; '' while it is only the employee's suggestion. */
   categoryConfirmedBy: string;
-  /** Whole cents; null when not yet entered or not a valid amount. */
+  /** How many of the item this row is for, from 1 to QUANTITY_MAX. The amount below is still the total for the whole row. */
+  quantity: number;
+  /** Whole cents, the total for the whole row; null when not yet entered or not a valid amount. */
   amountCents: number | null;
   paidBy: PaidById | '';
   noQuoteReason: string;
@@ -149,6 +151,8 @@ export interface SentRow {
   description: string;
   /** The category as written in the CSV and emails, "Other: ..." included. */
   category: string;
+  /** Absent in a record kept before quantities existed, which reads as 1. */
+  quantity?: number;
   amountCents: number | null;
   itemLink: string;
   noLinkReason: string;

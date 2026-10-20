@@ -2,6 +2,7 @@ import * as React from 'react';
 import { NO_QUOTE_REASONS, NO_RECEIPT_REASONS } from '../../domain/defaults';
 import { FIRST_YEAR, LAST_YEAR, isValidIsoDate } from '../../domain/dates';
 import { centsToPlain, parseAmountToCents } from '../../domain/money';
+import { QUANTITY_MAX, parseQuantityText } from '../../domain/quantity';
 import {
   CATEGORIES,
   ITEM_LINK_MAX_LENGTH,
@@ -111,13 +112,15 @@ function inView(button: HTMLElement): boolean {
 
 // Columns that take typed or chosen values, in grid order. Used for Enter,
 // Ctrl+D and pasting from a spreadsheet (pasteParse.ts).
-type EditableColumn = PasteColumn;
+type EditableColumn = PasteColumn | 'quantity';
 
 /** The change that copies a cell from the row above (Ctrl+D), or null when there is nothing to copy. */
 function copyFromAbove(column: EditableColumn, above: PurchaseLine): LineChanges | null {
   switch (column) {
     case 'date':
       return above.date ? { date: above.date } : null;
+    case 'quantity':
+      return { quantity: above.quantity };
     case 'amount':
       return above.amountCents === null ? null : { amountCents: above.amountCents };
     case 'category':
@@ -161,13 +164,55 @@ function without(record: Record<string, string>, key: string): Record<string, st
   return next;
 }
 
+/**
+ * The button in a row's Files cell that opens the file box straight away, so attaching does not
+ * depend on finding the row menu. A row with none of this kind shows "+ Receipt" or "+ Quote"; a row
+ * that has one shows a small "+" for another. The row menu still offers the same choices.
+ */
+function AttachButton(props: { kind: FileKind; hasOne: boolean; rowNumber: number; busy: boolean; onFile: (file: File) => void }): React.ReactElement {
+  const input = React.useRef<HTMLInputElement>(null);
+  const noun = props.kind === 'quote' ? 'quote' : 'receipt';
+  return (
+    <>
+      <button
+        type="button"
+        className={`ctx-attach-btn ${props.hasOne ? 'more' : ''}`}
+        disabled={props.busy}
+        title={props.busy ? BUSY_TITLE : `Attach ${props.hasOne ? 'another' : 'a'} ${noun} to row ${props.rowNumber}`}
+        aria-label={`Row ${props.rowNumber}: attach ${props.hasOne ? 'another' : 'a'} ${noun}`}
+        onClick={() => input.current?.click()}
+      >
+        <Icon name="plus" size={13} />
+        {props.hasOne ? null : <span>{props.kind === 'quote' ? 'Quote' : 'Receipt'}</span>}
+      </button>
+      <input
+        ref={input}
+        type="file"
+        accept={ACCEPT_ATTRIBUTE}
+        hidden
+        disabled={props.busy}
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) props.onFile(file);
+          // The same file can be chosen again later.
+          e.target.value = '';
+        }}
+      />
+    </>
+  );
+}
+
 export function PurchaseGrid(props: Props): React.ReactElement {
   const { lines, issues, readOnly } = props;
   const busy = !!props.busy;
   const approverBuys = props.buyer === 'approver';
   // The employee of a request the approver buys sends quotes, not receipts: the approver attaches those when buying (P-037).
   const employeeSends = approverBuys && !props.buying;
-  const columnCount = approverBuys ? 10 : 11;
+  // What the Files button attaches: quotes while the employee sends a request the approver buys, receipts otherwise.
+  const primaryKind: FileKind = employeeSends ? 'quote' : 'receipt';
+  const columnCount = approverBuys ? 11 : 12;
   const tableRef = React.useRef<HTMLTableElement>(null);
   const wrapRef = React.useRef<HTMLDivElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -202,6 +247,8 @@ export function PurchaseGrid(props: Props): React.ReactElement {
   };
   // Amount text as typed, so a half-typed or invalid amount is not lost.
   const [amountText, setAmountText] = React.useState<Record<string, string>>({});
+  // Quantity text as typed: while it is not a whole number from 1, the last good quantity stays stored.
+  const [qtyText, setQtyText] = React.useState<Record<string, string>>({});
   // A date as typed in the date box. A date the app does not accept (such as year 0026, which a
   // date box allows) is not stored: while it is typed the last good date stays, and once the
   // box is left the date is emptied and the cell says why.
@@ -257,6 +304,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
       const change = copyFromAbove(column, above);
       if (!change) return;
       if (column === 'amount') setAmountText((t) => without(t, lineId));
+      if (column === 'quantity') setQtyText((t) => without(t, lineId));
       if (column === 'date') setDateText((t) => without(t, lineId));
       props.onChange(lineId, change);
     }
@@ -266,6 +314,8 @@ export function PurchaseGrid(props: Props): React.ReactElement {
   // plain cell pasted into a box where text is typed is left to the browser, which puts it at
   // the cursor; a date box or a drop-down cannot take pasted text itself, so the app reads it.
   const onPaste = (e: React.ClipboardEvent, rowIndex: number, column: EditableColumn) => {
+    // The quantity is not one of the columns a spreadsheet paste fills; the browser pastes into the box as usual.
+    if (column === 'quantity') return;
     const text = e.clipboardData.getData('text/plain');
     const table = parseClipboardTable(text);
     if (table.length === 0) return;
@@ -351,7 +401,8 @@ export function PurchaseGrid(props: Props): React.ReactElement {
             <th style={{ width: 166 }}>Vendor</th>
             <th>What was bought and why</th>
             <th style={{ width: 148 }}>Category</th>
-            <th style={{ width: 86, textAlign: 'right' }}>Amount</th>
+            <th style={{ width: 56, textAlign: 'right' }}>Qty</th>
+            <th style={{ width: 86, textAlign: 'right' }}>Total</th>
             {approverBuys ? null : <th style={{ width: 102 }}>Who paid</th>}
             <th style={{ width: GRID_LINK_COLUMN_PX }}>Item link</th>
             <th style={{ width: 108 }}>Approval</th>
@@ -415,6 +466,15 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                           Reading
                         </span>
                       ) : null}
+                      {readOnly || shared ? null : (
+                        <AttachButton
+                          kind={primaryKind}
+                          hasOne={primaryKind === 'quote' ? quotes.length > 0 : receipts.length > 0}
+                          rowNumber={line.rowNumber}
+                          busy={busy}
+                          onFile={(file) => props.onAddFile(line.id, file, primaryKind)}
+                        />
+                      )}
                       {showQuoteReason ? (
                         <input
                           className={`ctx-cell noreceipt ${quoteIssue ? quoteIssue.severity : ''}`}
@@ -524,9 +584,27 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                   </td>
                   <td>
                     <input
+                      className="ctx-cell amount"
+                      title="How many of this item the total covers"
+                      aria-label={`Row ${line.rowNumber} quantity`}
+                      inputMode="numeric"
+                      maxLength={String(QUANTITY_MAX).length + 1}
+                      value={qtyText[line.id] ?? String(line.quantity)}
+                      onChange={(e) => {
+                        const text = e.target.value;
+                        setQtyText((t) => ({ ...t, [line.id]: text }));
+                        const quantity = parseQuantityText(text);
+                        if (quantity !== null) props.onChange(line.id, { quantity });
+                      }}
+                      onBlur={() => setQtyText((t) => without(t, line.id))}
+                      {...common(i, 'quantity')}
+                    />
+                  </td>
+                  <td>
+                    <input
                       className={cellClass(line, 'amount', 'amount')}
                       title={cellTitle(line, 'amount')}
-                      aria-label={`Row ${line.rowNumber} amount`}
+                      aria-label={`Row ${line.rowNumber} total`}
                       inputMode="decimal"
                       value={
                         line.suggested.includes('amount') && line.amountCents !== null

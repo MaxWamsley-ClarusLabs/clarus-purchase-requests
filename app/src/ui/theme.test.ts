@@ -4,7 +4,7 @@ describe('where the files sit on the Purchases step (travel D-033)', () => {
   const needed = GRID_MIN_WIDTH_PX + GRID_CARD_EXTRA_PX + LAYOUT_GAP_PX + SIDE_FILES_WIDTH_PX;
 
   it('puts the files beside the grid only when the grid keeps its full width', () => {
-    expect(needed).toBe(1474);
+    expect(needed).toBe(1530);
     expect(filesBesideGrid(needed, false)).toBe(true);
     expect(filesBesideGrid(needed - 1, false)).toBe(false);
     // A 1600-pixel window with the full sidebar leaves 1288 pixels: the files slide over the page.

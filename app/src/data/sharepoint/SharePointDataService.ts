@@ -77,7 +77,7 @@ const REQUEST_SELECT =
   'SentForApprovalOn,BoughtBeforeApproval,ApprovalRecord,ApprovalNote,ApprovedOn,SubmittedOn,ProcessedOn,Modified,AuthorId,ApprovedById,Author/Title,Author/EMail,' +
   'ApprovedBy/Title,ApprovedBy/EMail,ProcessedBy/Title&$expand=Author,ApprovedBy,ProcessedBy';
 const LINE_FIELDS =
-  'Id,AuthorId,RequestId,RowNumber,PurchaseDate,Vendor,Description,Category,CategoryOther,CategoryConfirmedBy,Amount,PaidBy,NoQuoteReason,NoReceiptReason,' +
+  'Id,AuthorId,RequestId,RowNumber,PurchaseDate,Vendor,Description,Category,CategoryOther,CategoryConfirmedBy,Quantity,Amount,PaidBy,NoQuoteReason,NoReceiptReason,' +
   'ItemLink,NoLinkReason,SameReceiptAsRow,FileFingerprints,SuggestedFields';
 const LINE_SELECT = `$select=${LINE_FIELDS},AttachmentFiles&$expand=AttachmentFiles`;
 const SUBMISSION_SELECT =
@@ -780,7 +780,7 @@ export class SharePointDataService implements PurchaseDataService {
       Title: `${request.requestNumber} row ${rowNumber}`,
       RequestId: request.id,
       RowNumber: rowNumber,
-      ...lineFields({ paidBy: start.paidBy, ...(start.date ? { date: start.date } : {}) })
+      ...lineFields({ quantity: 1, paidBy: start.paidBy, ...(start.date ? { date: start.date } : {}) })
     });
     if (!created) throw new Error(messages.spOther(500));
     return created.Id;

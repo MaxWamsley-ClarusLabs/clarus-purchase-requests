@@ -157,6 +157,7 @@ describe('list definitions (docs/DATA_MODEL.md)', () => {
       'Category',
       'CategoryOther',
       'CategoryConfirmedBy',
+      'Quantity',
       'Amount',
       'PaidBy',
       'NoQuoteReason',
@@ -440,6 +441,25 @@ describe('the approval record (JSON on the request)', () => {
     const json = approvalRecordJson({ sent: [group], approved: [], earlier: [group] });
     expect(JSON.parse(json)).toEqual({ sent: [group], approved: [], earlier: [group] });
     expect(JSON.parse(approvalRecordJson({ sent: [], approved: [], earlier: [], extra: 1 } as never))).toEqual(empty);
+  });
+});
+
+describe('the quantity of a row', () => {
+  it('reads a stored quantity, and 1 for a row made before the column existed or for anything that is not a quantity', () => {
+    expect(lineFromItem(lineItem({ Quantity: 3 })).quantity).toBe(3);
+    expect(lineFromItem(lineItem()).quantity).toBe(1);
+    expect(lineFromItem(lineItem({ Quantity: null })).quantity).toBe(1);
+    expect(lineFromItem(lineItem({ Quantity: 0 })).quantity).toBe(1);
+    expect(lineFromItem(lineItem({ Quantity: -2 })).quantity).toBe(1);
+    expect(lineFromItem(lineItem({ Quantity: 250000 })).quantity).toBe(999);
+    expect(lineFromItem(lineItem({ Quantity: 'many' as unknown as number })).quantity).toBe(1);
+  });
+
+  it('writes a quantity as a whole number in range, and nothing when the row change has none', () => {
+    expect(lineFields({ quantity: 2 })).toEqual({ Quantity: 2 });
+    expect(lineFields({ quantity: 0 })).toEqual({ Quantity: 1 });
+    expect(lineFields({ quantity: 5000 })).toEqual({ Quantity: 999 });
+    expect(lineFields({ vendor: 'Acme' })).not.toHaveProperty('Quantity');
   });
 });
 

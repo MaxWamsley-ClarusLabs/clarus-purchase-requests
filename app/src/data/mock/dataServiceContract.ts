@@ -1787,6 +1787,26 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect((await jane.getRequest(id)).request).toMatchObject({ status: 'Awaiting approval', approvalRounds: 1, boughtBeforeApproval: false });
     });
 
+    it('starts every row at quantity 1, keeps a whole number from 1 to 999, and never changes the row total (quantity)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id, lines } = await fill(jane, [NORTHWIND]);
+      expect(lines[0].quantity).toBe(1);
+      expect((await jane.addEmptyLine(id)).quantity).toBe(1);
+      await jane.updateLine(lines[0].id, { quantity: 3 });
+      expect((await jane.getRequest(id)).lines[0]).toMatchObject({ quantity: 3, amountCents: NORTHWIND.amountCents });
+      await jane.updateLine(lines[0].id, { quantity: 0 });
+      expect((await jane.getRequest(id)).lines[0].quantity).toBe(1);
+      await jane.updateLine(lines[0].id, { quantity: 5000 });
+      expect((await jane.getRequest(id)).lines[0].quantity).toBe(999);
+      await jane.updateLine(lines[0].id, { quantity: 2.4 });
+      expect((await jane.getRequest(id)).lines[0].quantity).toBe(2);
+      // A change that does not mention it leaves it alone.
+      await jane.updateLine(lines[0].id, { vendor: 'Acme Lab Supply' });
+      expect((await jane.getRequest(id)).lines[0].quantity).toBe(2);
+      expect((await jane.getRequest(id)).request.totalRequestCents).toBeGreaterThan(0);
+    });
+
     it('never keeps "who paid" as an unconfirmed suggestion when the approver buys, but keeps the others', async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);

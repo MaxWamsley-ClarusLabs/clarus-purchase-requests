@@ -645,6 +645,7 @@ export class MockDataService implements PurchaseDataService {
       category: '',
       categoryOther: '',
       categoryConfirmedBy: '',
+      quantity: 1,
       amountCents: null,
       paidBy: approverBuys ? 'company' : defaultPaidBy(existing),
       noQuoteReason: '',

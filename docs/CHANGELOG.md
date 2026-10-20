@@ -158,3 +158,13 @@ Max answered the open questions and told Claude to build. This entry covers two 
 - **Outside systems:** no QuickBooks, Microsoft 365 or Outlook call was made. The schema of one QuickBooks connector tool (`quickbooks_transaction_import`) was loaded to read its fields, which is a tool description, not company data. Its limits are recorded as Unverified.
 - **Also this day, no files changed:** two questions from Max about a colleague's errors (a permission message, and a request stuck on Draft) were answered from the code. The cause of the first is most likely a Visitor account (Read only) on the site; the second worked without a change.
 
+## 2026-10-20. Files button and quantity (Max's first change requests after using the app)
+
+| Commit | What | Why |
+|---|---|---|
+| Files and quantity commit | **Files cell:** `PurchaseGrid.tsx` gets `AttachButton`, a visible **+ Receipt** (or **+ Quote** while an employee sends a request the approver buys, or a small **+** once the row has a file of that kind), with styles in `theme.ts`; the row menu is unchanged. **Quantity:** new `domain/quantity.ts` (whole number 1 to 999), `PurchaseLine.quantity`, `SentRow.quantity` (optional, absent reads as 1), the `Quantity` column in `schema.ts`, `mapping.ts`, `serviceRules.ts`, `SharePointDataService.ts` (select list, new rows start at 1), the mock service and sample data, a Qty column in the grid and the review, administrator and as-sent tables, and a **Quantity** CSV column (32 columns). The grid's amount column is now headed **Total** (its boxes are labelled "total"). Instructions and SOP Part A, SOP B4, `DATA_MODEL.md`, `STRATEGY.md`, `CHECKPOINT.md`, `QUICKBOOKS_HANDOFF.md`, `prototype/README.md` and the quiz question about what a row needs are brought in step. Package version raised to 1.0.1.0. 23 screenshots regenerated | Max, after using the installed app: the Files column asked for an upload that was only reachable through the three dots, and an employee could not say they wanted 2 of an item. New tests: quantity rules, mapping, CSV, rows as sent, a shared contract test for both data services, 6 more browser checks (779 unit tests, 117 browser checks) |
+
+- **Outside systems:** none read or written. Decision P-047.
+- **Not done yet:** the shipping and tax boxes in Open to buy. Max chose two optional boxes instead of buttons; two design questions (per vendor or per request, and what a filled box creates) went back to him.
+- **For Max, when he installs:** upload the new `clarus-purchase-requests.sppkg` (version 1.0.1.0), open Set-up, choose **Check again** and update the lists when asked (this adds the Quantity column).
+

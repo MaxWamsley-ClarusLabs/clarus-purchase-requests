@@ -837,8 +837,8 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
                     {buying ? 'Add a row, such as shipping or tax' : 'Add purchase without a file'}
                   </button>
                   <span className="ctx-hint">
-                    Enter moves down a column. Ctrl+D copies the row above. You can paste rows from a spreadsheet, its columns in the grid&apos;s order (Date to{' '}
-                    {approverBuys ? 'Amount' : 'Who paid'}), dates like 2026-10-14 or 10/14/2026.
+                    Enter moves down a column. Ctrl+D copies the row above. You can paste rows from a spreadsheet, its columns in the grid&apos;s order, without
+                    Qty (Date to {approverBuys ? 'Total' : 'Who paid'}), dates like 2026-10-14 or 10/14/2026.
                   </span>
                 </div>
               ) : null}
@@ -1625,7 +1625,8 @@ function ReviewStep(props: {
                 {approverBuys ? <th>Item link</th> : <th>Who paid</th>}
                 <th>Approval</th>
                 {showReceipts ? <th>Receipt</th> : null}
-                <th className="num">Amount</th>
+                <th className="num">Qty</th>
+                <th className="num">Total</th>
               </tr>
             </thead>
             <tbody>
@@ -1658,6 +1659,7 @@ function ReviewStep(props: {
                         {hasReceipt(l, lines) ? l.sameReceiptAsRow !== null ? `Row ${l.sameReceiptAsRow}` : 'Yes' : <span className="ctx-muted">None</span>}
                       </td>
                     ) : null}
+                    <td className="num">{l.quantity}</td>
                     <td className="num">{l.amountCents === null ? '' : formatCents(l.amountCents)}</td>
                   </tr>
                 );

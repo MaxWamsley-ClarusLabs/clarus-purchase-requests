@@ -44,7 +44,7 @@ All at 1440 pixels wide (a typical laptop) unless noted.
 | `02-new-request-details.png` | A new request, step 1. "Who buys this?" starts on "The approver buys it". The department is filled in from her last request; nothing else is. Nothing shows in red until she starts |
 | `03-purchases-laptop.png` | PR-0041, step 2, a request the approver buys. The drop box takes quotes (a vendor total of $500 or more needs one), the grid has an Item link column and no Who paid column, and the Vendor totals table shows that both vendor totals go to the approver |
 | `04-purchases-quote-slide-over.png` | Clicking a file on a laptop screen slides it in from the right. Here the Acme quote |
-| `05-purchases-row-menu.png` | The row menu: attach a quote, remove a file, delete the row |
+| `05-purchases-row-menu.png` | The row menu: attach a quote, remove a file, delete the row. Each row's Files cell also has a visible + Quote (or + Receipt) button |
 | `06-purchases-wide-screen.png` | 1920 wide: the files sit beside the grid |
 | `07-purchases-receipt-suggestions.png` | A request the employee buys: three receipts dropped on it. The app read each one and filled in the date, vendor and amount, plus the category and who paid from last time, highlighted with a Confirm button under each row. The amber flag is the duplicate check |
 | `08-review-with-problems.png` | Sam's PR-0033, step 3. "Before you send" lists a problem to fix (a $900 vendor total with no quote or reason). Send to the approver is disabled |
@@ -82,7 +82,7 @@ All at 1440 pixels wide (a typical laptop) unless noted.
 | `22-admin-return-dialog.png` | Returning a request at the approval step: the note is required, and the employee is asked to correct it and send it again |
 | `23-admin-approval-email.png` | The approval email as the approvers receive it, as plain text. It says every vendor total needs approval |
 | `24-admin-submission-email.png` | The submission email for PR-0037, with the approval, the "bought before approval" flag and the employee's certification |
-| `25-admin-csv.png` | The CSV file's contents (31 columns, one row per purchase) |
+| `25-admin-csv.png` | The CSV file's contents (32 columns, one row per purchase) |
 | `26-admin-folder-contents.png` | The files that go in the request folder |
 | `37-admin-request-purchased.png` | PR-0039, which Max bought: the rows as the employee sent them, then what was bought, with the buyer named |
 | `38-admin-approvals-to-buy.png` | The Approvals page with the To buy list: the approved requests waiting to be bought, with "You" beside the ones the signed-in approver approved |
@@ -117,7 +117,7 @@ All at 1440 pixels wide (a typical laptop) unless noted.
 
 Claude reviewed every screen before sending them. Changes made:
 
-1. **The grid has fixed column widths**, so a long file name cannot widen the Files column and squeeze the vendor and description. The whole grid needs about 1090 pixels. The files panel sits beside it only when the page has room for the whole grid (about 1790 pixels wide with the full sidebar), and is a slide-over otherwise. On a screen too narrow for the grid it scrolls sideways, and the row menu column stays at the right edge so it can always be reached.
+1. **The grid has fixed column widths**, so a long file name cannot widen the Files column and squeeze the vendor and description. The whole grid needs about 1146 pixels. The files panel sits beside it only when the page has room for the whole grid (about 1846 pixels wide with the full sidebar), and is a slide-over otherwise. On a screen too narrow for the grid it scrolls sideways, and the row menu column stays at the right edge so it can always be reached.
 2. **The row menu is fixed to the window**, so the grid's own scrolling cannot cut it off. It opens upward near the bottom of the screen and follows its button when the page scrolls.
 3. **The administrator's purchases table is compact** (nine columns since the item link was added: one Files column replaces Receipt and Quote, and Who paid sits under the amount) so it fits from 1024 wide up without scrolling.
 4. **Header buttons sit on the right** when a long title pushes them to a second line, and request numbers never wrap.

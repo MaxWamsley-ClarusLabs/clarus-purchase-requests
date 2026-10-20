@@ -23,6 +23,7 @@ export type LineChanges = Partial<
     | 'description'
     | 'category'
     | 'categoryOther'
+    | 'quantity'
     | 'amountCents'
     | 'paidBy'
     | 'noQuoteReason'

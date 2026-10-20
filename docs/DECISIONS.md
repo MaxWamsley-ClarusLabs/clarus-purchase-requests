@@ -395,6 +395,18 @@ Max said that about 95% of purchases are bought by the person who approves them,
 - **Not verified:** what the QuickBooks connector can do. From tool names and one tool description (read 2026-10-05, no call made): its transaction import lists no account or attachment field and says it auto-categorizes, so it may not follow the 13-category mapping. All Unverified.
 - **Where a change goes:** the briefing first. If a decision needs the app to change (a payment account or class column, a changed category), it goes to `app/src/export/csv.ts` or `app/src/domain/purchaseRules.ts` and then the records here.
 
+
+## P-047. A visible attach button in the Files cell, and a quantity on every row
+
+- **Date:** 2026-10-20
+- **Status:** Decided (Max, 2026-10-20, after using the installed app: "do recommended" for both).
+- **Decision:** (1) Each editable row's **Files** cell has a button that opens the file box directly: **+ Receipt** while the person buying attaches receipts, **+ Quote** while an employee sends a request the approver buys (employees attach quotes only), and a small **+** for another file once the row has one. A row that uses another row's receipt shows no button. The three-dot row menu keeps every choice it had. (2) A **Quantity** column (shown as **Qty**), a whole number from 1 to 999, 1 on a new row. **The Amount stays the total for the whole row** and is shown as **Total**: quantity changes no total, threshold, approval or vendor total. Quantity is in the CSV (new column, 32 in all, before Amount), on the review, administrator and "as sent" tables, and in the rows kept as sent.
+- **Options considered:** for the files, separate Receipt and Quote columns (wider grid); for the quantity, Qty times price each equals the total (cleaner, but it changes pasting, the receipt reader and validation). Max took the recommendations.
+- **Provisional (Claude):** Qty is left out of a spreadsheet paste, so a paste still means Date to Total; Ctrl+D copies it. A typed quantity that is not a whole number from 1 keeps the last good one. A new row, or a row made before the column existed, reads as 1. The package version is raised to 1.0.1.0 so the site takes the update, and Set-up (Check again) adds the Quantity column to the lines list.
+- **Not verified:** that Set-up adds the column on the real site (the code does, and the in-memory fake of SharePoint tests it); how the new button looks in SharePoint's own page frame.
+- **Where a change goes:** `AttachButton` and the Qty cell in `PurchaseGrid.tsx`; `domain/quantity.ts`; `schema.ts`, `mapping.ts`, `serviceRules.ts`; `csv.ts`.
+- **Still open:** shipping and tax boxes in Open to buy (Max asked for two optional boxes instead of buttons, 2026-10-20; the design questions went back to him).
+
 ---
 
 ## Status of strategy items

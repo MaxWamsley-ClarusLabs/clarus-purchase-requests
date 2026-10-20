@@ -54,9 +54,9 @@ Employees enter purchase requests in a SharePoint app. Most purchases (about 95%
 | `R01_<original name>` | A copy of each receipt. The number is the row. A second file on the same row is `R01-2_...`. A receipt shared by several rows appears once, under the first row's number. |
 | `Q01_<original name>` | A copy of each quote, numbered the same way. |
 
-**The CSV has 31 columns, in this order:** Request, Row, Date, Vendor, What was bought and why, Item link, Category, Category confirmed by, QuickBooks account, Amount, Who bought, Who paid, Reimbursable, Project or grant code, Approval status, Bought before approval, Approved by, Approved on, Quote files, Receipt files, No-quote reason, No-receipt reason, No-link reason, Warnings, Submission, Submitted by, Submitted on, Department, Purchase dates, Business purpose, Certified by.
+**The CSV has 32 columns, in this order:** Request, Row, Date, Vendor, What was bought and why, Item link, Category, Category confirmed by, QuickBooks account, Quantity, Amount, Who bought, Who paid, Reimbursable, Project or grant code, Approval status, Bought before approval, Approved by, Approved on, Quote files, Receipt files, No-quote reason, No-receipt reason, No-link reason, Warnings, Submission, Submitted by, Submitted on, Department, Purchase dates, Business purpose, Certified by.
 
-Formats: dates are `YYYY-MM-DD`; amounts are plain decimals with two places and no currency sign; a text cell that starts with `=`, `+`, `-` or `@` has a leading apostrophe added so a spreadsheet never runs it (remove that apostrophe when you read the value). The request-level columns (Project or grant code, Approval status, Department, Business purpose and so on) repeat on every row.
+Formats: dates are `YYYY-MM-DD`; **Amount is the total for the whole row** (the app shows it as Total) and Quantity says how many items that total covers, so enter the Amount, not Amount times Quantity; amounts are plain decimals with two places and no currency sign; a text cell that starts with `=`, `+`, `-` or `@` has a leading apostrophe added so a spreadsheet never runs it (remove that apostrophe when you read the value). The request-level columns (Project or grant code, Approval status, Department, Business purpose and so on) repeat on every row.
 
 ---
 

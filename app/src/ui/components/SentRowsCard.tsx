@@ -30,7 +30,8 @@ export function SentRowsCard(props: { request: PurchaseRequest; lines: PurchaseL
               <th>What to buy and why</th>
               <th>Category</th>
               <th>Item link</th>
-              <th className="num">Amount</th>
+              <th className="num">Qty</th>
+              <th className="num">Total</th>
             </tr>
           </thead>
           <tbody>
@@ -47,6 +48,7 @@ export function SentRowsCard(props: { request: PurchaseRequest; lines: PurchaseL
                     <span className="ctx-muted">No web page: {r.noLinkReason}</span>
                   ) : null}
                 </td>
+                <td className="num">{r.quantity ?? 1}</td>
                 <td className="num">{r.amountCents === null ? '' : formatCents(r.amountCents)}</td>
               </tr>
             ))}

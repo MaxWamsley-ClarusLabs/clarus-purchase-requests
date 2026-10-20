@@ -23,6 +23,7 @@ export function line(overrides: Partial<PurchaseLine> = {}): PurchaseLine {
     category: 'rdMaterials',
     categoryOther: '',
     categoryConfirmedBy: '',
+    quantity: 1,
     amountCents: 12500,
     paidBy: 'company',
     noQuoteReason: '',

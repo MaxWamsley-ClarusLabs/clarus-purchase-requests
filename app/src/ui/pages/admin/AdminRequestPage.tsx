@@ -463,7 +463,8 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                     <th>Category</th>
                     <th>Approval</th>
                     <th>Files</th>
-                    <th className="num">Amount</th>
+                    <th className="num">Qty</th>
+                    <th className="num">Total</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -575,6 +576,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                             ) : null}
                           </div>
                         </td>
+                        <td className="num">{l.quantity}</td>
                         <td className="num">
                           {l.amountCents === null ? '' : formatCents(l.amountCents)}
                           <div className="ctx-hint">{approverBuys ? '' : (findPaidBy(l.paidBy)?.shortLabel ?? '')}</div>

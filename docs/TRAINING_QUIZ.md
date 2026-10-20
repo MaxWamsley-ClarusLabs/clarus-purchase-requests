@@ -96,12 +96,12 @@ SOP section: Starting a request; When the approver buys it
 
 ### Q3
 Question: The approver will buy the item. What do you enter on each row?
-A. The vendor, what it is and why, an estimated amount, the category, and the item's web address or why there is none.
+A. The vendor, what it is and why, the category, the quantity and estimated total, and the item's web address or why there is none.
 B. The vendor, what it is and why, the receipt, who paid, and the date it was bought.
 C. The vendor, the exact date it was bought, the final amount, and the approver's name.
 D. The vendor, what it is and why, the category, and a quote attached to every row.
 Correct: A
-Feedback: Not quite. You give the vendor, what and why, an estimated amount, the category and the item link. You attach no receipt, and nobody asks who paid. See SOP: When the approver buys it.
+Feedback: Not quite. You give the vendor, what and why, the category, the quantity and estimated total, and the item link. You attach no receipt, and nobody asks who paid. See SOP: When the approver buys it.
 SOP section: When the approver buys it
 
 ### Q4

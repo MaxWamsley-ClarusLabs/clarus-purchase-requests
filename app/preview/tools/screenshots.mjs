@@ -157,7 +157,7 @@ try {
   const rememberedCategory = await p.getByLabel('Row 1 category', exact).inputValue();
   check(rememberedCategory === 'rdMaterials', 'The category comes from the vendor used before', rememberedCategory);
   await p.getByLabel('Row 1 what was bought and why', exact).fill('Pipette tips and centrifuge tubes');
-  await p.getByLabel('Row 1 amount', exact).fill('640');
+  await p.getByLabel('Row 1 total', exact).fill('640');
   await p.waitForTimeout(300);
   check(
     await p.getByText('Attach a quote, or say why there is none.').first().isVisible(),
@@ -222,6 +222,25 @@ try {
   await p.waitForTimeout(500);
   await shot(p, '04-purchases-quote-slide-over', false);
   await p.keyboard.press('Escape');
+  check(
+    (await p.getByRole('button', { name: 'Row 1: attach another quote', exact: true }).isVisible()) &&
+      (await p.getByRole('button', { name: /Row 1: attach (a|another) receipt/ }).count()) === 0,
+    'The Files column of a row shows a quote button, and no receipt button, when the approver buys'
+  );
+  check((await p.getByLabel('Row 1 quantity', exact).inputValue()) === '10', 'The quantity of a row shows beside its total (10 racks of tips)');
+  await p.getByLabel('Row 1 quantity', exact).fill('0');
+  await p.getByLabel('Row 1 quantity', exact).blur();
+  check(
+    (await p.getByLabel('Row 1 quantity', exact).inputValue()) === '10',
+    'A quantity that is not a whole number from 1 is not kept: the last good one stays'
+  );
+  await p.getByLabel('Row 1 quantity', exact).fill('12');
+  await p.getByLabel('Row 1 quantity', exact).blur();
+  await p.waitForTimeout(400);
+  check((await p.getByLabel('Row 1 quantity', exact).inputValue()) === '12', 'A new quantity is kept');
+  await p.getByLabel('Row 1 quantity', exact).fill('10');
+  await p.getByLabel('Row 1 quantity', exact).blur();
+  await p.waitForTimeout(400);
   await p.getByLabel('Row 1 menu', exact).click();
   check(await p.getByRole('menuitem', { name: 'Attach a quote' }).isVisible(), 'The row menu offers "Attach a quote"');
   check(
@@ -254,7 +273,7 @@ try {
   await p.getByText('Suggestions filled in on 3 rows').waitFor({ timeout: 90000 });
   const rowValues = async (n) => ({
     vendor: await p.getByLabel(`Row ${n} vendor`, exact).inputValue(),
-    amount: await p.getByLabel(`Row ${n} amount`, exact).inputValue(),
+    amount: await p.getByLabel(`Row ${n} total`, exact).inputValue(),
     date: await p.getByLabel(`Row ${n} date`, exact).inputValue()
   });
   const [northwind, quickship, summit] = [await rowValues(1), await rowValues(2), await rowValues(3)];
@@ -390,10 +409,19 @@ try {
   await p.getByRole('button', { name: 'Open to buy' }).click();
   await p.getByText('You buy it.').first().waitFor();
   check(await p.getByLabel('Row 1 vendor', exact).isEnabled(), 'Max can change the rows of the request he approved');
-  await p.getByLabel('Row 1 amount', exact).fill('655.20');
-  await p.getByLabel('Row 1 menu', exact).click();
-  await p.locator('.ctx-menu input[type=file]').first().setInputFiles(fixture('acme-lab-supply-invoice.pdf'));
+  await p.getByLabel('Row 1 total', exact).fill('655.20');
+  // The receipt is attached with the button in the Files column, which opens the file box straight away.
+  check(
+    (await p.getByRole('button', { name: 'Row 1: attach a receipt', exact: true }).innerText()).includes('Receipt'),
+    'While buying, the Files column of a row without a receipt shows a "+ Receipt" button'
+  );
+  const [chooser] = await Promise.all([p.waitForEvent('filechooser'), p.getByRole('button', { name: 'Row 1: attach a receipt', exact: true }).click()]);
+  await chooser.setFiles(fixture('acme-lab-supply-invoice.pdf'));
   await p.getByRole('button', { name: /acme-lab-supply-invoice/ }).waitFor();
+  check(
+    (await p.getByRole('button', { name: 'Row 1: attach another receipt', exact: true }).count()) === 1,
+    'Once the row has a receipt, its button becomes a small + for another file'
+  );
   await p.getByLabel('Row 2 menu', exact).click();
   await p.locator('.ctx-menu input[type=file]').first().setInputFiles(fixture('northwind-office-receipt.png'));
   await p.getByRole('button', { name: /northwind-office-receipt/ }).waitFor();
@@ -402,7 +430,7 @@ try {
   await p.getByLabel('Row 3 vendor', exact).fill('Acme Lab Supply');
   await p.getByLabel('Row 3 what was bought and why', exact).fill('Shipping');
   await p.getByLabel('Row 3 category', exact).selectOption('shipping');
-  await p.getByLabel('Row 3 amount', exact).fill('15.20');
+  await p.getByLabel('Row 3 total', exact).fill('15.20');
   await p.getByLabel('Row 3 menu', exact).click();
   await p.getByLabel('Row 3 same receipt as row').selectOption('1');
   await p.waitForTimeout(900);
@@ -579,14 +607,14 @@ try {
   p = await openLive('jane', '#/request/41/purchases');
   await p.getByRole('button', { name: 'Add purchase without a file' }).click();
   await p.waitForTimeout(150);
-  await p.getByLabel('Row 2 amount', exact).fill('123.45');
+  await p.getByLabel('Row 2 total', exact).fill('123.45');
   await p.waitForTimeout(1600);
   await p.locator('.ctx-page-title').click();
   const typedLines = await storedLines(p, 41);
   const storedTotal = typedLines.reduce((sum, l) => sum + (l.amountCents ?? 0), 0);
   const shownTotal = await p.locator('.ctx-metric').filter({ hasText: 'Request total' }).locator('.ctx-metric-value').innerText();
   check(
-    (await p.getByLabel('Row 2 amount', exact).inputValue()) === '123.45' && typedLines[1].amountCents === 12345 && typedLines.length === 3,
+    (await p.getByLabel('Row 2 total', exact).inputValue()) === '123.45' && typedLines[1].amountCents === 12345 && typedLines.length === 3,
     'An amount typed while a row is added shows on screen and is saved'
   );
   check(shownTotal.trim() === `$${(storedTotal / 100).toFixed(2)}`, 'The request total on screen matches what is saved', `${shownTotal} / ${storedTotal}`);
@@ -699,7 +727,7 @@ try {
 
   // Saving: a slow save of an amount finishes before Send for approval sends the request, so what is sent is what is on screen.
   p = await openSlow('jane', '#/request/41/purchases');
-  await p.getByLabel('Row 1 amount', exact).fill('700');
+  await p.getByLabel('Row 1 total', exact).fill('700');
   await slowCalls(p, 1, 2500);
   await p.waitForTimeout(700);
   await p.getByRole('button', { name: 'Next: Review' }).click();

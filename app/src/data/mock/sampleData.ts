@@ -106,6 +106,7 @@ function row(requestId: number, rowNumber: number, l: Partial<PurchaseLine>): Pu
     category: '',
     categoryOther: '',
     categoryConfirmedBy: '',
+    quantity: 1,
     amountCents: null,
     paidBy: '',
     noQuoteReason: '',
@@ -202,6 +203,7 @@ export function createSampleStore(): SampleStore {
       vendor: 'Acme Lab Supply',
       description: 'Pipette tips and centrifuge tubes for the assay',
       category: 'rdMaterials',
+      quantity: 10,
       amountCents: 64000,
       paidBy: 'company',
       itemLink: 'https://www.acme-lab-supply.example/catalog/pipette-tips-10-racks',
@@ -720,6 +722,7 @@ export function finishPendingWork(store: SampleStore, now: Date = new Date()): v
     if (!r.buyer) r.buyer = 'self';
   }
   for (const l of store.lines) {
+    if (typeof l.quantity !== 'number') l.quantity = 1;
     if (typeof l.itemLink !== 'string') l.itemLink = '';
     if (typeof l.noLinkReason !== 'string') l.noLinkReason = '';
   }

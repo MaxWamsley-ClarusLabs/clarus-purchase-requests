@@ -647,6 +647,20 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect((await jane.getRequest(id)).lines[1].sameReceiptAsRow).toBeNull();
     });
 
+    it("submits rows of one vendor with a single receipt, and writes that receipt's name on each of the vendor's rows (P-049)", async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const { id } = await fill(jane, [
+        { vendor: 'Acme Lab Supply', amountCents: 1200, receipts: ['invoice.pdf'] },
+        { vendor: 'acme lab supply', amountCents: 800 }
+      ]);
+      const submission = await jane.submitRequest(id, CERTIFICATION);
+      const csv = await jane.getSubmissionCsv(submission.id);
+      const rows = csv.split('\r\n').filter(Boolean).slice(1);
+      expect(rows).toHaveLength(2);
+      for (const row of rows) expect(row).toContain('R01_invoice.pdf');
+    });
+
     it('refuses to point a row that holds a receipt of its own at another row, until that receipt is removed (travel D-038)', async () => {
       const h = await makeHarness();
       const jane = h.as(JANE, NOW);

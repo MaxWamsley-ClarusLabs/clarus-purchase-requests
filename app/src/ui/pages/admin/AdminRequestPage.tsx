@@ -14,7 +14,7 @@ import {
   findPaidBy,
   lineApprovals
 } from '../../../domain/purchaseRules';
-import { hasReceipt, quoteFiles, receiptFiles } from '../../../domain/receipts';
+import { hasReceipt, quoteFiles, receiptFiles, receiptSourceRow } from '../../../domain/receipts';
 import {
   LINE_APPROVAL_DISPLAY,
   PACKAGE_ATTENTION_MINUTES,
@@ -476,7 +476,9 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                     const otherEmpty = describe && !choice.categoryOther.trim();
                     const receipts = receiptFiles(l);
                     const quotes = quoteFiles(l);
-                    const sharesReceipt = l.sameReceiptAsRow !== null && hasReceipt(l, lines);
+                    // A row that shares another row's receipt, or is covered by its vendor's (P-049), shows that row's number.
+                    const receiptRow = receiptSourceRow(l, lines);
+                    const sharesReceipt = !!receiptRow && receiptRow.id !== l.id && receiptFiles(l).length === 0 && hasReceipt(l, lines);
                     const open = (fileId: string) => setPreview({ lineId: l.id, fileId });
                     return (
                       <tr key={l.id}>
@@ -552,11 +554,11 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                               <button
                                 type="button"
                                 className="ctx-receipt-chip shared"
-                                title={`Uses the receipt on row ${l.sameReceiptAsRow}`}
+                                title={`Uses the receipt on row ${receiptRow?.rowNumber}`}
                                 onClick={() => open('')}
                               >
                                 <Icon name="link" size={13} />
-                                <span>Receipt of row {l.sameReceiptAsRow}</span>
+                                <span>Receipt of row {receiptRow?.rowNumber}</span>
                               </button>
                             ) : (
                               receipts.map((f) => <FileChip key={f.id} file={f} showKind onOpen={() => open(f.id)} />)

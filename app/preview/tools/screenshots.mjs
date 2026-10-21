@@ -428,7 +428,7 @@ try {
   // Shipping and tax are typed in the boxes beside each vendor in Vendor totals, once its receipt is attached.
   // Each makes an ordinary row that shares the vendor's receipt.
   const shippingBox = p.getByLabel('Shipping for Acme Lab Supply', exact);
-  check(await shippingBox.isEnabled(), "After the vendor's receipt is attached, its shipping box can be used");
+  check(await shippingBox.isEnabled(), 'The shipping box of a vendor can be used');
   await shippingBox.fill('15.20');
   await shippingBox.press('Enter');
   await p.getByLabel('Row 3 total', exact).waitFor();
@@ -448,7 +448,7 @@ try {
     'A filled shipping box makes a Shipping row for that vendor in the shipping category',
     JSON.stringify(shippingRow)
   );
-  check((await p.getByText('Same as row 1', exact).count()) === 1, "The shipping row shares the vendor's receipt");
+  check((await p.getByText('Row 1 receipt', exact).count()) === 1, "The shipping row is covered by the vendor's receipt on row 1, with no step of its own");
   check((await shippingBox.inputValue()) === '15.20', 'The shipping box shows what is kept');
   const northwindCategory = await p.getByLabel('Row 2 category', exact).inputValue();
   const taxBox = p.getByLabel('Tax for Northwind Office Supply', exact);

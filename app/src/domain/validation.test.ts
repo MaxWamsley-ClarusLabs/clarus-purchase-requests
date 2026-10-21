@@ -96,6 +96,18 @@ describe('validateRequest: a request with no approval needed', () => {
     expect(blockingIssues(check(request(), [holder, broken])).map((i) => i.message)).toEqual([messages.sameReceiptBroken(7)]);
   });
 
+  it('needs one receipt for all the rows of a vendor, not one for each row (P-049)', () => {
+    const first = line({ id: 'a', rowNumber: 1, vendor: 'Acme Lab Supply', amountCents: 1000 });
+    const second = line({ id: 'b', rowNumber: 2, vendor: 'Acme Lab Supply', amountCents: 2000, files: [] });
+    expect(check(request(), [first, second])).toEqual([]);
+    // Another vendor still needs its own receipt, or a reason.
+    const other = line({ id: 'c', rowNumber: 3, vendor: 'Northwind Office Supply', amountCents: 800, files: [] });
+    expect(blockingIssues(check(request(), [first, second, other])).map((i) => [i.rowNumber, i.message])).toEqual([[3, messages.receiptOrReason]]);
+    // With the vendor's only receipt gone, every row of that vendor needs a receipt or a reason.
+    const bare = { ...first, files: [] };
+    expect(blockingIssues(check(request(), [bare, second])).map((i) => i.rowNumber)).toEqual([1, 2]);
+  });
+
   it('does not warn about old purchases: only a request that needs approval can be "bought before approval"', () => {
     expect(check(request(), [line({ date: '2026-01-02' })])).toEqual([]);
   });

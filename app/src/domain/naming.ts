@@ -131,13 +131,15 @@ export function packageFiles(lines: readonly PurchaseLine[]): PackageFile[] {
 
 /**
  * The package file names a row's receipts or quotes appear under (for the
- * CSV): its own files, and for a row that shares another row's receipt, that
- * row's receipt copies first.
+ * CSV): its own files, and for a row that shares another row's receipt, or is
+ * covered by its vendor's receipt on another row, that row's receipt copies first.
  */
 export function fileNamesForRow(line: PurchaseLine, lines: readonly PurchaseLine[], kind: FileKind): string[] {
   const own = ownCopyNames(line, kind);
-  if (kind !== 'receipt' || line.sameReceiptAsRow === null) return own;
+  if (kind !== 'receipt') return own;
+  // A row that shares another row's receipt, or is covered by its vendor's (P-049), lists that row's receipt copies first.
   const source = receiptSourceRow(line, lines);
+  if (line.sameReceiptAsRow === null && (!source || source.id === line.id)) return own;
   const shared = source ? receiptFiles(source).map((f, index) => fileCopyName('receipt', source.rowNumber, index, f.fileName)) : [];
   return [...shared, ...own];
 }

@@ -19,7 +19,7 @@ import {
   lineApprovals,
   mustSendForApproval
 } from '../../domain/purchaseRules';
-import { checkReceiptFile, hasReceipt } from '../../domain/receipts';
+import { checkReceiptFile, hasReceipt, receiptFiles, receiptSourceRow } from '../../domain/receipts';
 import { marksAfterEdit, readingChanges, shouldReadReceipt, vendorMemoryChanges } from '../../domain/suggestions';
 import { LINE_APPROVAL_DISPLAY, approvalStateDisplay, isEditable, mayBuy, requestStatusDisplay, submissionStatusDisplay } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
@@ -651,10 +651,6 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
       return;
     }
     const plan = planExtraCharge(lines, key, kind, cents, todayIso());
-    if (plan.refusal) {
-      app.toast(plan.refusal, 'warning');
-      return;
-    }
     await structural(async () => {
       for (const id of plan.remove) await service.deleteLine(id);
       if (plan.update) await service.updateLine(plan.update.lineId, plan.update.changes);
@@ -1683,7 +1679,15 @@ function ReviewStep(props: {
                     <td className="nowrap">{display ? <Badge tone={display.tone}>{display.label}</Badge> : null}</td>
                     {showReceipts ? (
                       <td className="nowrap">
-                        {hasReceipt(l, lines) ? l.sameReceiptAsRow !== null ? `Row ${l.sameReceiptAsRow}` : 'Yes' : <span className="ctx-muted">None</span>}
+                        {hasReceipt(l, lines) ? (
+                          receiptFiles(l).length === 0 && receiptSourceRow(l, lines) ? (
+                            `Row ${receiptSourceRow(l, lines)?.rowNumber}`
+                          ) : (
+                            'Yes'
+                          )
+                        ) : (
+                          <span className="ctx-muted">None</span>
+                        )}
                       </td>
                     ) : null}
                     <td className="num">{l.quantity}</td>

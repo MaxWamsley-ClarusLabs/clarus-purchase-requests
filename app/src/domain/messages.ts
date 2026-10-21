@@ -67,7 +67,6 @@ export const messages = {
   actionFailed: (detail: string) => `That did not work. ${detail} Try again. If it keeps happening, tell the administrator.`,
 
   extraAmountInvalid: 'Enter an amount like 15.20, or leave the box empty.',
-  extraNeedsReceipt: "Attach this vendor's receipt to one of its rows first, then enter the shipping and tax.",
 
   certificationRequired: 'Tick the certification to submit.',
   certificationRequiredToSend: 'Tick the certification to send the request.',

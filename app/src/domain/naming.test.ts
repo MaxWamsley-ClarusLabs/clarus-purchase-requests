@@ -97,6 +97,18 @@ describe('file copies', () => {
     expect(fileNamesForRow(lines[0], lines, 'quote')).toEqual(['Q01_quote.pdf']);
   });
 
+  it("lists the vendor's receipt for a row it covers, and copies that receipt once (P-049)", () => {
+    const lines = [
+      line({ id: 'a', rowNumber: 1, vendor: 'Acme Lab Supply', files: [file({ id: 'r1', fileName: 'invoice.pdf' })] }),
+      line({ id: 'b', rowNumber: 2, vendor: 'Acme Lab Supply', files: [] }),
+      line({ id: 'c', rowNumber: 3, vendor: 'Northwind Office Supply', files: [] })
+    ];
+    expect(packageFiles(lines).map((p) => [p.kind, p.packageName])).toEqual([['receipt', 'R01_invoice.pdf']]);
+    expect(fileNamesForRow(lines[0], lines, 'receipt')).toEqual(['R01_invoice.pdf']);
+    expect(fileNamesForRow(lines[1], lines, 'receipt')).toEqual(['R01_invoice.pdf']);
+    expect(fileNamesForRow(lines[2], lines, 'receipt')).toEqual([]);
+  });
+
   it('never leaves a file out: a row that shares a receipt but also holds one of its own has it copied under its own number', () => {
     const lines = [
       line({ id: 'a', rowNumber: 1, files: [file({ id: 'r1', fileName: 'invoice.pdf' })] }),

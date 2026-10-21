@@ -5,8 +5,6 @@
 // A row made by a box carries a `rowKind` ('shipping' or 'tax'), which is how the box finds it
 // again. The kind is only a label for the boxes: it changes no total, rule or file.
 
-import { messages } from './messages';
-import { receiptFiles, receiptSourceRow } from './receipts';
 import { vendorKey } from './purchaseRules';
 import { LineChanges } from '../data/PurchaseDataService';
 import { CategoryId, IsoDate, PurchaseLine, RowKind } from './types';
@@ -39,23 +37,6 @@ export function extraChargeOf(lines: readonly PurchaseLine[], key: string, kind:
   return { cents: rows.reduce((sum, l) => sum + Math.max(0, l.amountCents ?? 0), 0), lineIds: rows.map((l) => l.id) };
 }
 
-/**
- * The row that holds the receipt files a new shipping or tax row of this vendor can share: the
- * first purchase of the vendor, in row order, whose receipt exists, whether it holds it or shares it.
- */
-export function receiptHolderFor(lines: readonly PurchaseLine[], key: string): PurchaseLine | undefined {
-  for (const row of vendorRowsOf(lines, key).filter((l) => l.rowKind === '')) {
-    const holder = receiptSourceRow(row, lines);
-    if (holder && receiptFiles(holder).length > 0) return holder;
-  }
-  return undefined;
-}
-
-/** Whether the box can start a shipping or tax row for this vendor: one already exists, or there is a receipt to share. */
-export function canSetExtra(lines: readonly PurchaseLine[], key: string, kind: ExtraKind): boolean {
-  return extraChargeOf(lines, key, kind).lineIds.length > 0 || receiptHolderFor(lines, key) !== undefined;
-}
-
 export interface ExtraPlan {
   /** Rows to delete: the box was emptied, or more than one row had been kept. */
   remove: string[];
@@ -63,8 +44,6 @@ export interface ExtraPlan {
   update?: { lineId: string; changes: LineChanges };
   /** The fields of the row to make, when none exists. */
   create?: LineChanges;
-  /** Why nothing was done, in words for the person buying. */
-  refusal?: string;
 }
 
 /** The category of the vendor's largest purchase that has one, the earliest row first on a tie; empty when none has. */
@@ -79,9 +58,10 @@ function largestPurchaseCategory(items: readonly PurchaseLine[]): CategoryId | '
 
 /**
  * What typing `cents` into a vendor's shipping or tax box changes. An empty or zero box removes the
- * row. A box with an amount changes the row it keeps, or makes one that copies the vendor, the date
- * of its first purchase and its receipt (the row shares it), with the shipping category, or for
- * tax the category of the vendor's largest purchase. The person buying can still change that row.
+ * row. A box with an amount changes the row it keeps, or makes one that copies the vendor and the date
+ * of its first purchase, with the shipping category, or for tax the category of the vendor's largest
+ * purchase. The vendor's receipt covers the new row (P-049), whenever it is attached. The person
+ * buying can still change that row.
  */
 export function planExtraCharge(lines: readonly PurchaseLine[], key: string, kind: ExtraKind, cents: number | null, today: IsoDate): ExtraPlan {
   const rows = vendorRowsOf(lines, key);
@@ -91,8 +71,8 @@ export function planExtraCharge(lines: readonly PurchaseLine[], key: string, kin
     return { remove: existing.slice(1).map((l) => l.id), update: { lineId: existing[0].id, changes: { amountCents: cents } } };
   }
   const items = rows.filter((l) => l.rowKind === '');
-  const holder = receiptHolderFor(lines, key);
-  if (items.length === 0 || !holder) return { remove: [], refusal: messages.extraNeedsReceipt };
+  // A vendor with no purchase row has nothing to copy: the box then makes nothing.
+  if (items.length === 0) return { remove: [] };
   return {
     remove: [],
     create: {
@@ -104,7 +84,6 @@ export function planExtraCharge(lines: readonly PurchaseLine[], key: string, kin
       amountCents: cents,
       paidBy: 'company',
       itemLink: '',
-      sameReceiptAsRow: holder.rowNumber,
       rowKind: kind
     }
   };

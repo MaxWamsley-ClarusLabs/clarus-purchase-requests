@@ -14,7 +14,7 @@ import {
   safeLink,
   vendorGroups
 } from '../../domain/purchaseRules';
-import { ACCEPT_ATTRIBUTE, hasReceipt, quoteFiles, receiptFiles, receiptSourceRow } from '../../domain/receipts';
+import { ACCEPT_ATTRIBUTE, hasReceipt, quoteFiles, receiptFiles, receiptSourceRow, vendorReceiptRow } from '../../domain/receipts';
 import { LINE_APPROVAL_DISPLAY } from '../../domain/statuses';
 import { messages } from '../../domain/messages';
 import { suggestedFieldsText, visibleSuggestions } from '../../domain/suggestions';
@@ -421,6 +421,8 @@ export function PurchaseGrid(props: Props): React.ReactElement {
             const shared = line.sameReceiptAsRow !== null;
             const receipts = receiptFiles(line);
             const quotes = quoteFiles(line);
+            // A row with no receipt of its own is covered by the receipt on another row of its vendor (P-049).
+            const vendorSource = !shared && receipts.length === 0 ? vendorReceiptRow(line, lines) : undefined;
             const receiptIssue = issueFor(line, 'receipt');
             const quoteIssue = issueFor(line, 'quote');
             const linkIssue = issueFor(line, 'link');
@@ -455,6 +457,16 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                           <Icon name="link" size={13} />
                           <span>Same as row {line.sameReceiptAsRow}</span>
                         </button>
+                      ) : vendorSource ? (
+                        <button
+                          type="button"
+                          className="ctx-receipt-chip shared"
+                          title={`The receipt on row ${vendorSource.rowNumber} covers every row of ${line.vendor.trim()}`}
+                          onClick={() => props.onOpenFile(line.id, '')}
+                        >
+                          <Icon name="link" size={13} />
+                          <span>Row {vendorSource.rowNumber} receipt</span>
+                        </button>
                       ) : (
                         receipts.map((f) => <FileChip key={f.id} file={f} onOpen={() => props.onOpenFile(line.id, f.id)} />)
                       )}
@@ -469,7 +481,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                       {readOnly || shared ? null : (
                         <AttachButton
                           kind={primaryKind}
-                          hasOne={primaryKind === 'quote' ? quotes.length > 0 : receipts.length > 0}
+                          hasOne={primaryKind === 'quote' ? quotes.length > 0 : receipts.length > 0 || !!vendorSource}
                           rowNumber={line.rowNumber}
                           busy={busy}
                           onFile={(file) => props.onAddFile(line.id, file, primaryKind)}
@@ -755,7 +767,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                                   />
                                 </label>
                               ))}
-                            {receipts.length === 0 && !employeeSends ? (
+                            {receipts.length === 0 && !employeeSends && !vendorSource ? (
                               <div style={{ padding: '6px 10px' }}>
                                 <div className="ctx-label" style={{ marginBottom: 4 }}>
                                   Same receipt as row

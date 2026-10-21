@@ -81,6 +81,7 @@ export function ReceiptPreview(props: {
   if (line) {
     const source = receiptSourceRow(line, lines);
     if (line.sameReceiptAsRow !== null && source) caption = `Row ${line.rowNumber} uses the receipt on row ${source.rowNumber}.`;
+    else if (source && source.id !== line.id) caption = `Row ${line.rowNumber} is covered by the receipt on row ${source.rowNumber}, the same vendor.`;
     else if (files.length === 0) {
       const reasons = [line.noReceiptReason && `no receipt: ${line.noReceiptReason}`, line.noQuoteReason && `no quote: ${line.noQuoteReason}`].filter(Boolean);
       caption = reasons.length > 0 ? `Row ${line.rowNumber} has ${reasons.join(', ')}` : `Row ${line.rowNumber} has no files yet.`;

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { centsToPlain, formatCents } from '../../domain/money';
-import { EXTRA_KINDS, ExtraKind, canSetExtra, extraChargeOf } from '../../domain/extraCharges';
+import { EXTRA_KINDS, ExtraKind, extraChargeOf } from '../../domain/extraCharges';
 import { APPROVAL_THRESHOLD_TEXT, QUOTE_THRESHOLD_TEXT } from '../../domain/purchaseRules';
 import { BadgeTone } from '../../domain/statuses';
 import { BuyerId, PurchaseLine, PurchaseRequest } from '../../domain/types';
@@ -22,13 +22,7 @@ const EXTRA_LABEL: Record<ExtraKind, string> = { shipping: 'Shipping', tax: 'Tax
  * pressed, not while it is typed, so a half-typed amount never makes a row. Afterwards the box shows what is
  * kept: the amount, or empty.
  */
-function ExtraBox(props: {
-  label: string;
-  cents: number | null;
-  disabled: boolean;
-  disabledTitle?: string;
-  onCommit: (text: string) => Promise<void>;
-}): React.ReactElement {
+function ExtraBox(props: { label: string; cents: number | null; disabled: boolean; onCommit: (text: string) => Promise<void> }): React.ReactElement {
   const kept = props.cents === null ? '' : centsToPlain(props.cents);
   const [text, setText] = React.useState(kept);
   const keptNow = React.useRef(kept);
@@ -44,7 +38,6 @@ function ExtraBox(props: {
       inputMode="decimal"
       placeholder="0.00"
       aria-label={props.label}
-      title={props.disabled ? props.disabledTitle : undefined}
       value={text}
       disabled={props.disabled}
       onChange={(e) => setText(e.target.value)}
@@ -80,8 +73,8 @@ export function VendorTotals(props: {
     <div>
       {props.extras && rows.length > 0 ? (
         <div className="ctx-hint" style={{ marginBottom: 10 }}>
-          After you attach a vendor&apos;s receipt, type its shipping and tax from the receipt in the boxes below. Each makes a row in the grid that you can
-          still change. Leave a box empty if there is none.
+          Type each vendor&apos;s shipping and tax from its receipt in the boxes below. Each makes a row in the grid that you can still change, and the
+          vendor&apos;s receipt covers it. Leave a box empty if there is none.
         </div>
       ) : null}
       {props.showIntro ? (
@@ -120,8 +113,7 @@ export function VendorTotals(props: {
                             <ExtraBox
                               label={`${EXTRA_LABEL[kind]} for ${r.group.vendor}`}
                               cents={extraChargeOf(props.lines, r.group.key, kind).cents}
-                              disabled={props.extras!.busy || !canSetExtra(props.lines, r.group.key, kind)}
-                              disabledTitle={props.extras!.busy ? undefined : "Attach this vendor's receipt to one of its rows first."}
+                              disabled={props.extras!.busy}
                               onCommit={(text) => props.extras!.onSet(r.group.key, kind, text)}
                             />
                           )}

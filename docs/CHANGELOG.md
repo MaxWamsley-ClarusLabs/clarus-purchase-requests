@@ -177,3 +177,12 @@ Max answered the open questions and told Claude to build. This entry covers two 
 - **Outside systems:** none read or written. Decision P-048.
 - **For Max, when he installs:** the same package as the Files and quantity change (1.0.1.0, rebuilt); Set-up, Check again, adds two columns now (Quantity and Row type).
 
+## 2026-10-21. One receipt per vendor (P-049)
+
+| Commit | What | Why |
+|---|---|---|
+| Vendor receipt commit | `domain/receipts.ts`: new `vendorReceiptRow`, and `receiptSourceRow` now falls back to the vendor's first row that holds a receipt, so `hasReceipt` and every check, screen and the package follow it; `domain/naming.ts` (`fileNamesForRow` lists the covering receipt for a covered row); a **Row N receipt** chip in the purchases grid, the administrator's table and the review table, and in the files panel's caption; the grid's "Same receipt as row" menu choice is not offered on a covered row. `domain/extraCharges.ts`: the shipping and tax rows carry no receipt pointer and their boxes no longer wait for a receipt (the `canSetExtra` greying and its message are gone). Instructions, SOP Part A and B4, `CHECKPOINT.md` step 27, `DATA_MODEL.md`, `QUICKBOOKS_HANDOFF.md` and P-048 brought in step | Max, 2026-10-21: one receipt should cover every row of the same vendor. He took option A (801 unit tests) |
+
+- **Outside systems:** none read or written. Decision P-049.
+- **No new column and no Set-up step for this change.** Package version raised to 1.0.2.0, because the 1.0.1.0 file already sent to Max does not have it.
+

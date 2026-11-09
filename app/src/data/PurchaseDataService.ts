@@ -115,6 +115,20 @@ export interface PurchaseDataService {
    * NotAllowedError when the approver buys: the approver marks it purchased.
    */
   submitRequest(requestId: number, certificationText: string): Promise<Submission>;
+  /**
+   * Takes a request back from the approver (P-050): only the owner, and only while it is Awaiting approval.
+   * It becomes a Draft the employee can edit and send again (a resend is the next round), with nothing approved.
+   * The approval email already sent is not recalled. Refused with NotAllowedError once the approver has approved
+   * or returned it, or if it was never sent.
+   */
+  unsendRequest(requestId: number): Promise<PurchaseRequest>;
+  /**
+   * An administrator records a purchase they have already made (P-051): their own Draft (or Returned) request that
+   * the approver buys. There is no approval and no certification: it is checked as an approved purchase (receipts
+   * needed), marked as recorded by the administrator, and packaged for processing like any purchase. Administrators
+   * only. Throws SubmissionBlockedError if something must be fixed first.
+   */
+  recordPurchase(requestId: number): Promise<Submission>;
   /** The submissions of a request: approval requests first, then packages, each newest first. */
   listSubmissionsForRequest(requestId: number): Promise<Submission[]>;
   /** The CSV attached to a package submission, for the administrator to preview. */

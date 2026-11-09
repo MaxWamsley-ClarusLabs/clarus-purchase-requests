@@ -365,6 +365,33 @@ try {
   check(true, 'Jane sent PR-0041 to the approver and certified it: Awaiting approval');
   check((await p.getByRole('button', { name: 'Send to the approver', exact: true }).count()) === 0, 'A request awaiting approval has no Send button');
 
+  // The owner can take it back while it is still waiting (P-050): a draft again, off Max's list, and sent again as round 2.
+  check(await p.getByRole('button', { name: 'Unsend', exact: true }).isVisible(), 'A request awaiting approval offers Unsend to its owner');
+  await shot(p, '39-awaiting-approval-unsend', false);
+  await p.getByRole('button', { name: 'Unsend', exact: true }).click();
+  await p.getByRole('dialog', { name: 'Unsend PR-0041?' }).getByRole('button', { name: 'Unsend', exact: true }).click();
+  await p.getByText('Unsent. It is a draft again').waitFor();
+  await header(p).getByText('Draft', exact).waitFor();
+  check(await p.getByText('You unsent this request.').isVisible(), 'After unsending, the page says the request is a draft again');
+  await goTo(p, 'admin', '#/admin/approvals');
+  await p.getByText('Waiting for approval').first().waitFor();
+  check((await p.getByRole('row', { name: /PR-0041/ }).count()) === 0, "An unsent request leaves the approver's Approvals list");
+  await goTo(p, 'admin', '#/admin/request/41');
+  await header(p).getByText('PR-0041').waitFor();
+  check(
+    (await p.getByText('Jane Doe unsent this request.').isVisible()) && (await p.getByRole('button', { name: 'Approve', exact: true }).count()) === 0,
+    "The approver's page says the request was unsent and offers no Approve"
+  );
+  await shot(p, '40-admin-sees-unsent', false);
+  await goTo(p, 'jane', '#/request/41/review');
+  await p.getByRole('button', { name: 'Send to the approver', exact: true }).click();
+  const resendDialog = p.getByRole('dialog', { name: 'Send PR-0041 to the approver?' });
+  await resendDialog.getByRole('checkbox').check();
+  await resendDialog.getByRole('button', { name: 'Send to the approver', exact: true }).click();
+  await p.getByText('Sent to the approver. They have been emailed.').waitFor();
+  await header(p).getByText('Awaiting approval', exact).waitFor();
+  check(true, 'An unsent request can be sent again');
+
   await goTo(p, 'admin', '#/admin/approvals');
   check(await p.getByRole('row', { name: /PR-0041/ }).isVisible(), 'Max sees PR-0041 under Approvals');
   await shot(p, '14-admin-approvals');
@@ -885,6 +912,52 @@ try {
     check(layout.sideways <= 0 && layout.outside.length === 0, `At ${width} wide, ${hash} fits its cards`, JSON.stringify(layout));
     await p.close();
   }
+
+  // ---- Administrator: record a purchase already made (P-051) ---------------------
+
+  p = await open('admin', '#/admin/process');
+  await header(p).getByText('Requests to process').waitFor();
+  check(await p.getByRole('button', { name: 'Record a purchase' }).isVisible(), 'The administrator sees Record a purchase');
+  check((await (await open('jane', '#/')).getByRole('button', { name: 'Record a purchase' }).count()) === 0, 'An employee does not see Record a purchase');
+  await p.getByRole('button', { name: 'Record a purchase' }).click();
+  await p.getByText('New purchase request').first().waitFor();
+  await p.getByLabel('Business purpose', exact).fill('Printer toner bought at the store');
+  const department = p.getByLabel('Department', exact);
+  if ((await department.inputValue()) === '') await department.fill('Operations');
+  await p.getByRole('button', { name: 'Next: Purchases' }).click();
+  await p.getByRole('button', { name: 'Add a purchase' }).click();
+  check(
+    (await p.getByText('You are recording a purchase you already made.').isVisible()) &&
+      (await p.getByRole('button', { name: 'Send to the approver' }).count()) === 0,
+    'A request the administrator records says so, and offers no approval step'
+  );
+  await p.getByLabel('Row 1 vendor', exact).fill('Northwind Office Supply');
+  await p.getByLabel('Row 1 what was bought and why', exact).fill('Printer toner');
+  await p.getByLabel('Row 1 category', exact).selectOption('office');
+  await p.getByLabel('Row 1 total', exact).fill('64.20');
+  await p.waitForTimeout(400);
+  check(
+    (await p.getByText('Add the web address of the item so the approver can buy it').count()) === 0 &&
+      (await p.getByLabel('Row 1 reason there is no quote', exact).count()) === 0,
+    'A purchase being recorded is asked for no web address and no quote'
+  );
+  const [recordChooser] = await Promise.all([p.waitForEvent('filechooser'), p.getByRole('button', { name: 'Row 1: attach a receipt', exact: true }).click()]);
+  await recordChooser.setFiles(fixture('northwind-office-receipt.png'));
+  await p.getByRole('button', { name: /northwind-office-receipt/ }).waitFor();
+  await shot(p, '41-recording-a-purchase');
+  await p.getByRole('button', { name: 'Next: Review' }).click();
+  await p.getByText('Everything is complete. You can record this purchase.').waitFor();
+  await p.getByRole('button', { name: 'Record purchase', exact: true }).click();
+  const recordDialog = p.getByRole('dialog', { name: /as purchased\?/ });
+  check((await recordDialog.getByRole('checkbox').count()) === 0, 'Recording a purchase has no certification tick box');
+  await recordDialog.getByRole('button', { name: 'Record purchase', exact: true }).click();
+  await p.getByText('Recorded. The folder is being made for processing.').waitFor();
+  await header(p).getByText('Purchased', exact).waitFor();
+  check(true, 'The administrator recorded a purchase: it is Purchased, with no approval and no certification');
+  await goTo(p, 'admin', '#/admin/process');
+  await p.getByText('Printer toner bought at the store').first().waitFor();
+  check(true, 'The recorded purchase is under Requests to process');
+  await shot(p, '42-recorded-under-process');
 } catch (e) {
   problems.push(`The run stopped early: ${e instanceof Error ? e.message : String(e)}`);
 }

@@ -354,6 +354,15 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
           )}
         </div>
       ) : null}
+      {request.status === 'Draft' && request.approvalRounds > 0 ? (
+        <div className="ctx-banner amber">
+          <Icon name="undo" />
+          <div>
+            <strong>{request.ownerName} unsent this request.</strong> It is a draft again, so it cannot be approved or returned. It will come back under
+            Approvals when they send it again.
+          </div>
+        </div>
+      ) : null}
       {approverBuys && request.status === 'Approved' ? (
         <div className="ctx-banner green">
           <Icon name="check" />

@@ -54,6 +54,7 @@ This app replaces the Word purchase request form and posting it in the Purchasin
 - On Review and send, fix anything marked in red, then choose Send to the approver. Every request goes to the approver, whatever the amount. You tick the certification then (see Certification below), because you submit nothing afterwards.
 - The request is locked and the approver is emailed. Its status is Awaiting approval. If the approver returns it, it shows as Returned with their note. Correct it and send it again.
 - When it is approved, the approver buys it, attaches the receipt and marks it purchased. You have nothing more to do. The status changes to Purchased and then to Processed.
+- Sent it by mistake, or want to change it? While it is still Awaiting approval, open it and choose Unsend. It becomes a draft again, which you can change and send again. The approver already got the email, which cannot be recalled, but they cannot approve a draft. Once the approver has approved or returned it, it cannot be unsent: ask the approver to return it.
 
 ### Adding purchases
 
@@ -130,6 +131,7 @@ You certify the request with this sentence: "I certify that the listed purchases
 - Attach each vendor's receipt or invoice to one of its rows (the "+ Receipt" button in its Files column): it covers all of that vendor's rows, including shipping and tax. Use "Same receipt as row" only when one receipt covers rows with different vendor names. On Review and mark purchased, choose Mark purchased. A folder with the receipts, the quotes and a spreadsheet is made for the administrator, who is emailed.
 - If you cannot buy it, return it to the employee with a note from its page. Delete any rows you added first. If the administrator returns it to you after you marked it purchased, fix it and mark it purchased again.
 - Only the approver who approved a request buys it. Another site Owner can read it and can return it to the employee with a note, so it is never stuck, but cannot change its rows or mark it purchased.
+- Bought something yourself and need it on record? Choose Record a purchase, at the top of Approvals or Requests to process. Add a row for each purchase, attach the receipt or invoice (one per vendor is enough) and choose Record purchase. There is no approval and no certification: it goes straight to Requests to process with its folder and spreadsheet, marked as recorded by you. Only administrators see this button.
 
 ### What this app does not cover
 
@@ -170,6 +172,17 @@ Both roles are held today by the site Owners (people with SharePoint's "Manage w
 5. If **Mark purchased** says the employee's certification is missing, return the request to the employee: they send it again with the certification ticked.
 6. The employee does not see the rows you add (SharePoint shows people only the items they created; Unverified, checked at the test-site checkpoint). Receipts you attach to a row the employee made stay visible to them. The employee's list shows the request's stored total, which includes your rows; the request page adds up only the rows they can see.
 
+### B2b. Recording a purchase you already made (P-051)
+
+Use this when you bought something yourself and there is no request to approve.
+
+1. Choose **Record a purchase** at the top of **Approvals** or **Requests to process**. Only administrators see this button.
+2. Fill in **Request details** (business purpose and department), then **Next: Purchases**.
+3. Add a row for each purchase (**Add a purchase**): date, vendor, what and why, category, quantity and total. Attach the receipt or invoice with **+ Receipt**, or drop it into the box. One receipt per vendor covers all of that vendor's rows. Type any shipping or tax in the vendor's **Shipping** and **Tax** boxes in **Vendor totals**.
+4. Choose **Next: Review**, then **Record purchase**, then **Record purchase** in the dialog. There is no approval, no item link, no quote and no certification.
+5. The request becomes **Purchased**, marked as recorded by you, and the folder and CSV are made in `Accounting/Purchases/Purchases_To_Process` as for any purchase. It shows under **Requests to process**; continue at B4.
+6. It is locked once recorded. If something is wrong, return it from its page and fix it, then mark it purchased again.
+
 ### B3. When a request is submitted
 
 1. You receive an email: "Purchase request submitted: <name>, <business purpose> (PR-0042)", or "resubmitted" with the submission number. For a request the approver bought it says "Purchase request bought" (or "bought again") and names the approver as the buyer. It lists the submitter and their account, the department, business purpose and project or grant code, the purchase dates, **To reimburse**, **Paid by Clarus** and **Request total**, the number of receipts and quotes, rows without a receipt, any warnings, the approval (who, when, and any note), any **Bought before approval** flag, and the employee's certification, with links to the folder, `Purchases_To_Process` and the request in the app. It arrives a few minutes after the employee submits.
@@ -189,6 +202,10 @@ The app and the flow never change, move or delete anything else in the Accountin
 
 1. Move the request folder from `Purchases_To_Process` into `Accounting/Purchases/<year>/`, using the year of the earliest purchase date. Create the year folder the first time it is needed, for example in January.
 2. In the app, open the request and choose **Mark processed**. This only changes the request's status; no email is sent.
+
+### B5a. A request an employee unsent (P-050)
+
+An employee can take back a request that is still **Awaiting approval**. It becomes a draft again and leaves **Approvals**. If you open the old email link, the page says the employee unsent it and offers no Approve or Return. The email cannot be recalled. When the employee sends it again it comes back under **Approvals** as the next round. A request you have already approved or returned cannot be unsent.
 
 ### B6. Returning a request for correction
 
@@ -246,3 +263,4 @@ To be completed from the test-site runs at the checkpoint. These messages are wr
 | 2026-10-01 | 10a | The approver-buys build: "Rules confirmed by Max" now holds who buys, the item link and the QuickBooks categories; Part A regenerated from the new Instructions; Part B gained B2a (buying a request you approved) and changed B1 to B6; Part C gained four refusals |
 | 2026-10-01 | 5 to 9 | Part A generated from the Instructions (Stage 5). Part B brought up to date with the built screens and the review fixes (opening quotes, approving what was sent, Retry rules); Part C started from the app's own messages |
 | 2026-10-01 | 15 | Added the training quiz line (the link is a placeholder until the Form exists), P-045 |
+| 2026-11-09 | 16 | Part A regenerated (quantity, one receipt per vendor, shipping and tax boxes, Unsend, Record a purchase); Part B gained B2b (recording a purchase) and B5a (an unsent request); P-047 to P-051 |

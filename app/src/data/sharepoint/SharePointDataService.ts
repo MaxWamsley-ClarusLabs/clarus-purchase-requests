@@ -68,6 +68,7 @@ import {
   staleUploading,
   statusAfterReturn
 } from './serviceRules';
+import { RECORDED_CERTIFICATION, RECORDED_NOTE, isRecordedBy, mayRecord, recordedCertification, recordedRequestOf } from '../../domain/recording';
 import { SiteSetup } from './SiteSetup';
 
 export { NotAllowedError };
@@ -432,6 +433,41 @@ export class SharePointDataService implements PurchaseDataService {
     return this.createPackage(stored, lines, prepared, now);
   }
 
+  async recordPurchase(requestId: number): Promise<Submission> {
+    const me = await this.requireAdmin();
+    const stored = await this.readStored(requestId);
+    const { request } = stored;
+    if (request.ownerEmail !== me.email) throw new NotAllowedError(notAllowed.notYours);
+    if (!mayRecord(request, me)) throw new NotAllowedError(notAllowed.recordWhen);
+    const lines = await this.readLines(requestId, stored);
+    const others = await this.getOwnerOtherLines(requestId);
+    const earlier = await this.readSubmissions(requestId, request.requestNumber, stored);
+    const number = request.submissionCount + 1;
+    for (const stale of staleUploading(earlier, 'package', number)) await this.recycle('submissions', stale.id);
+    const now = this.now();
+    const who = { name: me.displayName, email: me.email };
+    // Checked and packaged as an approved purchase of the administrator's own, with nothing written until it passes.
+    const recorded = recordedRequestOf(request, lines, who, now);
+    const prepared = prepareSubmission(
+      recorded,
+      lines,
+      others,
+      now,
+      previousFolderName(earlier, number),
+      { text: RECORDED_CERTIFICATION, email: me.email, name: me.displayName },
+      who
+    );
+    return this.createPackage(stored, lines, prepared, now, {
+      buyer: 'approver',
+      approval: recorded.approval,
+      sentForApprovalOn: now.toISOString(),
+      approvedOn: now.toISOString(),
+      approvedById: me.id,
+      approvalNote: RECORDED_NOTE,
+      boughtBeforeApproval: false
+    });
+  }
+
   async markPurchased(requestId: number): Promise<Submission> {
     const me = await this.requireAdmin();
     const stored = await this.readStored(requestId);
@@ -442,7 +478,7 @@ export class SharePointDataService implements PurchaseDataService {
     const others = await this.getOwnerOtherLines(requestId);
     const earlier = await this.readSubmissions(requestId, request.requestNumber, stored);
     // What the employee certified when they sent it (P-037): kept on the newest approval request.
-    const certification = employeeCertification(earlier, request);
+    const certification = isRecordedBy(request, me) ? recordedCertification(me) : employeeCertification(earlier, request);
     const number = request.submissionCount + 1;
     for (const stale of staleUploading(earlier, 'package', number)) await this.recycle('submissions', stale.id);
     const now = this.now();
@@ -454,7 +490,14 @@ export class SharePointDataService implements PurchaseDataService {
   }
 
   /** Creates a processing package from what was prepared, locks the request and hands the package to the flow. */
-  private async createPackage(stored: StoredRequest, lines: readonly PurchaseLine[], prepared: PreparedSubmission, now: Date): Promise<Submission> {
+  private async createPackage(
+    stored: StoredRequest,
+    lines: readonly PurchaseLine[],
+    prepared: PreparedSubmission,
+    now: Date,
+    /** More to write with the lock: what recording a purchase sets (P-051). */
+    alsoWrite: RequestWrite = {}
+  ): Promise<Submission> {
     const { request } = stored;
     // 1. The submission, marked Uploading so the flow ignores it for now.
     const created = await this.sp.post<{ Id: number }>(this.items('submissions'), submissionFields(prepared.submission));
@@ -468,7 +511,13 @@ export class SharePointDataService implements PurchaseDataService {
     }
     // 3. Lock the request, then 4. hand the submission to the flow. If step 4
     // fails, the administrator sees it under Needs attention and can retry.
-    const write: RequestWrite = { status: 'Submitted', submissionCount: prepared.submission.submissionNumber, submittedOn: now.toISOString(), returnNote: '' };
+    const write: RequestWrite = {
+      ...alsoWrite,
+      status: 'Submitted',
+      submissionCount: prepared.submission.submissionNumber,
+      submittedOn: now.toISOString(),
+      returnNote: ''
+    };
     if (request.returnStage !== '') write.returnStage = '';
     await this.sp.merge(this.item('requests', request.id), requestFields(write));
     await this.sp.merge(this.item('submissions', created.Id), { PackageStatus: 'Ready' });
@@ -569,6 +618,19 @@ export class SharePointDataService implements PurchaseDataService {
       write.approval = approvalWhenReturned(request.approval);
       if (holdsApproval(request)) Object.assign(write, { approvedOn: null, approvedById: null, approvalNote: '' });
     }
+    await this.sp.merge(this.item('requests', requestId), requestFields(write));
+    return this.readRequest(requestId);
+  }
+
+  async unsendRequest(requestId: number): Promise<PurchaseRequest> {
+    const me = await this.currentUser();
+    const { request } = await this.readStored(requestId);
+    if (request.ownerEmail !== me.email) throw new NotAllowedError(notAllowed.notYours);
+    if (request.status !== 'Awaiting approval') throw new NotAllowedError(notAllowed.unsendWhen);
+    // Back to a Draft with nothing approved; what was sent and the earlier approvals stay in the record (P-050).
+    const write: RequestWrite = { status: 'Draft', approval: approvalWhenReturned(request.approval), returnNote: '' };
+    if (holdsApproval(request)) Object.assign(write, { approvedOn: null, approvedById: null, approvalNote: '' });
+    if (request.returnStage !== '') write.returnStage = '';
     await this.sp.merge(this.item('requests', requestId), requestFields(write));
     return this.readRequest(requestId);
   }

@@ -186,3 +186,13 @@ Max answered the open questions and told Claude to build. This entry covers two 
 - **Outside systems:** none read or written. Decision P-049.
 - **No new column and no Set-up step for this change.** Package version raised to 1.0.2.0, because the 1.0.1.0 file already sent to Max does not have it.
 
+## 2026-11-09. Unsend and Record a purchase (P-050, P-051)
+
+| Commit | What | Why |
+|---|---|---|
+| Unsend and record commit | **Unsend:** `unsendRequest` in both data services and the interface (Awaiting approval to Draft, nothing approved, a resend is the next round); an **Unsend** button and confirmation on the request page; banners for the employee and for the approver who opens an unsent request. **Record a purchase:** new `domain/recording.ts` (the rules), `recordPurchase` in both services (checks first, writes nothing until they pass, no approval request, no certification; the package builder accepts the recorded sentence; the CSV says "Recorded by"), a **Record a purchase** button on the Approvals and Requests to process pages, and a recording mode on the request page (receipts, shipping and tax boxes, a Record purchase button and dialog). A request the administrator recorded can be fixed and marked purchased again. New SOP sections B2b and B5a, Instructions, `DATA_MODEL.md`, `QUICKBOOKS_HANDOFF.md`, `CHECKPOINT.md` (Part 9), screenshots 39 to 42 | Max, 2026-11-09: take a request back while it waits for approval, and record a purchase he made himself without approval |
+| (same commit) | New `data/sharepoint/upgrade.test.ts`: builds a site as the previous version left it (four requests at four stages, no Quantity or Row type column), runs the new app over it, and checks that Set-up asks for exactly those two columns, adds them, changes or removes nothing that was stored, and that every earlier step and both new steps work on the old requests | Max asked for proof that updating the app will not lose the requests already tracked |
+
+- **Outside systems:** none read or written. `npm ci` was run because the packages were gone from this container (an environment reset); this also lost the scratchpad, which held the unfinished skill work.
+- **Tests:** 814 unit tests, the SharePoint build, and 136 browser checks. The flow generator is unchanged since 2026-10-01.
+

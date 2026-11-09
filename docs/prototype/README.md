@@ -61,6 +61,10 @@ All at 1440 pixels wide (a typical laptop) unless noted.
 | `14-admin-approvals.png` | Max's Approvals page now lists PR-0041 with the requests already waiting |
 | `34-admin-approved-to-buy.png` | Max approved it (and changed one category). The page says he approved it and buys it, and offers Open to buy or Return to the employee. The rows as Jane sent them are kept at the bottom |
 | `15-approved-request.png` | Back as Jane: the green banner says who approved it and shows Max's note. She has nothing to do, and the rows are locked to her because the approver buys |
+| `39-awaiting-approval-unsend.png` | A request awaiting approval, with the Unsend button (P-050) |
+| `40-admin-sees-unsent.png` | The approver opens the old link of an unsent request: it says so and offers no Approve (P-050) |
+| `41-recording-a-purchase.png` | The administrator recording a purchase they already made (P-051) |
+| `42-recorded-under-process.png` | The recorded purchase under Requests to process (P-051) |
 | `35-buying-purchases.png` | Max buying: he changed row 1 to the real amount, attached an invoice to each row, and typed the vendor's shipping in its Shipping box, which made a Shipping row that shares the first invoice. "As sent for approval" keeps what Jane asked for |
 | `16-submit-dialog.png` | Max chooses Mark purchased. The dialog says Jane certified the request when she sent it, so he ticks nothing |
 | `17-submitted.png` | After Mark purchased: shown as Purchased, with the package status |

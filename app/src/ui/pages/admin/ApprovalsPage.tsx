@@ -3,6 +3,7 @@ import { messages } from '../../../domain/messages';
 import { formatCents } from '../../../domain/money';
 import { useApp } from '../../AppContext';
 import { Card, DateTime, HeaderCard, Tag, openRowProps } from '../../components/common';
+import { RecordPurchaseButton } from '../../components/RecordPurchaseButton';
 import { Icon } from '../../components/Icon';
 import { latestApprovalByRequest, requestsAwaitingApproval, requestsToBuy } from './adminData';
 import { useAdminLists } from './useAdminLists';
@@ -24,6 +25,7 @@ export function ApprovalsPage(): React.ReactElement {
       <HeaderCard
         title="Approvals"
         subtitle="Requests waiting for your approval, and the requests you approved that you are to buy. You also get an email for each request sent for approval."
+        actions={<RecordPurchaseButton />}
       />
       {loadError ? (
         <div className="ctx-banner red" role="alert">

@@ -5,6 +5,7 @@ import { submissionStatusDisplay } from '../../../domain/statuses';
 import { useApp } from '../../AppContext';
 import { Badge, Card, DateTime, HeaderCard, Tag, openRowProps } from '../../components/common';
 import { Icon } from '../../components/Icon';
+import { RecordPurchaseButton } from '../../components/RecordPurchaseButton';
 import { latestByRequest, requestsToProcess } from './adminData';
 import { useAdminLists } from './useAdminLists';
 
@@ -19,6 +20,7 @@ export function RequestsToProcessPage(): React.ReactElement {
       <HeaderCard
         title="Requests to process"
         subtitle="Submitted requests waiting for you. Their folders are in Accounting > Purchases > Purchases_To_Process."
+        actions={<RecordPurchaseButton />}
       />
       {loadError ? (
         <div className="ctx-banner red" role="alert">

@@ -10,6 +10,7 @@ import { messages } from '../domain/messages';
 import { csvFileName, folderName, packageFiles, PackageFile } from '../domain/naming';
 import { hasReceipt, quoteFiles } from '../domain/receipts';
 import { CERTIFICATION, anyBoughtBefore, mustSendForApproval, sentRowsOf } from '../domain/purchaseRules';
+import { RECORDED_CERTIFICATION } from '../domain/recording';
 import { computeTotals } from '../domain/totals';
 import { ApprovalGroup, PurchaseLine, PurchaseRequest, SentRow, Submission } from '../domain/types';
 import { Issue, approvalGroupsToSend, approvalStateOf, blockingIssues, validateRequest } from '../domain/validation';
@@ -102,7 +103,9 @@ export function prepareSubmission(
   certification: Certification,
   submitter?: Submitter
 ): PreparedSubmission {
-  if (certification.text !== CERTIFICATION || !certification.email) throw new Error(messages.certificationRequired);
+  // A purchase the administrator recorded after buying (P-051) carries its own sentence in place of the employee's certification.
+  if ((certification.text !== CERTIFICATION && certification.text !== RECORDED_CERTIFICATION) || !certification.email)
+    throw new Error(messages.certificationRequired);
   if (request.buyer === 'approver' && !submitter) throw new Error(messages.approverBuysNotSubmitted);
   const state = approvalStateOf(request, lines);
   if (mustSendForApproval(state) || state === 'pending') throw new ApprovalRequiredError(messages.approvalRequiredToSubmit);
@@ -135,7 +138,7 @@ export function prepareSubmission(
     submissionNumber,
     submitterName,
     submittedOn,
-    certifiedBy: { name: certifiedName, email: certification.email },
+    certifiedBy: { name: certifiedName, email: certification.email, recorded: certification.text === RECORDED_CERTIFICATION },
     warnings
   });
 

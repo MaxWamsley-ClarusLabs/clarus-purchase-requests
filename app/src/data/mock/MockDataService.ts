@@ -22,6 +22,7 @@ import { ApproveOptions, CategoryChoice, LineChanges, PurchaseDataService, Reque
 import { ListCheck, SetupStatus } from '../setup';
 import { contentTypeFor } from '../sharepoint/mapping';
 import { LISTS } from '../sharepoint/schema';
+import { RECORDED_CERTIFICATION, RECORDED_NOTE, isRecordedBy, mayRecord, recordedCertification, recordedRequestOf } from '../../domain/recording';
 import {
   LineEditor,
   NotAllowedError,
@@ -374,6 +375,41 @@ export class MockDataService implements PurchaseDataService {
     return this.createPackage(request, prepared);
   }
 
+  async recordPurchase(requestId: number): Promise<Submission> {
+    this.requireAdmin();
+    await this.pause();
+    const request = this.mustFindRequest(requestId);
+    if (request.ownerEmail.toLowerCase() !== this.email) throw new NotAllowedError(notAllowed.notYours);
+    if (!mayRecord(request, this.user)) throw new NotAllowedError(notAllowed.recordWhen);
+    const lines = this.linesOf(requestId);
+    const number = request.submissionCount + 1;
+    for (const stale of staleUploading(this.submissionsOf(requestId), 'package', number)) this.removeSubmission(stale.id);
+    const now = this.now();
+    const who = { name: this.user.displayName, email: this.email };
+    // Checked and packaged as an approved purchase of the administrator's own, with nothing stored until it passes.
+    const recorded = recordedRequestOf(request, lines, who, now);
+    const prepared = prepareSubmission(
+      recorded,
+      lines,
+      await this.getOwnerOtherLines(requestId),
+      now,
+      previousFolderName(this.submissionsOf(requestId), number),
+      { text: RECORDED_CERTIFICATION, email: this.email, name: this.user.displayName },
+      who
+    );
+    this.update(request, {
+      buyer: 'approver',
+      approval: recorded.approval,
+      sentForApprovalOn: recorded.sentForApprovalOn,
+      approvedOn: recorded.approvedOn,
+      approvedBy: recorded.approvedBy,
+      approvedByEmail: recorded.approvedByEmail,
+      approvalNote: RECORDED_NOTE,
+      boughtBeforeApproval: false
+    });
+    return this.createPackage(request, prepared);
+  }
+
   async markPurchased(requestId: number): Promise<Submission> {
     this.requireAdmin();
     await this.pause();
@@ -382,7 +418,7 @@ export class MockDataService implements PurchaseDataService {
     if (refusal) throw new NotAllowedError(refusal);
     const lines = this.linesOf(requestId);
     // What the employee certified when they sent it (P-037): kept on the newest approval request.
-    const certification = employeeCertification(this.submissionsOf(requestId), request);
+    const certification = isRecordedBy(request, this.user) ? recordedCertification(this.user) : employeeCertification(this.submissionsOf(requestId), request);
     const number = request.submissionCount + 1;
     for (const stale of staleUploading(this.submissionsOf(requestId), 'package', number)) this.removeSubmission(stale.id);
     const prepared = prepareSubmission(
@@ -488,6 +524,18 @@ export class MockDataService implements PurchaseDataService {
       lastChanged: at
     });
     if (clearReturnStage) this.update(request, { returnStage: '' });
+    this.changed();
+    return clone(request);
+  }
+
+  async unsendRequest(requestId: number): Promise<PurchaseRequest> {
+    await this.pause();
+    const request = this.mustFindRequest(requestId);
+    if (request.ownerEmail.toLowerCase() !== this.email) throw new NotAllowedError(notAllowed.notYours);
+    if (request.status !== 'Awaiting approval') throw new NotAllowedError(notAllowed.unsendWhen);
+    const clearApproval = holdsApproval(request);
+    this.update(request, { status: 'Draft', returnNote: '', returnStage: '', approval: approvalWhenReturned(request.approval), lastChanged: this.stamp() });
+    if (clearApproval) this.update(request, { approvedOn: '', approvedBy: '', approvedByEmail: '', approvalNote: '' });
     this.changed();
     return clone(request);
   }

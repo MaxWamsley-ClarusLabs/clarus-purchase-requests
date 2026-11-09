@@ -47,6 +47,10 @@ export const notAllowed = {
   notYours: 'Not your request.',
   locked: 'This request is locked.',
   administratorsOnly: 'Administrators only.',
+  /** The employee tries to take back a request the approver has already acted on, or one that was never sent (P-050). */
+  /** An administrator records a purchase on a request that is not theirs to record, or that is already sent (P-051). */
+  recordWhen: 'Only a draft of your own that the approver buys can be recorded as a purchase.',
+  unsendWhen: 'Only a request that is still waiting for approval can be unsent. It has moved on, so refresh the page.',
   draftsOnly: 'Only drafts can be deleted.',
   /** The approver buys the request, so the employee has nothing to submit (P-037). */
   approverBuys: 'The approver buys this request, so there is nothing for you to submit.',

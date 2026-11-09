@@ -70,6 +70,8 @@ export interface CertifiedBy {
   name: string;
   /** The signed-in account that ticked the certification. */
   email: string;
+  /** The administrator recorded this purchase after buying it (P-051): nobody ticked a certification. */
+  recorded?: boolean;
 }
 
 export interface CsvInput {
@@ -135,7 +137,7 @@ export function buildPurchasesCsv(input: CsvInput): string {
       Department: request.department,
       'Purchase dates': purchaseDates,
       'Business purpose': request.businessPurpose,
-      'Certified by': `${input.certifiedBy.name} (${input.certifiedBy.email})`
+      'Certified by': `${input.certifiedBy.recorded ? 'Recorded by ' : ''}${input.certifiedBy.name} (${input.certifiedBy.email})`
     };
     rows.push(CSV_COLUMNS.map((c) => values[c]));
   }

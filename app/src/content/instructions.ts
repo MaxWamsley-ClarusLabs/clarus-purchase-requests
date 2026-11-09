@@ -49,7 +49,8 @@ export const INSTRUCTIONS: InstructionSection[] = [
       `For a vendor total of ${QUOTE_THRESHOLD_TEXT} or more, attach a quote (drop it into the box, or choose "+ Quote" in the row's Files column), or say why there is none in the "No quote: say why" box on the vendor's first row. You attach no receipt: the approver does that after buying.`,
       'On Review and send, fix anything marked in red, then choose Send to the approver. Every request goes to the approver, whatever the amount. You tick the certification then (see Certification below), because you submit nothing afterwards.',
       'The request is locked and the approver is emailed. Its status is Awaiting approval. If the approver returns it, it shows as Returned with their note. Correct it and send it again.',
-      'When it is approved, the approver buys it, attaches the receipt and marks it purchased. You have nothing more to do. The status changes to Purchased and then to Processed.'
+      'When it is approved, the approver buys it, attaches the receipt and marks it purchased. You have nothing more to do. The status changes to Purchased and then to Processed.',
+      'Sent it by mistake, or want to change it? While it is still Awaiting approval, open it and choose Unsend. It becomes a draft again, which you can change and send again. The approver already got the email, which cannot be recalled, but they cannot approve a draft. Once the approver has approved or returned it, it cannot be unsent: ask the approver to return it.'
     ]
   },
   {
@@ -126,7 +127,8 @@ export const INSTRUCTIONS: InstructionSection[] = [
       "To buy it, open the approved request and choose Open to buy. Change each row to what you bought: the vendor, the quantity, the total, the date. For shipping and tax, type them from the receipt in the Shipping and Tax boxes beside the vendor in Vendor totals. Each makes a row (shipping in Shipping/Postage, tax in the category of that vendor's largest purchase) that you can still change, and an emptied box removes it. Use Add another row for anything else. The rows as the employee sent them stay on the page. You may spend more than was approved.",
       'Attach each vendor\'s receipt or invoice to one of its rows (the "+ Receipt" button in its Files column): it covers all of that vendor\'s rows, including shipping and tax. Use "Same receipt as row" only when one receipt covers rows with different vendor names. On Review and mark purchased, choose Mark purchased. A folder with the receipts, the quotes and a spreadsheet is made for the administrator, who is emailed.',
       'If you cannot buy it, return it to the employee with a note from its page. Delete any rows you added first. If the administrator returns it to you after you marked it purchased, fix it and mark it purchased again.',
-      'Only the approver who approved a request buys it. Another site Owner can read it and can return it to the employee with a note, so it is never stuck, but cannot change its rows or mark it purchased.'
+      'Only the approver who approved a request buys it. Another site Owner can read it and can return it to the employee with a note, so it is never stuck, but cannot change its rows or mark it purchased.',
+      'Bought something yourself and need it on record? Choose Record a purchase, at the top of Approvals or Requests to process. Add a row for each purchase, attach the receipt or invoice (one per vendor is enough) and choose Record purchase. There is no approval and no certification: it goes straight to Requests to process with its folder and spreadsheet, marked as recorded by you. Only administrators see this button.'
     ]
   },
   {

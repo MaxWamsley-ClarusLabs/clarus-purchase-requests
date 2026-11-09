@@ -429,6 +429,28 @@ Max said that about 95% of purchases are bought by the person who approves them,
 - **Known limit:** a vendor with two separate orders can pass with a single receipt. The check is that the vendor has a receipt, not that it matches the amount. If the vendor's only receipt is removed, every row of that vendor needs a receipt or a reason again.
 - **Where a change goes:** `vendorReceiptRow` and `receiptSourceRow` in `domain/receipts.ts` (every screen, check and the package follow it); `fileNamesForRow` in `domain/naming.ts`; the "Row N receipt" chips in `PurchaseGrid.tsx`, `AdminRequestPage.tsx` and the review table.
 
+
+## P-050. The employee can unsend a request that is waiting for approval
+
+- **Date:** 2026-11-09
+- **Status:** Decided (Max, 2026-11-09: "agree" to all three recommendations).
+- **Decision:** (1) Only the owner, and only while the request is **Awaiting approval**. (2) It becomes a **Draft**, editable and ready to send again, with nothing approved; what was sent and the earlier approvals stay in the record, and a resend is the next round (round 2). (3) **No new email**: the flow does not change. The request leaves the approver's Approvals list; an old email link opens a page that says the employee unsent it and offers no Approve or Return. The approval email already sent cannot be recalled. A request that is Draft with a round already recorded is how the app knows it was unsent, so there is no new column.
+- **Refused with a plain message:** a request that was never sent, or the approver has approved or returned (the second of two actions at the same moment loses); anyone but the owner, administrators included.
+- **Known limit:** SharePoint cannot make the check and the change one step, so an approval and an unsend at exactly the same moment could leave the request a Draft that still shows the approver's name. Both screens then treat it as a Draft and it can be sent again, which clears it.
+- **Not done:** an Unsend button in the My requests list. The button is on the request page, one click from the list.
+- **Where a change goes:** `unsendRequest` in the two data services, `notAllowed.unsendWhen`, the banner and dialog in `RequestWorkspace.tsx`, the banner in `AdminRequestPage.tsx`.
+
+## P-051. An administrator can record a purchase they already made
+
+- **Date:** 2026-11-09
+- **Status:** Decided (Max, 2026-11-09: a new admin-side button; the same screen and folder as a normal request; your name as requester and buyer, no certification).
+- **Decision:** A **Record a purchase** button at the top of the administrator's **Approvals** and **Requests to process** pages (employees never see it) starts a new request of the administrator's own that the approver buys. On its page the administrator adds rows, attaches the receipt (one per vendor covers the vendor, P-049), uses the shipping and tax boxes (P-048), and chooses **Record purchase**. It is checked as an approved purchase (receipts needed, no quote and no item link asked), has **no approval step and no certification**, and goes to processing like any purchase: a package submission, the folder with receipts and CSV in `Accounting/Purchases/Purchases_To_Process`, and the email to the administrator. Nothing is written until every check passes.
+- **How it is marked:** the request is approved by the administrator as of the recording (the CSV shows "Approved by Max Wamsley (self-approved)"); its approval note is "Recorded by the administrator after buying."; the submission's certification sentence is "Recorded by the administrator after buying. No employee certification."; the CSV's "Certified by" says "Recorded by <name> (<email>)". No approval request is made, so no approval email is sent. The company is the payer of every row, as for any request the approver buys.
+- **Provisional (Claude):** the button is on Approvals and Requests to process only. The administrator who recorded it can fix it and mark it purchased again if it is returned at processing (no employee certification is needed for a request they recorded and own). The status shown is Purchased, as when the approver buys.
+- **Known limit:** an employee can edit their own list items directly (D-002), so one could write the "recorded" note on their own request; marking it purchased would then skip the employee's certification. The recorded rule also requires that the administrator is the request's owner and the one who approved it, which narrows this to a request that is already the administrator's.
+- **Not verified:** the new request and its folder on the real site. Test it on the Test flow first.
+- **Where a change goes:** `domain/recording.ts` (the rules), `recordPurchase` in the two data services, `RecordPurchaseButton.tsx`, recording mode in `RequestWorkspace.tsx`.
+
 ---
 
 ## Status of strategy items

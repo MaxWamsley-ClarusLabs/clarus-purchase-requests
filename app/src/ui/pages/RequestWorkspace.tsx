@@ -4,6 +4,7 @@ import { departmentSuggestions, vendorSuggestions } from '../../domain/defaults'
 import { dateRangeText, todayIso } from '../../domain/dates';
 import { messages } from '../../domain/messages';
 import { ExtraKind, planExtraCharge } from '../../domain/extraCharges';
+import { mayRecord, recordedRequestOf } from '../../domain/recording';
 import { formatCents, parseAmountToCents } from '../../domain/money';
 import {
   APPROVAL_THRESHOLD_TEXT,
@@ -119,7 +120,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
   const [touchedLines, setTouchedLines] = React.useState<Record<string, boolean>>({});
   const [showAllIssues, setShowAllIssues] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
-  const [confirm, setConfirm] = React.useState<'send' | 'submit' | 'purchase' | 'delete' | null>(null);
+  const [confirm, setConfirm] = React.useState<'send' | 'submit' | 'purchase' | 'record' | 'delete' | 'unsend' | null>(null);
   const [certified, setCertified] = React.useState(false);
   // While a row or a file is added or removed, or the request is sent or submitted. A count, so one
   // that ends while another still runs does not end it.
@@ -329,6 +330,15 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
   const buying = !!request && mayBuy(request, app.user);
   const ownerEdits = !!request && isEditable(request.status, request.buyer) && sameEmail(request.ownerEmail, app.user.email);
   const editable = ownerEdits || buying;
+  // An administrator recording a purchase they already made (P-051): their own draft that the approver buys. It is
+  // checked as the approved purchase it becomes (receipts needed, no quote or link asked), and the receipts, the
+  // shipping and tax boxes and the other buying tools are there, as when buying.
+  const recording = !!request && mayRecord(request, app.user);
+  const checked = React.useMemo(
+    () => (request && recording ? recordedRequestOf(request, lines, { name: app.user.displayName, email: app.user.email }, new Date()) : request),
+    [request, lines, recording]
+  );
+  const buyingTools = buying || recording;
   React.useEffect(() => {
     setGridWidth(gridMinWidth(approverBuys));
   }, [approverBuys]);
@@ -339,14 +349,14 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
   const receiptsNotAskedHere = !!request && approverBuys && request.status === 'Approved' && !buying;
   const issues: Issue[] = React.useMemo(() => {
     if (!request) return [];
-    const all = validateRequest(request, lines, others, asOf);
+    const all = validateRequest(checked ?? request, lines, others, asOf);
     return receiptsNotAskedHere ? all.filter((i) => i.field !== 'receipt') : all;
-  }, [request, lines, others, asOf, receiptsNotAskedHere]);
+  }, [request, checked, lines, others, asOf, receiptsNotAskedHere]);
   const blocking = blockingIssues(issues);
   const warnings = issues.filter((i) => i.severity === 'warning');
   const totals = computeTotals(lines, request?.buyer);
-  const state: ApprovalState = request ? approvalStateOf(request, lines) : 'notRequired';
-  const stage = request ? validationStage(request, lines) : 'submit';
+  const state: ApprovalState = request ? approvalStateOf(checked ?? request, lines) : 'notRequired';
+  const stage = request ? validationStage(checked ?? request, lines) : 'submit';
 
   // Issues shown on screen: rows nobody has started are "to fill in", not red.
   const shownIssues = issues.filter((i) => {
@@ -366,7 +376,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     const nav: RequestNav = {
       requestId: request.id,
       requestNumber: request.requestNumber,
-      names: request.buyer === 'approver' ? { review: buying ? 'Review and mark purchased' : 'Review and send' } : undefined,
+      names: request.buyer === 'approver' ? { review: recording ? 'Review and record' : buying ? 'Review and mark purchased' : 'Review and send' } : undefined,
       steps: {
         details: !ownerEdits
           ? { state: 'done', status: 'Read-only' }
@@ -661,6 +671,46 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
     });
   };
 
+  /** The administrator records a purchase they already made (P-051): it goes to processing without approval. */
+  const record = async (): Promise<void> => {
+    setConfirm(null);
+    beginBusy();
+    try {
+      if (!(await saveEverything())) {
+        app.toast('Nothing was recorded. Check the request, then record it again.', 'warning');
+        return;
+      }
+      await service.recordPurchase(request.id);
+      await load();
+      app.toast('Recorded. The folder is being made for processing.');
+      app.refreshAdminCounts();
+    } catch (e) {
+      if (e instanceof SubmissionBlockedError) {
+        setShowAllIssues(true);
+        app.toast(e.message, 'warning');
+      } else app.reportError(e);
+    } finally {
+      endBusy();
+    }
+  };
+
+  /** The employee takes a request back from the approver while it is still waiting (P-050). */
+  const unsend = async (): Promise<void> => {
+    setConfirm(null);
+    beginBusy();
+    try {
+      await service.unsendRequest(request.id);
+      app.toast('Unsent. It is a draft again: change it and send it again when you are ready.');
+      app.refreshAdminCounts();
+    } catch (e) {
+      app.reportError(e);
+    } finally {
+      // Whatever happened, show where the request stands now.
+      await load();
+      endBusy();
+    }
+  };
+
   const deleteDraft = async (): Promise<void> => {
     setConfirm(null);
     try {
@@ -732,11 +782,11 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
         disabled={blocking.length > 0 || busy}
         onClick={() => {
           setCertified(false);
-          setConfirm(buying ? 'purchase' : sending ? 'send' : 'submit');
+          setConfirm(recording ? 'record' : buying ? 'purchase' : sending ? 'send' : 'submit');
         }}
       >
         <Icon name="send" size={16} />
-        {buying ? 'Mark purchased' : sending ? (approverBuys ? 'Send to the approver' : 'Send for approval') : 'Submit request'}
+        {recording ? 'Record purchase' : buying ? 'Mark purchased' : sending ? (approverBuys ? 'Send to the approver' : 'Send for approval') : 'Submit request'}
       </button>
     );
 
@@ -768,7 +818,26 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
           </>
         }
       />
-      <StatusBanner request={request} lines={lines} state={state} latestApproval={latestApproval} latestPackage={latestPackage} buying={buying} />
+      <StatusBanner
+        request={request}
+        lines={lines}
+        state={state}
+        latestApproval={latestApproval}
+        latestPackage={latestPackage}
+        buying={buying}
+        canUnsend={sameEmail(request.ownerEmail, app.user.email)}
+        busy={busy}
+        onUnsend={() => setConfirm('unsend')}
+      />
+      {recording ? (
+        <div className="ctx-banner purple">
+          <Icon name="check" />
+          <div>
+            <strong>You are recording a purchase you already made.</strong> Add a row for each purchase, attach the receipt or invoice (one per vendor is
+            enough), and choose Record purchase. It goes to processing without approval and without a certification, and is marked as recorded by you.
+          </div>
+        </div>
+      ) : null}
       <TotalsStrip
         totals={totals}
         blockingCount={blocking.length}
@@ -795,7 +864,14 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
         <div className={`ctx-expenses-layout ${sidePreview ? '' : 'no-preview'}`} ref={layoutRef}>
           <div className="ctx-stack">
             {/* The employee of a request the approver buys sends quotes; the approver attaches the receipts one row at a time (P-037). */}
-            {ownerEdits ? <DropZone onFiles={addFiles} disabled={busy} quoteHint={sending || approverBuys} only={approverBuys ? 'quote' : undefined} /> : null}
+            {ownerEdits ? (
+              <DropZone
+                onFiles={addFiles}
+                disabled={busy}
+                quoteHint={!recording && (sending || approverBuys)}
+                only={approverBuys && !recording ? 'quote' : undefined}
+              />
+            ) : null}
             <Card
               title={`Purchases (${lines.length})`}
               actions={
@@ -815,7 +891,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
                     ? approverBuys
                       ? 'Drop a quote in the box above and it becomes a row. Or add a purchase without a file.'
                       : 'Drop your files in the box above. Each file becomes a row. Or add a purchase without a file.'
-                    : buying
+                    : buyingTools
                       ? 'Add the purchases you made.'
                       : 'This request has no purchases.'}
                 </div>
@@ -825,9 +901,9 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
                   issues={shownIssues}
                   readOnly={!editable}
                   buyer={request.buyer}
-                  buying={buying}
+                  buying={buyingTools}
                   stage={stage}
-                  approvals={lineApprovals(lines, request.status, request.approval, request.buyer)}
+                  approvals={recording ? new Map() : lineApprovals(lines, request.status, request.approval, request.buyer)}
                   selectedLineId={selectedLineId}
                   onSelect={setSelectedLineId}
                   onChange={changeLine}
@@ -857,7 +933,7 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
                     onClick={() => structural(() => service.addEmptyLine(request.id))}
                   >
                     <Icon name="plus" size={15} />
-                    {buying ? 'Add another row' : 'Add purchase without a file'}
+                    {buying ? 'Add another row' : recording ? 'Add a purchase' : 'Add purchase without a file'}
                   </button>
                   <span className="ctx-hint">
                     Enter moves down a column. Ctrl+D copies the row above. You can paste rows from a spreadsheet, its columns in the grid&apos;s order, without
@@ -867,7 +943,12 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
               ) : null}
             </Card>
             <Card title="Vendor totals">
-              <VendorTotals lines={lines} request={request} showIntro extras={buying ? { busy, onSet: setExtraCharge } : undefined} />
+              <VendorTotals
+                lines={lines}
+                request={recording && checked ? checked : request}
+                showIntro={!recording}
+                extras={buyingTools ? { busy, onSet: setExtraCharge } : undefined}
+              />
             </Card>
             <SentRowsCard request={request} lines={lines} forApprover={buying || app.user.isAdministrator} />
           </div>
@@ -884,7 +965,8 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
           lines={lines}
           issues={issues}
           editable={editable}
-          buying={buying}
+          buying={buyingTools}
+          recording={recording}
           state={state}
           stage={stage}
           approvers={approvers}
@@ -1009,6 +1091,48 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
           </p>
         </Dialog>
       ) : null}
+      {confirm === 'record' ? (
+        <Dialog
+          title={`Record ${request.requestNumber} as purchased?`}
+          onClose={() => setConfirm(null)}
+          actions={
+            <>
+              <button className="ctx-btn ctx-btn-secondary" onClick={() => setConfirm(null)}>
+                Cancel
+              </button>
+              <button className="ctx-btn ctx-btn-primary" onClick={record}>
+                Record purchase
+              </button>
+            </>
+          }
+        >
+          <p style={{ margin: 0 }}>
+            A folder with the receipts, the quotes and a spreadsheet is made in Accounting for processing, and the administrator is emailed. There is no
+            approval step and no certification: the request is marked as recorded by {app.user.displayName}. It is locked once recorded.
+          </p>
+        </Dialog>
+      ) : null}
+      {confirm === 'unsend' ? (
+        <Dialog
+          title={`Unsend ${request.requestNumber}?`}
+          onClose={() => setConfirm(null)}
+          actions={
+            <>
+              <button className="ctx-btn ctx-btn-secondary" onClick={() => setConfirm(null)}>
+                Cancel
+              </button>
+              <button className="ctx-btn ctx-btn-primary" onClick={unsend}>
+                Unsend
+              </button>
+            </>
+          }
+        >
+          <p style={{ margin: 0 }}>
+            The request becomes a draft again, so you can change it and send it again. The approver was already emailed and that email cannot be recalled, but
+            they will not be able to approve it while it is a draft. If the approver approves it at the same moment, you will be told and nothing is unsent.
+          </p>
+        </Dialog>
+      ) : null}
       {confirm === 'delete' ? (
         <Dialog
           title={`Delete ${request.requestNumber}?`}
@@ -1039,9 +1163,25 @@ function StatusBanner(props: {
   latestPackage: Submission | undefined;
   /** The signed-in approver is buying this request (P-037). */
   buying: boolean;
+  /** The signed-in person owns the request, so may take it back while it waits for approval (P-050). */
+  canUnsend: boolean;
+  busy: boolean;
+  onUnsend: () => void;
 }): React.ReactElement | null {
   const { request, latestApproval, latestPackage } = props;
   const approverBuys = request.buyer === 'approver';
+  // A Draft that was sent once and taken back (P-050): a request that was never sent has no rounds.
+  if (request.status === 'Draft' && request.approvalRounds > 0) {
+    return (
+      <div className="ctx-banner amber">
+        <Icon name="undo" />
+        <div>
+          <strong>You unsent this request.</strong> It is a draft again. Change it and send it {approverBuys ? 'to the approver' : 'for approval'} again, or
+          delete it. The approval email that was already sent cannot be recalled.
+        </div>
+      </div>
+    );
+  }
   if (request.status === 'Returned') {
     const by =
       request.returnStage === 'approval' ? 'the approver' : request.returnStage === 'processing' ? 'the administrator' : 'the approver or administrator';
@@ -1074,6 +1214,15 @@ function StatusBanner(props: {
             <>
               {' '}
               <Badge tone={email.tone}>{email.label}</Badge>
+            </>
+          ) : null}
+          {props.canUnsend ? (
+            <>
+              {' '}
+              <button className="ctx-btn ctx-btn-secondary ctx-btn-small" disabled={props.busy} onClick={props.onUnsend}>
+                <Icon name="undo" size={14} />
+                Unsend
+              </button>
             </>
           ) : null}
         </div>
@@ -1354,6 +1503,13 @@ function DetailsStep(props: {
 }
 
 /** What the person should expect next, for each place a request can be in. */
+/** What happens after the administrator records a purchase (P-051). */
+const RECORDING_NEXT_STEPS = [
+  'Choose Record purchase. There is no approval and no certification.',
+  'A folder with the receipts, the quotes and a spreadsheet is made in Accounting for processing, and you are emailed.',
+  'The request is locked and marked as recorded by you. Process it and mark it processed as usual.'
+];
+
 function nextSteps(request: PurchaseRequest, state: ApprovalState, buying: boolean): string[] {
   if (request.status === 'Processed') return ['This request has been processed and is closed.'];
   if (request.buyer === 'approver') return nextStepsWhenApproverBuys(request, state, buying);
@@ -1447,6 +1603,8 @@ function ReviewStep(props: {
   editable: boolean;
   /** The signed-in approver is buying this request (P-037): the last step is "Mark purchased". */
   buying: boolean;
+  /** The administrator is recording a purchase they already made (P-051): the last step is "Record purchase". */
+  recording?: boolean;
   state: ApprovalState;
   stage: 'approval' | 'submit';
   approvers: string[];
@@ -1455,13 +1613,13 @@ function ReviewStep(props: {
   onConfirm: (lineId: string) => void;
   onDelete: () => void;
 }): React.ReactElement {
-  const { request, lines, issues, editable, state, stage, buying } = props;
+  const { request, lines, issues, editable, state, stage, buying, recording } = props;
   const approverBuys = request.buyer === 'approver';
   // In the order they appear: the request first, then rows.
   const position = (i: Issue) => i.rowNumber ?? 0;
   const blocking = issues.filter((i) => i.severity === 'blocking').sort((a, b) => position(a) - position(b));
   const warnings = issues.filter((i) => i.severity === 'warning').sort((a, b) => position(a) - position(b));
-  const action = buying ? 'mark it purchased' : stage === 'approval' ? 'send' : 'submit';
+  const action = recording ? 'record it' : buying ? 'mark it purchased' : stage === 'approval' ? 'send' : 'submit';
   const approvalDisplay = approvalStateDisplay(state, request.buyer);
   const needing = vendorRows(lines, request).filter((r) => r.group.needsApproval);
   const dates = dateRangeText(lines.map((l) => l.date));
@@ -1491,17 +1649,23 @@ function ReviewStep(props: {
             </dl>
           </Card>
           {editable ? (
-            <Card title={buying ? 'Before you mark it purchased' : stage === 'approval' ? 'Before you send' : 'Before you submit'}>
+            <Card
+              title={
+                recording ? 'Before you record it' : buying ? 'Before you mark it purchased' : stage === 'approval' ? 'Before you send' : 'Before you submit'
+              }
+            >
               {blocking.length === 0 && warnings.length === 0 ? (
                 <div className="ctx-banner green">
                   <Icon name="check" />
-                  {buying
-                    ? 'Everything is complete. You can mark it purchased.'
-                    : stage === 'approval'
-                      ? approverBuys
-                        ? 'Everything is complete. You can send the request to the approver.'
-                        : 'Everything is complete. You can send the request for approval.'
-                      : 'Everything is complete. You can submit.'}
+                  {recording
+                    ? 'Everything is complete. You can record this purchase.'
+                    : buying
+                      ? 'Everything is complete. You can mark it purchased.'
+                      : stage === 'approval'
+                        ? approverBuys
+                          ? 'Everything is complete. You can send the request to the approver.'
+                          : 'Everything is complete. You can send the request for approval.'
+                        : 'Everything is complete. You can submit.'}
                 </div>
               ) : null}
               {blocking.length > 0 ? (
@@ -1620,7 +1784,7 @@ function ReviewStep(props: {
           </Card>
           <Card title="What happens next">
             <ul style={{ margin: 0, paddingLeft: 18 }} className="ctx-hint">
-              {nextSteps(request, state, buying).map((text, i) => (
+              {(recording ? RECORDING_NEXT_STEPS : nextSteps(request, state, buying)).map((text, i) => (
                 <li key={i}>{text}</li>
               ))}
             </ul>

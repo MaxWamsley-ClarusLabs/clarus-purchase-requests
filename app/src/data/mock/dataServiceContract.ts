@@ -10,6 +10,7 @@
 /* eslint-disable max-lines */
 import { messages } from '../../domain/messages';
 import { CERTIFICATION, isSelfApproved, vendorKey } from '../../domain/purchaseRules';
+import { RECORDED_CERTIFICATION, RECORDED_NOTE } from '../../domain/recording';
 import { ApprovalGroup, CategoryId, PackageStatus, PaidById, PurchaseLine, RequestStatus, SubmissionType } from '../../domain/types';
 import { ApprovalRequiredError, SubmissionBlockedError } from '../../export/submission';
 import { ApproveOptions, PurchaseDataService, RequestChanges } from '../PurchaseDataService';
@@ -928,6 +929,96 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       expect(rows[1]).toContain('Approved,Yes,Max Wamsley');
       expect(rows[2]).toContain('Borealis Optics');
       expect(rows[2]).toContain('Approved,No,Max Wamsley');
+    });
+
+    it('lets the owner unsend a request that is still waiting for approval: a draft again, nothing approved, sent again as the next round (P-050)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const max = h.as(MAX, SUBMITTED_AT);
+      const { id } = await fill(jane, [{ ...ACME, amountCents: 60000 }]);
+      await jane.sendForApproval(id);
+      expect((await jane.getRequest(id)).request).toMatchObject({ status: 'Awaiting approval', approvalRounds: 1 });
+      const back = await jane.unsendRequest(id);
+      expect(back).toMatchObject({ status: 'Draft', approvalRounds: 1, returnNote: '', returnStage: '' });
+      expect(back.approval.approved).toEqual([]);
+      // The approver can no longer approve or return it, and it is not waiting under Approvals.
+      expect((await refusal(max.approveRequest(id, { note: '', categories: {} }))).message).toBe(notAllowed.approveWhen);
+      expect((await refusal(max.returnRequest(id, 'No'))).message).toBe(notAllowed.returnWhen);
+      // It is editable and can be sent again, which is round 2.
+      await jane.updateRequest(id, { businessPurpose: 'Lab supplies, changed' });
+      await jane.sendForApproval(id);
+      expect((await jane.getRequest(id)).request).toMatchObject({ status: 'Awaiting approval', approvalRounds: 2, businessPurpose: 'Lab supplies, changed' });
+      // It can be unsent and then deleted, as any draft can.
+      await jane.unsendRequest(id);
+      await jane.deleteRequest(id);
+    });
+
+    it('lets an administrator record a purchase they made: no approval, no certification, marked as recorded, packaged for processing (P-051)', async () => {
+      const h = await makeHarness();
+      const max = h.as(MAX, NOW);
+      const { id } = await fill(max, [{ ...ACME, amountCents: 60000, receipts: ['invoice.pdf'] }], { ...HEADER, buyer: 'approver' });
+      const submission = await max.recordPurchase(id);
+      expect(submission).toMatchObject({ type: 'package', certificationText: RECORDED_CERTIFICATION, submitterEmail: MAX.email });
+      const { request } = await max.getRequest(id);
+      expect(request).toMatchObject({ status: 'Submitted', buyer: 'approver', approvedBy: MAX.name, approvalNote: RECORDED_NOTE, boughtBeforeApproval: false });
+      // No approval request was made, so nothing is emailed to an approver.
+      expect((await max.listSubmissionsForRequest(id)).map((s) => s.type)).toEqual(['package']);
+      const [header, row] = (await max.getSubmissionCsv(submission.id)).split('\r\n');
+      expect(header).toContain('Certified by');
+      expect(row).toContain(`Recorded by ${MAX.name} (${MAX.email})`);
+      expect(row).toContain('Approved,No');
+      expect(row).toContain('R01_invoice.pdf');
+      // It is processed like any purchase.
+      expect((await max.markProcessed(id)).status).toBe('Processed');
+    });
+
+    it('checks a recorded purchase before writing anything, and refuses anyone else or a request that is not a draft of their own (P-051)', async () => {
+      const h = await makeHarness();
+      const max = h.as(MAX, NOW);
+      const jane = h.as(JANE, NOW);
+      // A purchase with no receipt is blocked, and nothing is changed.
+      const bare = await fill(max, [{ ...ACME, amountCents: 60000 }], { ...HEADER, buyer: 'approver' });
+      const error = await max.recordPurchase(bare.id).then(
+        () => undefined,
+        (e: unknown) => e
+      );
+      expect(error).toBeInstanceOf(SubmissionBlockedError);
+      expect((await max.getRequest(bare.id)).request).toMatchObject({ status: 'Draft', approvalNote: '' });
+      expect(await max.listSubmissionsForRequest(bare.id)).toEqual([]);
+      // An employee cannot, and an administrator cannot record someone else's request.
+      const theirs = await fill(jane, [{ ...ACME, amountCents: 60000, receipts: ['invoice.pdf'] }], { ...HEADER, buyer: 'approver' });
+      expect((await refusal(jane.recordPurchase(theirs.id))).message).toBe(notAllowed.administratorsOnly);
+      expect((await refusal(max.recordPurchase(theirs.id))).message).toBe(notAllowed.notYours);
+      // A request that was already recorded cannot be recorded again.
+      const done = await fill(max, [{ ...ACME, amountCents: 1000, receipts: ['invoice.pdf'] }], { ...HEADER, buyer: 'approver' });
+      await max.recordPurchase(done.id);
+      expect((await refusal(max.recordPurchase(done.id))).message).toBe(notAllowed.recordWhen);
+    });
+
+    it('lets the administrator who recorded a purchase fix it and mark it purchased again when it is returned at processing (P-051)', async () => {
+      const h = await makeHarness();
+      const max = h.as(MAX, NOW);
+      const { id } = await fill(max, [{ ...ACME, amountCents: 1000, receipts: ['invoice.pdf'] }], { ...HEADER, buyer: 'approver' });
+      await max.recordPurchase(id);
+      await max.returnRequest(id, 'Wrong account');
+      expect((await max.getRequest(id)).request.status).toBe('Approved');
+      const again = await max.markPurchased(id);
+      expect(again).toMatchObject({ type: 'package', submissionNumber: 2, certificationText: RECORDED_CERTIFICATION });
+    });
+
+    it('refuses to unsend a request that was never sent, that is approved, or that is not yours (P-050)', async () => {
+      const h = await makeHarness();
+      const jane = h.as(JANE, NOW);
+      const max = h.as(MAX, SUBMITTED_AT);
+      const draft = await fill(jane, [{ ...ACME, amountCents: 60000 }]);
+      expect((await refusal(jane.unsendRequest(draft.id))).message).toBe(notAllowed.unsendWhen);
+      await jane.sendForApproval(draft.id);
+      // Someone else, even an administrator, cannot unsend it.
+      expect((await refusal(max.unsendRequest(draft.id))).message).toBe(notAllowed.notYours);
+      expect((await refusal(h.as(SAM, NOW).unsendRequest(draft.id))).message).toMatch(/Not your request|could not be found/);
+      await h.as(MAX, APPROVED_AT).approveRequest(draft.id, { note: '', categories: {} });
+      expect((await refusal(jane.unsendRequest(draft.id))).message).toBe(notAllowed.unsendWhen);
+      expect((await jane.getRequest(draft.id)).request.status).toBe('Approved');
     });
 
     it('remembers an approval through later rounds that are returned, so a vendor bought after its approval is never flagged (P-017)', async () => {

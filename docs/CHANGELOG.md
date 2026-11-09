@@ -196,3 +196,7 @@ Max answered the open questions and told Claude to build. This entry covers two 
 - **Outside systems:** none read or written. `npm ci` was run because the packages were gone from this container (an environment reset); this also lost the scratchpad, which held the unfinished skill work.
 - **Tests:** 814 unit tests, the SharePoint build, and 136 browser checks. The flow generator is unchanged since 2026-10-01.
 
+## 2026-11-09. Update steps file
+
+- New `docs/UPDATE_1.0.2.0.md`: the numbered steps for Max to replace the app and update the lists, with the safety notes and the way back. No code changed; no outside system read or written.
+

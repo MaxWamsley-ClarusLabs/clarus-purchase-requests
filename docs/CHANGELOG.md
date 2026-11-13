@@ -200,3 +200,7 @@ Max answered the open questions and told Claude to build. This entry covers two 
 
 - New `docs/UPDATE_1.0.2.0.md`: the numbered steps for Max to replace the app and update the lists, with the safety notes and the way back. No code changed; no outside system read or written.
 
+## 2026-11-13. Version 1.0.2.0 installed (reported by Max)
+
+- Max replaced the app with the 1.0.2.0 package step by step in chat, ran Set-up (Update the lists: all three Ready), and checked that the same 11 requests with the same statuses were there. He tried the new features on a throwaway draft and deleted it. No code changed. Nothing was read or written by Claude in Microsoft 365: everything above is Max's report.
+

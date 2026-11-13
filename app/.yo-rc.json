@@ -1,0 +1,23 @@
+{
+  "@microsoft/generator-sharepoint": {
+    "whichFolder": "subdir",
+    "solutionName": "clarus-purchase-requests",
+    "solutionShortDescription": "Clarus Labs purchase request app",
+    "environment": "spo",
+    "packageManager": "npm",
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "useGulp": false,
+    "componentType": "webpart",
+    "template": "react",
+    "componentName": "PurchaseRequests",
+    "componentDescription": "Purchase requests and approvals",
+    "plusBeta": false,
+    "isCreatingSolution": true,
+    "nodeVersion": "22.22.2",
+    "sdksVersions": {},
+    "version": "1.23.2",
+    "libraryName": "clarus-purchase-requests",
+    "libraryId": "d8fc7a2a-d49d-45be-8a7d-17c1f76f0631"
+  }
+}

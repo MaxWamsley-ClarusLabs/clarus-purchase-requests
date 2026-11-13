@@ -1,0 +1,6 @@
+{
+  // The SPFx rig's Jest settings, run in Node like the Vitest run (vitest.config.mts).
+  // The unit tests cover rules and data code, not screens, so no simulated browser is needed.
+  "extends": "@microsoft/spfx-web-build-rig/profiles/default/config/jest.config.json",
+  "testEnvironment": "node"
+}

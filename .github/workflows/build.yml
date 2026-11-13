@@ -1,0 +1,52 @@
+# Checks the app and builds the SharePoint app package on every pull request
+# (strategy section 10). The package is kept as a download on each run for
+# Max to upload to the app catalog when a version is approved. No deployment
+# credentials are stored in GitHub; nothing is sent to Microsoft 365.
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests (Vitest)
+        run: npm test
+
+      - name: SharePoint build, tests under Jest, and package
+        run: npm run build
+
+      - name: Keep the app package
+        uses: actions/upload-artifact@v4
+        with:
+          name: clarus-purchase-requests-sppkg
+          path: app/sharepoint/solution/clarus-purchase-requests.sppkg
+          if-no-files-found: error
+          retention-days: 30

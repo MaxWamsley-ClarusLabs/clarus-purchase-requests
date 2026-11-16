@@ -15,6 +15,7 @@ export type Route =
   | { name: 'adminAttention' }
   | { name: 'adminAll' }
   | { name: 'adminRequest'; requestId: number }
+  | { name: 'ledger' }
   | { name: 'setup' };
 
 export interface Location {
@@ -36,6 +37,8 @@ export function parseHash(hash: string): Location {
   if (parts[0] === 'request' && requestId(parts[1]) !== null) {
     const step = parts[2] === 'purchases' || parts[2] === 'review' ? parts[2] : 'details';
     route = { name: 'request', requestId: Number(parts[1]), step };
+  } else if (parts[0] === 'ledger') {
+    route = { name: 'ledger' };
   } else if (parts[0] === 'admin') {
     if (parts[1] === 'approvals') route = { name: 'adminApprovals' };
     else if (parts[1] === 'process') route = { name: 'adminProcess' };
@@ -65,6 +68,8 @@ export function toHash(route: Route): string {
       return `#/admin/request/${route.requestId}`;
     case 'setup':
       return '#/admin/setup';
+    case 'ledger':
+      return '#/ledger';
   }
 }
 

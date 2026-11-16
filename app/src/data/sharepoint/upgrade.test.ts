@@ -1,6 +1,6 @@
-// The upgrade of a site that already holds requests (P-047 to P-051): the new app is installed over the old one,
-// and Set-up adds the Quantity and Row type columns. This makes a site look as the previous version left it, with
-// requests at every stage and no new columns, then runs the new app over it. Nothing already tracked may be lost,
+// The upgrade of a site that already holds requests (P-052 to P-058): the new app is installed over the old one,
+// and Set-up adds the Ledger columns on the lines and the receipt archive link on the submissions. This makes a site
+// look as version 1.0.2.0 left it, with requests at every stage and no new columns, then runs the new app over it. Nothing already tracked may be lost,
 // changed or hidden, and every step that worked before must still work.
 
 import { CERTIFICATION } from '../../domain/purchaseRules';
@@ -12,11 +12,27 @@ import { SharePointDataService } from './SharePointDataService';
 const MAX: FakeUser = { id: 1, title: 'Max Wamsley', email: 'max.wamsley@example.com', admin: true };
 const JANE: FakeUser = { id: 7, title: 'Jane Doe', email: 'jane.doe@example.com', admin: false };
 const NOW = new Date(2026, 9, 16, 9, 30);
-const NEW_COLUMNS = ['Quantity', 'RowKind'];
+/** The columns this update adds, by list. */
+const NEW_COLUMNS: Record<string, string[]> = {
+  PurchaseRequests: [],
+  PurchaseRequestLines: ['LedgerAccount', 'LedgerClass', 'LedgerPosted', 'LedgerPostedBy', 'LedgerPostedOn'],
+  PurchaseSubmissions: ['ArchiveLink']
+};
 const LISTS = ['PurchaseRequests', 'PurchaseRequestLines', 'PurchaseSubmissions'] as const;
+const BEA: FakeUser = { id: 10, title: 'Bea Keeper', email: 'bea.keeper@example.com', admin: false, groups: ['Purchase Bookkeepers'], editsLists: true };
 
 const serviceFor = (site: FakeSharePoint, user: FakeUser): PurchaseDataService =>
   new SharePointDataService(new SpClient(site.fetchAs(user), site.webUrl, site.webPath, async () => undefined), () => NOW);
+
+/** Resolves to the message of the error a call was refused with. */
+async function refusal(call: Promise<unknown>): Promise<Error> {
+  try {
+    await call;
+  } catch (e) {
+    return e as Error;
+  }
+  throw new Error('The call was allowed, but it should have been refused.');
+}
 
 const pdf = (name: string) => new File([`synthetic ${name}`], name, { type: 'application/pdf' });
 
@@ -50,7 +66,7 @@ function snapshot(site: FakeSharePoint): Record<string, Record<number, Record<st
     out[name] = {};
     for (const [id, item] of site.listByUrlName(name)!.items) {
       const fields = { ...item.fields };
-      for (const column of NEW_COLUMNS) delete fields[column];
+      for (const column of NEW_COLUMNS[name]) delete fields[column];
       out[name][id] = { ...fields, attachments: item.attachments.map((a) => a.name ?? JSON.stringify(a)) };
     }
   }
@@ -79,22 +95,25 @@ describe('installing the new version over a site that already holds requests', (
     await max.addFileToLine(done.lineId, pdf('invoice.pdf'), 'receipt');
     await max.markPurchased(done.id);
     await max.markProcessed(done.id);
-    // Make it look as the previous version left it: no Quantity or Row type column, and no values in them.
-    const lines = site.listByUrlName('PurchaseRequestLines')!;
-    lines.fields = lines.fields.filter((f) => !NEW_COLUMNS.includes(f.InternalName));
-    for (const item of lines.items.values()) for (const column of NEW_COLUMNS) delete item.fields[column];
+    // Make it look as version 1.0.2.0 left it: none of the new columns, and no values in them.
+    for (const name of LISTS) {
+      const list = site.listByUrlName(name)!;
+      list.fields = list.fields.filter((f) => !NEW_COLUMNS[name].includes(f.InternalName));
+      for (const item of list.items.values()) for (const column of NEW_COLUMNS[name]) delete item.fields[column];
+    }
     return { site, draft, waiting, submitted, done };
   }
 
-  it('asks Set-up to add exactly the two new columns, adds them, and changes or removes nothing that was stored', async () => {
+  it('asks Set-up to add exactly the new columns, adds them, and changes or removes nothing that was stored', async () => {
     const { site } = await previousVersionSite();
     const before = snapshot(site);
     const itemCounts = LISTS.map((n) => site.listByUrlName(n)!.items.size);
     // Until Set-up runs, the app reports the site as not ready: employees see the "not set up yet" notice, nothing breaks.
     const status = await serviceFor(site, MAX).getSetupStatus();
     expect(status.ready).toBe(false);
-    expect(status.lists.find((l) => l.key === 'lines')!.missingFields).toEqual(NEW_COLUMNS);
-    expect(status.lists.filter((l) => l.key !== 'lines').every((l) => l.missingFields.length === 0)).toBe(true);
+    expect(status.lists.find((l) => l.key === 'lines')!.missingFields).toEqual(NEW_COLUMNS.PurchaseRequestLines);
+    expect(status.lists.find((l) => l.key === 'submissions')!.missingFields).toEqual(NEW_COLUMNS.PurchaseSubmissions);
+    expect(status.lists.find((l) => l.key === 'requests')!.missingFields).toEqual([]);
     expect((await serviceFor(site, JANE).getSetupStatus()).ready).toBe(false);
     const after = await serviceFor(site, MAX).runSetup(() => undefined);
     expect(after.ready).toBe(true);
@@ -106,7 +125,7 @@ describe('installing the new version over a site that already holds requests', (
     expect(snapshot(site)).toEqual(before);
   });
 
-  it('shows every earlier request, row and total unchanged, with quantity 1 and an ordinary row type', async () => {
+  it('shows every earlier request, row and total unchanged', async () => {
     const { site, draft, waiting, submitted, done } = await previousVersionSite();
     await serviceFor(site, MAX).runSetup(() => undefined);
     const jane = serviceFor(site, JANE);
@@ -149,5 +168,26 @@ describe('installing the new version over a site that already holds requests', (
     const mine = await makeRequest(max, 'Recorded after the update', { vendor: 'Staples', cents: 3000 }, 'approver');
     await max.addFileToLine(mine.lineId, pdf('receipt.pdf'), 'receipt');
     expect((await max.recordPurchase(mine.id)).type).toBe('package');
+  });
+  it('puts the requests already bought in the Ledger as Not posted, and lets a bookkeeper post them (P-052, 11 requests stay as they were)', async () => {
+    const { site, submitted, done } = await previousVersionSite();
+    // Until Set-up runs, nobody can use the Ledger: the site is reported as not ready, as for everything else.
+    expect((await serviceFor(site, BEA).getSetupStatus()).ready).toBe(false);
+    await serviceFor(site, MAX).runSetup(() => undefined);
+    const bea = serviceFor(site, BEA);
+    const rows = await bea.listLedger();
+    expect(rows.map((r) => r.line.vendor).sort()).toEqual(['Northwind Office Supply', 'Thorlabs']);
+    expect(rows.every((r) => !r.entry.posted && r.entry.account === '' && r.entry.className === '')).toBe(true);
+    // The packages from before have no archive link, so there is no receipt address until the flow gives one.
+    expect(rows.every((r) => r.receiptPlace === 'none' || r.receiptPlace === 'request folder')).toBe(true);
+    const thorlabs = rows.find((r) => r.line.vendor === 'Thorlabs')!;
+    expect(thorlabs.requestStatus).toBe('Processed');
+    expect((await refusal(bea.setPosted([thorlabs.line.id], true))).message).toContain('choose a class');
+    await bea.updateLedgerEntry(thorlabs.line.id, { className: '5.0 Internal R&D' });
+    const [posted] = await bea.setPosted([thorlabs.line.id], true);
+    expect(posted.entry).toMatchObject({ account: '6182 R&D Materials & Supplies', className: '5.0 Internal R&D', posted: true, postedBy: 'Bea Keeper' });
+    // What the employee sees of her own requests is exactly as before.
+    expect((await serviceFor(site, JANE).getRequest(done.id)).lines[0]).toMatchObject({ vendor: 'Thorlabs', amountCents: 20000 });
+    expect((await serviceFor(site, JANE).getRequest(submitted.id)).request.status).toBe('Submitted');
   });
 });

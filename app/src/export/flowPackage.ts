@@ -64,12 +64,22 @@ export const TEST_FOLDERS = ['Purchases_Test', 'Purchases_Test/Purchases_To_Proc
 /** The test destination's library: the test site's own Documents library, as the Set-up page reads it. */
 export const TEST_LIBRARY_URL_NAME = 'Shared Documents';
 
+/**
+ * The permanent receipt archive (P-058): a folder beside Purchases_To_Process, one folder per request inside it. The flow
+ * copies each request's receipts here as well, so the Ledger's receipt links keep working when the administrator files the
+ * request folder under its year. One level, never a year folder.
+ */
+export const ARCHIVE_FOLDER_NAME = 'Purchase_Receipts';
+
+/** Where the nightly ledger backup is written (P-059): a folder beside Purchases_To_Process, a new dated file each night. */
+export const BACKUP_FOLDER_NAME = 'Ledger_Backups';
+
 /** The most addresses the approval email can go to. More are refused, so the To line stays a sane length. */
 export const MAX_APPROVERS = 20;
 
 const MAX_EMAIL_LENGTH = 254;
 const SAFE_EMAIL = /^[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
-const LIST_ID = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
+export const LIST_ID = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 /** Text a web address written into the flow must not contain: braces (so no "@{" either), quotes, backticks, backslashes, angle brackets or spaces. */
 const UNSAFE_URL_TEXT = /[{}"'`\\<>\s]/;
 
@@ -91,7 +101,7 @@ function hasControlCharacter(text: string): boolean {
   return false;
 }
 
-function notMade(reason: string): Error {
+export function notMade(reason: string): Error {
   return new Error(`The flow package was not made: ${reason}`);
 }
 
@@ -110,7 +120,7 @@ function httpsUrl(value: string, what: string): URL {
 }
 
 /** A site address: https, and no query string or fragment, so it is used exactly as SharePoint gave it. */
-function checkSiteUrl(value: string, what: string): void {
+export function checkSiteUrl(value: string, what: string): void {
   httpsUrl(value, what);
   if (/[?#]/.test(value)) throw notMade(`${what} "${value}" is not a plain https address the flow can use.`);
 }
@@ -121,7 +131,7 @@ function checkSiteUrl(value: string, what: string): void {
  * (browsers do not encode braces in a query string) cannot put an expression
  * into the emails.
  */
-function pageUrl(value: string): string {
+export function pageUrl(value: string): string {
   const what = 'the address of the Purchase Requests page';
   if (typeof value !== 'string') throw notMade(`${what} is missing.`);
   const url = httpsUrl(value.split(/[?#]/)[0], what);
@@ -130,7 +140,7 @@ function pageUrl(value: string): string {
   return page;
 }
 
-const sameFolders = (folders: readonly string[], expected: readonly string[]): boolean =>
+export const sameFolders = (folders: readonly string[], expected: readonly string[]): boolean =>
   Array.isArray(folders) && folders.length === expected.length && folders.every((folder, i) => folder === expected[i]);
 
 /** A config that passed checkFlowConfig. */
@@ -146,24 +156,11 @@ export interface CheckedFlowConfig extends FlowConfig {
  * and path, and the approval email's recipients.
  */
 export function checkFlowConfig(config: FlowConfig): CheckedFlowConfig {
-  if (config.mode !== 'test' && config.mode !== 'live') throw notMade('it must be a Test or a Live package.');
+  checkMode(config.mode);
   if (typeof config.submissionsListId !== 'string' || !LIST_ID.test(config.submissionsListId))
     throw notMade('the ID of the Purchase Submissions list is not in the form SharePoint gives it.');
-  checkSiteUrl(config.siteUrl, 'the site address');
-  checkSiteUrl(config.destinationSiteUrl, 'the destination site address');
-  // A live package can only ever write to the fixed Accounting folders; a test package only to this site's own library.
-  if (config.mode === 'live') {
-    if (
-      config.destinationSiteUrl !== LIVE_DESTINATION.siteUrl ||
-      config.libraryUrlName !== LIVE_DESTINATION.libraryUrlName ||
-      !sameFolders(config.folders, LIVE_DESTINATION.folders)
-    )
-      throw notMade('a Live package can only send folders to Accounting > Purchases > Purchases_To_Process on the ExecutiveTeam site.');
-  } else if (config.destinationSiteUrl !== config.siteUrl || config.libraryUrlName !== TEST_LIBRARY_URL_NAME || !sameFolders(config.folders, TEST_FOLDERS)) {
-    throw notMade("a Test package can only send folders to this site's own Documents library, in Purchases_Test > Purchases_To_Process.");
-  }
-  if (!isSafeEmailAddress(config.adminEmail))
-    throw notMade(`the administrator's email address "${config.adminEmail}" cannot be used by the flow. It must be one plain email address.`);
+  checkDestination(config);
+  checkAdminEmail(config.adminEmail);
   if (!Array.isArray(config.approverEmails)) throw notMade('the list of approver addresses is missing.');
   if (config.approverEmails.length > MAX_APPROVERS)
     throw notMade(`the approval email can go to at most ${MAX_APPROVERS} addresses, and there are ${config.approverEmails.length}.`);
@@ -177,15 +174,43 @@ export function checkFlowConfig(config: FlowConfig): CheckedFlowConfig {
   return { ...config, appPageUrl: pageUrl(config.appPageUrl), approvalRecipients };
 }
 
+export function checkMode(mode: unknown): void {
+  if (mode !== 'test' && mode !== 'live') throw notMade('it must be a Test or a Live package.');
+}
+
+/**
+ * The sites, the library and the folders a package may write to. A live package can only ever write to the fixed
+ * Accounting folders; a test package only to this site's own library (P-008). Shared by every flow package.
+ */
+export function checkDestination(config: Pick<FlowConfig, 'mode' | 'siteUrl' | 'destinationSiteUrl' | 'libraryUrlName' | 'folders'>): void {
+  checkSiteUrl(config.siteUrl, 'the site address');
+  checkSiteUrl(config.destinationSiteUrl, 'the destination site address');
+  if (config.mode === 'live') {
+    if (
+      config.destinationSiteUrl !== LIVE_DESTINATION.siteUrl ||
+      config.libraryUrlName !== LIVE_DESTINATION.libraryUrlName ||
+      !sameFolders(config.folders, LIVE_DESTINATION.folders)
+    )
+      throw notMade('a Live package can only send folders to Accounting > Purchases > Purchases_To_Process on the ExecutiveTeam site.');
+  } else if (config.destinationSiteUrl !== config.siteUrl || config.libraryUrlName !== TEST_LIBRARY_URL_NAME || !sameFolders(config.folders, TEST_FOLDERS)) {
+    throw notMade("a Test package can only send folders to this site's own Documents library, in Purchases_Test > Purchases_To_Process.");
+  }
+}
+
+export function checkAdminEmail(address: string): void {
+  if (!isSafeEmailAddress(address))
+    throw notMade(`the administrator's email address "${address}" cannot be used by the flow. It must be one plain email address.`);
+}
+
 export const FLOW_NAMES: Record<FlowMode, string> = {
   test: 'Purchase Requests flow (test site)',
   live: 'Purchase Requests flow'
 };
 
-const SP = 'shared_sharepointonline';
-const OUTLOOK = 'shared_office365';
-const API = (name: string) => `/providers/Microsoft.PowerApps/apis/${name}`;
-const ICONS: Record<string, { displayName: string; iconUri: string }> = {
+export const SP = 'shared_sharepointonline';
+export const OUTLOOK = 'shared_office365';
+export const API = (name: string) => `/providers/Microsoft.PowerApps/apis/${name}`;
+export const ICONS: Record<string, { displayName: string; iconUri: string }> = {
   [SP]: {
     displayName: 'SharePoint',
     iconUri: 'https://conn-afd-prod-endpoint-bmc9bqahasf3grgk.b01.azurefd.net/v1.0.1779/1.0.1779.4440/sharepointonline/icon.png'
@@ -230,20 +255,25 @@ export function htmlTextExpression(value: string): string {
 }
 
 /** Text for an HTML attribute written into the email template. */
-function attr(text: string): string {
+export function attr(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function sitePath(siteUrl: string): string {
+export function sitePath(siteUrl: string): string {
   return new URL(siteUrl).pathname.replace(/\/$/, '');
 }
 
-function spHost(operationId: string): Record<string, string> {
+export function spHost(operationId: string): Record<string, string> {
   return { apiId: API(SP), connectionName: SP, operationId };
 }
 
 /** A "Send an HTTP request to SharePoint" action on the destination site. */
-function http(config: FlowConfig, method: 'GET' | 'POST', uri: string, runAfter: Record<string, string[]>): Record<string, unknown> {
+export function http(
+  config: Pick<FlowConfig, 'destinationSiteUrl'>,
+  method: 'GET' | 'POST',
+  uri: string,
+  runAfter: Record<string, string[]>
+): Record<string, unknown> {
   return {
     runAfter,
     type: 'OpenApiConnection',
@@ -274,7 +304,7 @@ function patchSubmission(runAfter: Record<string, string[]>, config: FlowConfig,
   };
 }
 
-function email(runAfter: Record<string, string[]>, to: string, subject: string, body: string): Record<string, unknown> {
+export function email(runAfter: Record<string, string[]>, to: string, subject: string, body: string): Record<string, unknown> {
   return {
     runAfter,
     type: 'OpenApiConnection',
@@ -286,8 +316,8 @@ function email(runAfter: Record<string, string[]>, to: string, subject: string, 
   };
 }
 
-const OK = ['Succeeded'];
-const EMAIL_STYLE = 'font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;';
+export const OK = ['Succeeded'];
+export const EMAIL_STYLE = 'font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;';
 
 /** Says what failed in the approval branch: sending the email, or recording that it was sent (A2). */
 const APPROVAL_FAILED = 'Sending the approval email, or recording that it was sent, failed';
@@ -310,6 +340,12 @@ function definitionOf(config: CheckedFlowConfig): Record<string, unknown> {
   const reportFolderServerPath = `concat(${lit(landingServerPath + '/')}, ${safeName})`;
   const folderLink = `concat(${lit(origin + encodeURI(landingServerPath) + '/')}, encodeUriComponent(${safeName}))`;
   const landingLink = origin + encodeURI(landingServerPath);
+  // The archive sits beside the landing folder, inside the same parent (P-058).
+  const parent = config.folders[config.folders.length - 2];
+  const archiveRoot = `${parent}/${ARCHIVE_FOLDER_NAME}`;
+  const archiveRootServerPath = `${destPath}/${archiveRoot}`;
+  const archiveFolderServerPath = `concat(${lit(archiveRootServerPath + '/')}, ${safeName})`;
+  const archiveLink = `concat(${lit(origin + encodeURI(archiveRootServerPath) + '/')}, encodeUriComponent(${safeName}))`;
   // Folder addresses go in as plain text: the cleaned name has no quotes, # or %.
   // A folder address inside the REST path: fixed text, or an expression for the request folder.
   const pathPart = (path: { text: string } | { expression: string }) => ('text' in path ? path.text.replace(/'/g, "''") : `@{${path.expression}}`);
@@ -358,7 +394,16 @@ function definitionOf(config: CheckedFlowConfig): Record<string, unknown> {
     };
     previous = cond;
   });
-  pkg.Check_report_folder = http(config, 'GET', existsUri({ expression: reportFolderServerPath }), { [previous]: OK });
+  // The receipt archive's own folder is created on the first run only, like the two above (P-058).
+  pkg.Check_archive_root = http(config, 'GET', existsUri({ text: archiveRootServerPath }), { [previous]: OK });
+  pkg.If_archive_root_is_missing = {
+    runAfter: { Check_archive_root: OK },
+    type: 'If',
+    expression: { and: [{ equals: [exists('Check_archive_root'), false] }] },
+    actions: { Create_archive_root: http(config, 'POST', createUri({ text: archiveRootServerPath }), {}) },
+    else: { actions: {} }
+  };
+  pkg.Check_report_folder = http(config, 'GET', existsUri({ expression: reportFolderServerPath }), { If_archive_root_is_missing: OK });
 
   const summaryHtml = `@{${htmlTextExpression("triggerBody()?['EmailSummary']")}}`;
   const heading = "@{if(greater(triggerBody()?['SubmissionNumber'], 1), 'Purchase request resubmitted', 'Purchase request submitted')}";
@@ -371,8 +416,17 @@ function definitionOf(config: CheckedFlowConfig): Record<string, unknown> {
 
   const packaged: Record<string, unknown> = {
     Create_report_folder: http(config, 'POST', createUri({ expression: reportFolderServerPath }), {}),
+    // This request's folder in the receipt archive. A folder left by an earlier attempt that stopped part-way is reused, never recreated (P-058).
+    Check_archive_folder: http(config, 'GET', existsUri({ expression: archiveFolderServerPath }), { Create_report_folder: OK }),
+    If_archive_folder_is_missing: {
+      runAfter: { Check_archive_folder: OK },
+      type: 'If',
+      expression: { and: [{ equals: [exists('Check_archive_folder'), false] }] },
+      actions: { Create_archive_folder: http(config, 'POST', createUri({ expression: archiveFolderServerPath }), {}) },
+      else: { actions: {} }
+    },
     Copy_files: {
-      runAfter: { Create_report_folder: OK },
+      runAfter: { If_archive_folder_is_missing: OK },
       type: 'Foreach',
       foreach: "@body('Get_attachments')",
       runtimeConfiguration: { concurrency: { repetitions: 1 } },
@@ -408,9 +462,53 @@ function definitionOf(config: CheckedFlowConfig): Record<string, unknown> {
         }
       }
     },
-    Mark_packaged: patchSubmission({ Copy_files: OK }, config, {
+    // Only the receipt copies go to the archive: their names start with R (the quote copies start with Q, the CSV with PR-).
+    Filter_receipts: {
+      runAfter: { Copy_files: OK },
+      type: 'Query',
+      inputs: { from: "@body('Get_attachments')", where: "@startsWith(item()?['DisplayName'], 'R')" }
+    },
+    Archive_receipts: {
+      runAfter: { Filter_receipts: OK },
+      type: 'Foreach',
+      foreach: "@body('Filter_receipts')",
+      runtimeConfiguration: { concurrency: { repetitions: 1 } },
+      actions: {
+        Get_receipt_content: {
+          runAfter: {},
+          type: 'OpenApiConnection',
+          inputs: {
+            host: spHost('GetAttachmentContent'),
+            parameters: {
+              dataset: config.siteUrl,
+              table: config.submissionsListId,
+              itemId: "@triggerBody()?['ID']",
+              attachmentId: "@items('Archive_receipts')?['Id']"
+            },
+            authentication: "@parameters('$authentication')"
+          }
+        },
+        Create_archive_file: {
+          runAfter: { Get_receipt_content: OK },
+          type: 'OpenApiConnection',
+          inputs: {
+            host: spHost('CreateFile'),
+            parameters: {
+              dataset: config.destinationSiteUrl,
+              folderPath: `@{concat(${lit(`/${config.libraryUrlName}/${archiveRoot}/`)}, ${safeName})}`,
+              name: "@items('Archive_receipts')?['DisplayName']",
+              body: "@body('Get_receipt_content')"
+            },
+            authentication: "@parameters('$authentication')"
+          },
+          runtimeConfiguration: { contentTransfer: { transferMode: 'Chunked' } }
+        }
+      }
+    },
+    Mark_packaged: patchSubmission({ Archive_receipts: OK }, config, {
       'PackageStatus/Value': 'Packaged',
       FolderLink: `@{${folderLink}}`,
+      ArchiveLink: `@{${archiveLink}}`,
       PackagedAt: '@{utcNow()}',
       ErrorMessage: ''
     }),
@@ -537,15 +635,27 @@ export interface FlowPackage {
   approvalRecipients: string[];
 }
 
-/** The legacy import package: manifests, connection maps and the definition. Throws if the config does not pass checkFlowConfig. */
-export function buildFlowPackage(config: FlowConfig, newId: () => string = () => crypto.randomUUID(), now: Date = new Date()): FlowPackage {
-  const checked = checkFlowConfig(config);
+/** What every package of a flow is made of. */
+export interface PackageParts {
+  displayName: string;
+  description: string;
+  /** The flow's definition: its trigger and its actions. */
+  definition: Record<string, unknown>;
+  fileName: string;
+}
+
+/**
+ * The legacy import package around a definition: the manifests, the SharePoint and Outlook connection maps and the zip.
+ * Both flows use it, so both import the same way. The IDs are asked for in a fixed order, so a test that supplies its own
+ * gets the same package each time.
+ */
+export function assemblePackage(parts: PackageParts, newId: () => string, now: Date): { fileName: string; zip: Uint8Array; files: Record<string, string> } {
   const flowId = newId();
   const ids: Record<string, { api: string; connection: string }> = {
     [SP]: { api: newId(), connection: newId() },
     [OUTLOOK]: { api: newId(), connection: newId() }
   };
-  const displayName = FLOW_NAMES[config.mode];
+  const displayName = parts.displayName;
   const resources: Record<string, unknown> = {
     [flowId]: {
       type: 'Microsoft.Flow/flows',
@@ -589,8 +699,7 @@ export function buildFlowPackage(config: FlowConfig, newId: () => string = () =>
     schema: '1.0',
     details: {
       displayName,
-      description:
-        'Emails the approvers when a purchase request needs approval, creates the request folder for each submitted purchase request and emails the administrator. Generated by the Purchase Requests Set-up page.',
+      description: parts.description,
       createdTime: now.toISOString(),
       packageTelemetryId: newId(),
       creator: 'N/A',
@@ -605,7 +714,7 @@ export function buildFlowPackage(config: FlowConfig, newId: () => string = () =>
     properties: {
       apiId: API('shared_logicflows'),
       displayName,
-      definition: definitionOf(checked),
+      definition: parts.definition,
       connectionReferences,
       flowFailureAlertSubscribed: false,
       isManaged: false
@@ -620,12 +729,28 @@ export function buildFlowPackage(config: FlowConfig, newId: () => string = () =>
     [`${base}/connectionsMap.json`]: JSON.stringify({ [SP]: ids[SP].connection, [OUTLOOK]: ids[OUTLOOK].connection })
   };
   return {
-    fileName: `PurchaseRequests_Flow_${config.mode === 'test' ? 'Test' : 'Live'}.zip`,
+    fileName: parts.fileName,
     zip: buildZip(
       Object.entries(files).map(([path, content]) => ({ path, content })),
       now
     ),
-    files,
-    approvalRecipients: checked.approvalRecipients
+    files
   };
+}
+
+/** The legacy import package: manifests, connection maps and the definition. Throws if the config does not pass checkFlowConfig. */
+export function buildFlowPackage(config: FlowConfig, newId: () => string = () => crypto.randomUUID(), now: Date = new Date()): FlowPackage {
+  const checked = checkFlowConfig(config);
+  const made = assemblePackage(
+    {
+      displayName: FLOW_NAMES[config.mode],
+      description:
+        'Emails the approvers when a purchase request needs approval, creates the request folder for each submitted purchase request, copies its receipts into the receipt archive and emails the administrator. Generated by the Purchase Requests Set-up page.',
+      definition: definitionOf(checked),
+      fileName: `PurchaseRequests_Flow_${config.mode === 'test' ? 'Test' : 'Live'}.zip`
+    },
+    newId,
+    now
+  );
+  return { ...made, approvalRecipients: checked.approvalRecipients };
 }

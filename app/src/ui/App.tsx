@@ -10,6 +10,7 @@ import { RequestWorkspace } from './pages/RequestWorkspace';
 import { AdminRequestPage } from './pages/admin/AdminRequestPage';
 import { AllRequestsPage } from './pages/admin/AllRequestsPage';
 import { ApprovalsPage } from './pages/admin/ApprovalsPage';
+import { LedgerPage } from './pages/admin/LedgerPage';
 import { SetupPage } from './pages/admin/SetupPage';
 import { SetupStatus } from '../data/setup';
 import { NeedsAttentionPage } from './pages/admin/NeedsAttentionPage';
@@ -72,6 +73,11 @@ export function App(props: { service: PurchaseDataService; logoUrl: string; read
       })
       .catch((e: unknown) => setStartError(errorText(e)));
   }, [service]);
+
+  // A bookkeeper who is not an administrator opens on the Ledger, which is what they came for (P-052).
+  React.useEffect(() => {
+    if (user && user.isBookkeeper && !user.isAdministrator && window.location.hash.replace('#', '') === '') navigate({ name: 'ledger' });
+  }, [user, navigate]);
 
   React.useEffect(() => {
     const onResize = () => setViewportWidth(window.innerWidth);
@@ -192,6 +198,8 @@ export function App(props: { service: PurchaseDataService; logoUrl: string; read
   // Until the lists are ready, an administrator sees only the Set-up page.
   if (!setup.ready) page = <SetupPage onReady={onSetupReady} />;
   else if (adminOnly && !user.isAdministrator) page = <MyRequestsPage />;
+  // The Ledger is for administrators and members of the Purchase Bookkeepers group (P-052).
+  else if (route.name === 'ledger') page = user.isAdministrator || user.isBookkeeper ? <LedgerPage /> : <MyRequestsPage />;
   else if (route.name === 'request') page = <RequestWorkspace key={route.requestId} requestId={route.requestId} step={route.step} />;
   else if (route.name === 'adminApprovals') page = <ApprovalsPage />;
   else if (route.name === 'adminProcess') page = <RequestsToProcessPage />;

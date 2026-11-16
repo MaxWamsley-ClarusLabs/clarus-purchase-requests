@@ -203,6 +203,7 @@ The first three are the default rules Max asked to have built and listed. Four o
 
 - **Date:** 2026-09-30
 - **Status:** **Replaced in part 2026-10-01 by P-038**: Max supplied the account numbers and names. The class column is still not carried over. The text below is the first build's.
+- **Changed 2026-11-16 (P-052, P-056):** the app now stores a QuickBooks class, and an account chosen from the full list, on each line, in the Ledger. The CSV in a request folder is unchanged.
 - **Earlier status:** Provisional (Claude, awaiting Max). The mapping was **Unverified, to confirm with Max**.
 - **Decision:** Plain account names without numbers: R&D Materials and Supplies; Advertising and Marketing; Computer and Software; Office Supplies; Training and Education; Shipping and Postage; Insurance; and none for Other (the administrator decides). Claude cannot look up the chart of accounts, because the QuickBooks connector is not used and account names in the travel repository cover travel only. Invented account numbers would look verified, so none are given. The CSV's "Suggested payment account" and "Suggested class" columns of the travel app are not carried over.
 - **Options considered:** numbers with names (would be invented); leaving the column empty (Max asked for a suggestion); a class from the project code (the travel app's D-050 list maps a trip purpose, not a grant code; Max asked only for the grant code in the CSV).
@@ -318,6 +319,7 @@ Max said that about 95% of purchases are bought by the person who approves them,
 
 - **Date:** 2026-10-01
 - **Status:** Decided (Max): the accounts (question 1, "B", supplied in his message after he read the account list himself) and the 13-category list (question 27, yes). Equipment and Other, and the Mark processed hold, are Provisional (Claude). Claude did not open the account file.
+- **Changed 2026-11-16 (P-052, P-056):** the app now stores a QuickBooks class, and an account chosen from the full list, on each line, in the Ledger. The CSV in a request folder is unchanged.
 - **Decision:** The 13 categories carry the exact QuickBooks account names, so the employee's choice is the account: R&D Materials & Supplies 6182; Equipment 6175 (the administrator decides whether it is expensed or capitalized to 1415 Fixed Assets:Equipment); Advertising/Marketing/Website 6500; Computer, H/W & S/W Supplies 6178; Office Supplies 6180; Training and Education 6155; Shipping/Postage 6184; Business Insurance 6215; Dues and Subscriptions 6150; Telephone/Internet 6185; Repairs & maintenance 6170; Professional Services 6050; Other (no account). Max's message also corrected four of the first build's suggested names and added four categories (Dues and Subscriptions, Telephone/Internet, Repairs & maintenance, Professional Services), and split "R&D Materials & Supplies / Equipment" into two. The CSV has one column, "QuickBooks account", with the number and exact name. There is no class column (P-025). The accounts are labelled "from the May 1, 2026 account list" in the code. **Compared on 2026-10-01** with the account list Max pasted in his next message (text and a picture; the export date of that list was not stated): all 12 account numbers and names match, and 1415 Fixed Assets:Equipment exists. **Re-export the account list and compare it with `purchaseRules.ts` once more before go-live** if the chart of accounts has changed since (`docs/CHECKPOINT.md` step 35). Accounts in the list that no category covers (for example 9300 Patent Expenses, 6160 Facilities Rent, 6190 Utilities, 6220 Business Meals w/Clients, 6230 Business licenses, 6510 Entertainment, 6535 Business Gifts, 6540 Contributions/Donations, 6055 Subconsultants/Subawardees) are reached through Other, for the administrator to decide; Max approved the 13 categories (question 27), so none was added.
 - **Provisional (Claude):** Equipment shows its account 6175 with a note that the administrator decides whether to expense it or capitalize it to 1415 Fixed Assets:Equipment, and Other shows "Administrator decides" where an account would be. Approving confirms the categories shown, so a request the approver buys is confirmed at approval; a request nobody approved (an employee-bought request under $500) is refused at **Mark processed** while a row in either category is unconfirmed, and the administrator uses Confirm categories first. The line between expensing and capitalizing equipment is left to the purchasing policy (the last stage).
 - **Options considered:** keep the first build's eight categories with suggested names (Max supplied the accounts, so no longer needed); several accounts per category with a second choice (more clicks).
@@ -450,6 +452,93 @@ Max said that about 95% of purchases are bought by the person who approves them,
 - **Known limit:** an employee can edit their own list items directly (D-002), so one could write the "recorded" note on their own request; marking it purchased would then skip the employee's certification. The recorded rule also requires that the administrator is the request's owner and the one who approved it, which narrows this to a request that is already the administrator's.
 - **Not verified:** the new request and its folder on the real site. Test it on the Test flow first.
 - **Where a change goes:** `domain/recording.ts` (the rules), `recordPurchase` in the two data services, `RecordPurchaseButton.tsx`, recording mode in `RequestWorkspace.tsx`.
+
+## P-052. The Ledger: bookkeepers work in the app, not in Excel
+
+- **Date:** 2026-11-15 to 2026-11-16
+- **Status:** Decided (Max, 2026-11-15 and 2026-11-16). He first asked for a live Excel and Markdown file the flow would add each purchase to; after Claude explained that the app cannot write to Excel and the flow could, he chose to keep everything in the app ("it might be a good idea to just have everything in the app so you dont have to go outside the app") and agreed to every recommendation below.
+- **Decision:** A new **Ledger** page, for administrators and for the members of a new SharePoint group, **Purchase Bookkeepers**. It lists every purchase line of a request that has been bought and packaged (status Submitted or Processed), with filters Not posted, Posted and All, a search, the receipt links, and per line a **QuickBooks account**, a **class** and **Posted**. Bookkeepers can change only those three things. **Download Excel** builds a real .xlsx in the browser from the lines shown: no Excel connector, no Graph permission, nothing written to Excel by the flow. A bookkeeper who is not an administrator sees only the Ledger (and My requests) and opens on the Ledger.
+- **Who is a bookkeeper:** a person in the SharePoint group **Purchase Bookkeepers**, which Max creates and gives Edit permission on the three lists (docs/UPDATE_1.0.3.0.md). The app asks SharePoint for the signed-in person's own groups; if that cannot be read, the person is not a bookkeeper. Internal people now; an outside bookkeeper would need a guest account (Unverified: depends on the tenant's external-sharing settings). No separate username and password is built: the app lives inside SharePoint, so everyone signs in with a Microsoft identity.
+- **Stored on the line:** the existing Purchase Request Lines list gets five columns, added by Set-up: Ledger account, Ledger class, Posted, Posted by, Posted on (P-054). Employees can edit their own list items directly (D-002), so one could change those columns on their own line; the control is SharePoint version history, the Ledger showing who posted and when, and the backups (P-059). Accepted, as in P-029.
+- **Options considered:** a live Excel workbook written by the flow (an Excel connection, a hand-made table, file locks, and nothing the app could show); a fourth list that only bookkeepers can write (a second permission model and a flow step to create its rows); Max's skill reading a Markdown file (the in-app Ledger and the download cover it).
+- **Changed:** P-025 and P-038 said the class is a field the app does not set. The app now stores a class on each line, chosen in the Ledger. The CSV in each request folder still has the suggested account and no class: the class is chosen after the package is made.
+- **Known limits:** a request returned after some of its lines were posted keeps the posted flags, while its rows can change; the bookkeeper sets such a line back to Not posted. The Ledger loads every line of every bought request, and SharePoint's 5,000-item list limit would apply (Unverified; years away at the current volume).
+- **Where a change goes:** `domain/ledger.ts`, `domain/ledgerRows.ts`, `listLedger`, `updateLedgerEntry` and `setPosted` in the two data services, `ui/pages/admin/LedgerPage.tsx`, `export/ledgerExport.ts`.
+
+---
+
+## P-053. The account and class lists are QuickBooks' own, exported 2026-11-15
+
+- **Date:** 2026-11-15
+- **Status:** Decided (Max supplied both exports; the 12 category accounts matched).
+- **Decision:** Max exported the QuickBooks Account List and the Class list on 2026-11-15 and sent both files. Claude read them (account number, name and type only; the balances in the Account List were not used and are not stored anywhere). **All 12 category accounts in `purchaseRules.ts` match the export exactly** (number and name), including 1415 Fixed Assets:Equipment, which the Equipment note names. Verified, 2026-11-15, against Max's file. Nothing was read from QuickBooks or Microsoft 365 by a connector.
+- **Employee screens:** the category dropdowns now show the account number with the name, for example `6182 R&D Materials & Supplies`, so a choice reads as QuickBooks does. What is stored, and what the CSV and emails say, is unchanged. Other has no account and shows its name alone.
+- **Where the lists live:** in `purchaseRules.ts` (`LEDGER_ACCOUNTS`, `LEDGER_CLASSES`), updated by a release when QuickBooks changes. An editable list in SharePoint was not chosen (more work for an almost unchanging list).
+- **Where a change goes:** `purchaseRules.ts` and its tests.
+
+---
+
+## P-054. Which accounts and classes, and where they are stored
+
+- **Date:** 2026-11-15 to 2026-11-16
+- **Status:** Decided (Max: "recommended" for both choices).
+- **Accounts: 56.** The 55 numbered Expense, Cost of Goods Sold and Other Expense accounts, plus 1415 Fixed Assets:Equipment (capitalized equipment). Left out: the nine accounts QuickBooks made without a number (Insurance, Office expenses, Purchases, Uncategorized Expense and so on), most of which duplicate numbered ones. A few of the 55 are unlikely for a purchase (payroll, depreciation); a bookkeeper simply does not choose them, and Max can ask for any to be removed. Sub-accounts show with their parent, as QuickBooks names them ("6052 Professional Services:Accounting Services").
+- **Classes: 7 of the 9.** 1.01 NSF Phase 1 SBIR, 1.02 X Competition, 1.03 NSF Phase 2 SBIR, 2.0 Commercial, 5.0 Internal R&D, 8.0 Indirect Expenses and 9.0 Unallowable Expenses. Left out: the 1.0 Grants parent (a grant line always names its grant) and 3.0 Other Income (the app records spending). A grant class shows with its parent: `1.0 Grants:1.01 NSF Phase 1 SBIR`. **Unverified:** that QuickBooks shows it that way. Max to compare with one QuickBooks class dropdown.
+- **Stored as the exact text** shown in QuickBooks, so what is posted is what was chosen even if a list is later renamed. Only items from the lists can be chosen; anything else typed into SharePoint is refused when posting.
+- **Columns (lines list):** LedgerAccount, LedgerClass (text), LedgerPosted (yes/no), LedgerPostedBy, LedgerPostedOn (text, "YYYY-MM-DD HH:MM"). Set-up adds them and never changes or removes an existing column or value; a test builds a site as 1.0.2.0 left it, with requests at every stage, adds the columns, and proves nothing stored changed.
+
+---
+
+## P-055. The dropdowns: type to narrow, the likeliest choices first
+
+- **Date:** 2026-11-16
+- **Status:** Decided (Max: "I like that", layered; "as long as it doesn't make the code super complicated or make it slow or laggy").
+- **Decision:** The account and class boxes open on a list stacked in layers, and typing narrows it (by number or by any word, in any case; every typed word must match). The layers, top to bottom; an item shows once, at the highest layer it qualifies for: **1. From this request** (the line's own category account; accounts only), **2. Used for this vendor before** (what the bookkeepers posted last time for the same vendor, matched the way vendor totals are), **3. Used most often** (the company's most posted, at most five), **4. Usual for Clarus** (Max's order, below), **5. All other accounts** (the rest, by number). Each layer has a heading in the list. A suggestion only decides the order: nothing is filled in by it, and the class is always the bookkeeper's choice. A line starts with its category's account shown as the account, and posting stores it.
+- **Max's order, accounts (the "usual" layer, then the rest by number):** 6182 R&D Materials & Supplies, 6178 Computer H/W & S/W Supplies, 6180 Office Supplies, 6184 Shipping/Postage, 6150 Dues and Subscriptions, 6500 Advertising/Marketing/Website, 6175 Equipment, 1415 Fixed Assets:Equipment, 6215 Business Insurance, 6050 Professional Services, 6155 Training and Education, 6170 Repairs & maintenance, 6185 Telephone/Internet, 5050 COGS Expenses:Materials & Supplies. (Max's changes to Claude's first order: Equipment and Fixed Assets:Equipment moved down four places each; Business Insurance and Professional Services moved up three.)
+- **Max's order, classes:** 5.0 Internal R&D, 1.01 NSF Phase 1 SBIR, 1.03 NSF Phase 2 SBIR, 1.02 X Competition, 8.0 Indirect Expenses, 2.0 Commercial, 9.0 Unallowable Expenses.
+- **Speed:** see P-057.
+- **Where a change goes:** `domain/ledgerSuggestions.ts` and the order in `purchaseRules.ts`.
+
+---
+
+## P-056. Posting rules
+
+- **Date:** 2026-11-15 to 2026-11-16
+- **Status:** Decided (Max, 2026-11-15: "Class is required for every QB item yes"; the Class warning setting in QuickBooks is on).
+- **Decision:** A line cannot be marked **Posted** without an account and a class, both from the lists. Posting several lines is all or nothing: if one cannot be posted, none is, and the message names the line. A line already in the wanted state is left as it is, so the first poster stays on record. Posting records who and when. A **Posted** line is **locked**: its account and class cannot be changed until it is set back to Not posted, which keeps the account and class and clears who and when. Both bookkeepers and administrators can post and set back. A line is in the Ledger as soon as its request is bought and packaged, before the administrator marks the request processed (Posted is not Processed: Processed is the folder filed and the request closed; Posted is entered in QuickBooks).
+- **Where a change goes:** `postProblem` and `entryChangeProblem` in `domain/ledger.ts`, `postWrites` in `serviceRules.ts`.
+
+---
+
+## P-057. Speed of the suggestions
+
+- **Date:** 2026-11-16
+- **Status:** Decided (Max asked that the layers not make the page slow).
+- **Decision:** The history counts only the **500 most recently posted lines**, once when the page opens and after a posting, so it stays fast as years of data build up and follows recent practice. A box builds its list only when it is opened, and typing filters about 56 items already in memory: no request to SharePoint per keystroke. A unit test counts 5,000 posted lines once and builds and filters 1,000 dropdowns in a fraction of a second on a slow shared machine. The table draws 150 lines at a time ("Show more").
+- **Where a change goes:** `LEDGER_HISTORY_LIMIT` in `purchaseRules.ts`.
+
+---
+
+## P-058. A permanent receipt archive, so receipt links keep working
+
+- **Date:** 2026-11-15 to 2026-11-16
+- **Status:** Decided (Max: option B, "recommended"). **A rule is relaxed with Max's approval:** until now the flow created folders and files only in `Purchases_To_Process` (and the `Purchases` folder itself).
+- **Decision:** The Purchase Requests flow also copies each request's **receipts** (not the quotes or the CSV) into `Accounting/Purchases/Purchase_Receipts/<request folder name>/`, one level, one folder per request, never a year folder. The administrator files the request folder under its year as before, and the archive never moves, so the Ledger's receipt links keep working. The flow creates `Purchase_Receipts` once, creates the request's folder (reusing one left by an earlier attempt that stopped part-way), copies the receipts, then marks the submission Packaged and records the archive address in a new column, **Receipt archive link**, on the submission. It still creates only new files, never overwrites, moves or deletes, and the destination is fixed in the package (a Live package writes only under Accounting > Purchases; a Test package only in the test site's own library). Folder names for the archive are made the same way as the request folder's.
+- **Links:** the Ledger builds each receipt's address from that column plus the file name, and uses it only if it is a plain web address. A request packaged before the archive existed has no archive address, so its links point at its request folder (marked "request folder"), which stop working once the folder is filed.
+- **Bookkeepers' access:** they need read access to the Accounting > Purchases > Purchase_Receipts folder (Max's change in Microsoft 365).
+- **Unverified:** that the connector's Create folder accepts the nested path, that the flow stays within Power Automate's nesting and action limits, and that the receipt content is read twice without trouble. All checked at the Test flow.
+- **Where a change goes:** `export/flowPackage.ts` (`ARCHIVE_FOLDER_NAME`, `Archive_receipts`), `flow/FLOW.md`, `domain/ledgerRows.ts`.
+
+---
+
+## P-059. A nightly ledger backup flow
+
+- **Date:** 2026-11-16
+- **Status:** Decided (Max: "recommended", and the md file "in case something gets corrupted and we lose info"). **A rule is relaxed with Max's approval:** a second flow, and a second new place the flows write to.
+- **Decision:** A second cloud flow, made by the Set-up page as its own import package (Test and Live), runs every night at **02:30 Central time**. It reads the Purchase Requests and Purchase Request Lines lists, keeps the lines of requests that are Submitted or Processed, and writes a **new dated pair of files**, `Ledger_<date>_<hhmm>.csv` and `.md`, into `Accounting/Purchases/Ledger_Backups/` (created on the first night). Each file holds, per line, the request and row, date, vendor, what was bought, category, quantity, amount, who paid, the QuickBooks account, class, Posted, posted by and posted on, and any no-receipt reason. **Nothing is overwritten, moved or deleted**: each night is a new pair. The CSV is protected against formulas as the app's CSV is; the Markdown table escapes pipes and line breaks. If a night fails, the administrator is emailed and nothing is changed.
+- **Not built:** a Markdown log appended when each package is made (the nightly files already cover it, so no extra column on the submissions list); a live Excel workbook (P-052). The Markdown file is for safekeeping and for reading by an AI, not for posting.
+- **Unverified:** the Recurrence time zone name, the Create CSV table action, reading up to 5,000 items, and a single list read past SharePoint's 5,000-item list view limit. All checked at the Test flow.
+- **Where a change goes:** `export/backupFlow.ts`, `flow/FLOW.md`, `flow/example/backup_definition.json`.
 
 ---
 

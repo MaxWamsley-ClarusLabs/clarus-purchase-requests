@@ -167,7 +167,12 @@ describe('list definitions (docs/DATA_MODEL.md)', () => {
       'SameReceiptAsRow',
       'FileFingerprints',
       'SuggestedFields',
-      'RowKind'
+      'RowKind',
+      'LedgerAccount',
+      'LedgerClass',
+      'LedgerPosted',
+      'LedgerPostedBy',
+      'LedgerPostedOn'
     ]);
     expect(LISTS.submissions.fields.map((f) => f.name)).toEqual([
       'RequestId',
@@ -195,6 +200,7 @@ describe('list definitions (docs/DATA_MODEL.md)', () => {
       'EmailSubject',
       'EmailSummary',
       'FolderLink',
+      'ArchiveLink',
       'PackagedAt',
       'ErrorMessage'
     ]);

@@ -98,7 +98,7 @@ describe('the policy numbers and wording (P-004, P-005, P-010, P-012)', () => {
   });
 
   it('writes the account as its number and exact name; the administrator decides Equipment and Other (P-038)', () => {
-    expect(QUICKBOOKS_MAPPING_STATUS).toBe('from the May 1, 2026 account list');
+    expect(QUICKBOOKS_MAPPING_STATUS).toBe('from the May 1, 2026 account list, checked against the November 15, 2026 export');
     for (const c of CATEGORIES) {
       if (c.id === 'equipment' || c.id === 'other') continue;
       expect(c.accountText).toBe(`${c.accountNumber} ${c.label}`);

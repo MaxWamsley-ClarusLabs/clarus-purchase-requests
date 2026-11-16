@@ -63,6 +63,9 @@ All at 1440 pixels wide (a typical laptop) unless noted.
 | `15-approved-request.png` | Back as Jane: the green banner says who approved it and shows Max's note. She has nothing to do, and the rows are locked to her because the approver buys |
 | `39-awaiting-approval-unsend.png` | A request awaiting approval, with the Unsend button (P-050) |
 | `40-admin-sees-unsent.png` | The approver opens the old link of an unsent request: it says so and offers no Approve (P-050) |
+| `43-ledger.png` | The Ledger as a bookkeeper (Bea Keeper) sees it: every bought line with its receipt link, account and class, and Posted (P-052) |
+| `44-ledger-account-list.png` | An account box opened: the layers (From this request, Used most often, Usual for Clarus) with their headings, and the line's own category account first (P-055) |
+| `45-ledger-posted.png` | The Posted tab after a line was marked Posted: who and when, and the line locked (P-056) |
 | `41-recording-a-purchase.png` | The administrator recording a purchase they already made (P-051) |
 | `42-recorded-under-process.png` | The recorded purchase under Requests to process (P-051) |
 | `35-buying-purchases.png` | Max buying: he changed row 1 to the real amount, attached an invoice to each row, and typed the vendor's shipping in its Shipping box, which made a Shipping row that shares the first invoice. "As sent for approval" keeps what Jane asked for |

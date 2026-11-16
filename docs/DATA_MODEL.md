@@ -79,6 +79,11 @@ There is no separate requester field (travel D-039). The purchase dates are not 
 | SameReceiptAsRow | Same receipt as row | Number | | | Set from the row menu when one receipt covers rows that do **not** share a vendor name (travel D-038). Rows of the same vendor need no pointer: the vendor's receipt covers them (P-049) |
 | FileFingerprints | File fingerprints | Multiple lines of plain text | Set by app | | JSON: for each attached file, its name, size, a SHA-256 fingerprint, and its **kind** (receipt or quote, P-021). A file with no recorded kind is treated as a quote and never counts as the receipt; if the kind cannot be recorded when a file is attached, the file is removed again |
 | SuggestedFields | Suggested, not confirmed | Single line of text | Must be empty | | Values the app filled in from a receipt or vendor memory that the employee has not confirmed, for example `date,vendor,amount` (travel D-078) |
+| LedgerAccount | Ledger account | Single line of text | Bookkeeper | | The QuickBooks account chosen in the Ledger, as the exact text "6182 R&D Materials & Supplies". Empty until chosen: the line's category account is then its starting point, and posting stores it (P-054, P-056). Only an item from the account list is accepted by the app; anything else typed into SharePoint is never posted |
+| LedgerClass | Ledger class | Single line of text | Bookkeeper | | The QuickBooks class chosen in the Ledger, exact text such as "1.0 Grants:1.01 NSF Phase 1 SBIR". QuickBooks needs one on every line, so a line cannot be posted without it (P-056) |
+| LedgerPosted | Posted | Yes/No | Bookkeeper | | Whether the line has been entered in QuickBooks. Default No. Read as yes only when it is exactly yes |
+| LedgerPostedBy | Posted by | Single line of text | Bookkeeper | | The display name of the person who marked it Posted; empty when not posted |
+| LedgerPostedOn | Posted on | Single line of text | Bookkeeper | | "YYYY-MM-DD HH:MM" when it was marked Posted; empty when not posted |
 | RowKind | Row type | Single line of text | | | Empty for a purchase. `shipping` or `tax` for a row that a Shipping or Tax box in the Vendor totals card keeps while the approver buys (P-048). It only tells the boxes which row is theirs: it changes no total, rule or file. Read back as one of the two known kinds or empty, whatever is stored (an employee can edit the item directly) |
 
 **Defaults (P-023):** when the employee buys, a new row's Who paid is the row above's, or Company for the first row; Category is filled from the last time the employee used the same vendor, when empty. When the approver buys, Who paid is not shown and vendor memory leaves it alone (P-037).
@@ -121,6 +126,7 @@ There is no separate requester field (travel D-039). The purchase dates are not 
 | EmailSubject | Email subject | Single line of text | App | | The email's subject, written by the app so all wording lives in the code |
 | EmailSummary | Email summary | Multiple lines of plain text | App | | The email body as plain text. The flow escapes it before sending (travel D-067) |
 | FolderLink | Folder link | Multiple lines of plain text | Flow | | Packages only |
+| ArchiveLink | Receipt archive link | Multiple lines of plain text | Flow | | Packages only. The address of the request's folder in `Purchase_Receipts`, written by the flow from the fixed archive path and the cleaned folder name (P-058). The Ledger builds each receipt link from it, and only uses it if it is a plain web address. Empty on a package made before the archive existed and until the flow has run |
 | PackagedAt | Packaged | Date and time | Flow | | |
 | ErrorMessage | Error | Multiple lines of plain text | Flow | | Set when packaging or sending fails |
 

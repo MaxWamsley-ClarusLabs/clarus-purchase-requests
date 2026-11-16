@@ -24,7 +24,7 @@ const LATER = new Date(2026, 9, 17, 10, 5);
 /** Before the draft's purchase date of 2026-10-14, so nothing in it looks already bought. */
 const EARLY = new Date(2026, 9, 12, 9, 30);
 
-const user = (p: Person): CurrentUser => ({ displayName: p.name, email: p.email, isAdministrator: p.admin });
+const user = (p: Person): CurrentUser => ({ displayName: p.name, email: p.email, isAdministrator: p.admin, isBookkeeper: p.bookkeeper === true });
 const pdf = (name: string, content = `synthetic ${name}`): File => new File([content], name, { type: 'application/pdf' });
 const png = (name: string, content = `synthetic ${name}`): File => new File([content], name, { type: 'image/png' });
 const tick = (ms = 5) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -118,11 +118,12 @@ const asSam = (store: SampleStore, now = NOW) => new MockDataService(store, SAMP
 const asMax = (store: SampleStore, now = LATER) => new MockDataService(store, SAMPLE_USERS.admin, 0, undefined, () => now);
 
 describe('the sample people', () => {
-  it('are Jane Doe and Sam Lee, who are employees, and Max Wamsley, the administrator and approver, at example.com', () => {
+  it('are Jane Doe and Sam Lee, who are employees, Max Wamsley, the administrator and approver, and Bea Keeper, a bookkeeper, at example.com', () => {
     expect(SAMPLE_USERS).toEqual({
-      jane: { displayName: 'Jane Doe', email: 'jane.doe@example.com', isAdministrator: false },
-      sam: { displayName: 'Sam Lee', email: 'sam.lee@example.com', isAdministrator: false },
-      admin: { displayName: 'Max Wamsley', email: 'max.wamsley@example.com', isAdministrator: true }
+      jane: { displayName: 'Jane Doe', email: 'jane.doe@example.com', isAdministrator: false, isBookkeeper: false },
+      sam: { displayName: 'Sam Lee', email: 'sam.lee@example.com', isAdministrator: false, isBookkeeper: false },
+      admin: { displayName: 'Max Wamsley', email: 'max.wamsley@example.com', isAdministrator: true, isBookkeeper: false },
+      bea: { displayName: 'Bea Keeper', email: 'bea.keeper@example.com', isAdministrator: false, isBookkeeper: true }
     });
   });
 });

@@ -667,6 +667,112 @@ try {
   await shot(p, '33-employee-site-not-set-up', false);
   await p.close();
 
+  // ---- The Ledger (P-052 to P-057) -------------------------------------------------
+
+  // A bookkeeper lands on the Ledger and sees nothing else an administrator can do.
+  p = await open('bea', '');
+  await p.waitForSelector('.ctx-ledger-table');
+  check(await p.getByRole('heading', { name: 'Ledger' }).first().isVisible(), 'A bookkeeper opens on the Ledger');
+  check((await p.getByRole('button', { name: 'Approvals' }).count()) === 0, 'A bookkeeper does not see the administrator pages');
+  check((await p.locator('.ctx-user').textContent()).includes('Bookkeeper'), 'The sidebar says the person is a bookkeeper');
+  check((await p.getByRole('tab', { name: /^Not posted \(5\)/ }).count()) === 1, 'The Ledger counts five lines not posted and two posted');
+  check(await p.getByRole('tab', { name: /^Posted \(2\)/ }).isVisible(), 'The Posted tab counts two lines');
+  await shot(p, '43-ledger');
+
+  // The account list opens on the layers, in order, with the line's own category first.
+  const account = p.getByLabel('PR-0039 row 1 account', exact);
+  await account.click();
+  const headings = await p.locator('.ctx-combo-heading').allTextContents();
+  check(
+    headings.join('|') === 'From this request|Used most often|Usual for Clarus|All other accounts' ||
+      headings.join('|') === 'From this request|Used most often|Usual for Clarus',
+    'The account list shows its layers in order',
+    headings.join('|')
+  );
+  check((await p.locator('.ctx-combo-option').nth(1).textContent()) === '6182 R&D Materials & Supplies', "The line's own category account comes first");
+  await shot(p, '44-ledger-account-list', false);
+  // Typing narrows it: by number, by word.
+  await p.keyboard.type('6178');
+  check((await p.locator('.ctx-combo-option').count()) === 1, 'Typing an account number narrows the list to that account');
+  await p.keyboard.press('Control+a');
+  await p.keyboard.type('computer');
+  check((await p.locator('.ctx-combo-option').first().textContent()) === '6178 Computer, H/W & S/W Supplies', 'Typing a word finds the account');
+  await p.keyboard.press('Control+a');
+  await p.keyboard.type('zzzz');
+  check(await p.getByText('Nothing in the list matches').isVisible(), 'Typing something that is not in the list says so, and keeps nothing');
+  await p.keyboard.press('Escape');
+  check((await account.inputValue()) === '6182 R&D Materials & Supplies', 'Escape closes the list and leaves the account as it was');
+
+  // Choose with the keyboard: arrow down, Enter. The next item after the line's own category is "used most often".
+  await account.focus();
+  await p.keyboard.press('ArrowDown'); // opens the list on the account chosen now
+  await p.keyboard.press('ArrowDown');
+  await p.keyboard.press('Enter');
+  await p.waitForFunction(() => document.querySelector('input[aria-label="PR-0039 row 1 account"]').value === '6180 Office Supplies');
+  check(true, 'The arrow keys and Enter choose an account');
+  // Posting a line with no class is refused, and says which line (row 2 has none yet).
+  await p.getByLabel('Select PR-0039 row 2', exact).check();
+  await p.getByRole('button', { name: /Mark 1 selected Posted/ }).click();
+  await p.getByText('PR-0039 row 2: choose a class before posting').waitFor();
+  check(true, 'Posting a line with no class is refused, naming the line');
+  check((await p.getByLabel('PR-0039 row 1 class', exact).inputValue()) === '5.0 Internal R&D', 'A class chosen before is shown');
+  // Choose a class from the list, then post.
+  const klass = p.getByLabel('PR-0039 row 2 class', exact);
+  await klass.click();
+  await p.locator('.ctx-combo-option', { hasText: '1.0 Grants:1.01 NSF Phase 1 SBIR' }).click();
+  await p.waitForFunction(() => document.querySelector('input[aria-label="PR-0039 row 2 class"]').value === '1.0 Grants:1.01 NSF Phase 1 SBIR');
+  check(true, 'A class is chosen from the list');
+  await p.getByRole('button', { name: /Mark 1 selected Posted/ }).click();
+  await p.getByText('Marked 1 line Posted.').waitFor();
+  await p.getByRole('tab', { name: /^Not posted \(4\)/ }).waitFor();
+  check(true, 'Marking a line Posted moves it out of Not posted');
+  await p.getByRole('tab', { name: /^Posted \(3\)/ }).click();
+  check(
+    await p
+      .getByRole('row', { name: /PR-0039/ })
+      .first()
+      .getByText('Posted', exact)
+      .first()
+      .isVisible(),
+    'The posted line shows in the Posted tab'
+  );
+  check(await p.getByLabel('PR-0039 row 2 class', exact).isDisabled(), 'A Posted line is locked');
+  await shot(p, '45-ledger-posted');
+  // Set it back, and it can be changed again.
+  await p.getByLabel('Select PR-0039 row 2', exact).check();
+  await p.getByRole('button', { name: /back to Not posted/ }).click();
+  await p.getByText('Set 1 line back to Not posted.').waitFor();
+  check(true, 'A Posted line can be set back to Not posted');
+  // The download is a file named for the day.
+  await p.getByRole('tab', { name: /^All/ }).click();
+  const xlsx = p.waitForEvent('download');
+  await p.getByRole('button', { name: 'Download Excel' }).click();
+  const workbook = await xlsx;
+  check(workbook.suggestedFilename() === 'Purchases_Ledger_2026-10-12.xlsx', 'Download Excel saves a file named for the day', workbook.suggestedFilename());
+  await p.close();
+
+  // An employee cannot open it, and an administrator can.
+  p = await open('jane', '#/ledger');
+  check(await p.getByRole('heading', { name: 'My requests' }).first().isVisible(), 'An employee who opens the Ledger address is shown My requests');
+  check((await p.getByText('Bookkeeping', exact).count()) === 0, 'An employee does not see the Bookkeeping section');
+  await p.close();
+  p = await open('admin', '#/ledger');
+  await p.waitForSelector('.ctx-ledger-table');
+  check(await p.getByText('Bookkeeping', exact).isVisible(), 'An administrator sees the Bookkeeping section');
+  check(await p.getByRole('link', { name: 'PR-0039' }).first().isVisible(), 'An administrator can open a request from the Ledger');
+  await p.close();
+
+  // The category dropdown shows the QuickBooks number with the name (P-053).
+  p = await open('jane', '#/request/41/purchases');
+  const categoryOptions = await p.locator('select[aria-label="Row 1 category"] option').allTextContents();
+  check(
+    categoryOptions.includes('6182 R&D Materials & Supplies') && categoryOptions.includes('6175 Equipment'),
+    'The category list shows the account numbers',
+    categoryOptions.join(' | ')
+  );
+  check(categoryOptions.includes('Other'), 'Other has no account number, so it shows its name alone');
+  await p.close();
+
   // ---- Regression checks, no screenshots ------------------------------------------
 
   // What is typed while a row is added shows on screen and is what is saved.

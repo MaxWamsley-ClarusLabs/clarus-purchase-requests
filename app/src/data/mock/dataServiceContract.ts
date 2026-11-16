@@ -10,6 +10,7 @@
 /* eslint-disable max-lines */
 import { messages } from '../../domain/messages';
 import { CERTIFICATION, isSelfApproved, vendorKey } from '../../domain/purchaseRules';
+import { inLedger } from '../../domain/ledger';
 import { RECORDED_CERTIFICATION, RECORDED_NOTE } from '../../domain/recording';
 import { ApprovalGroup, CategoryId, PackageStatus, PaidById, PurchaseLine, RequestStatus, SubmissionType } from '../../domain/types';
 import { ApprovalRequiredError, SubmissionBlockedError } from '../../export/submission';
@@ -20,6 +21,8 @@ export interface Person {
   name: string;
   email: string;
   admin: boolean;
+  /** In the Purchase Bookkeepers group (P-052). */
+  bookkeeper?: boolean;
 }
 
 export const JANE: Person = { name: 'Jane Doe', email: 'jane.doe@example.com', admin: false };
@@ -28,6 +31,8 @@ export const SAM: Person = { name: 'Sam Lee', email: 'sam.lee@example.com', admi
 export const MAX: Person = { name: 'Max Wamsley', email: 'max.wamsley@example.com', admin: true };
 /** A second site Owner, who is an administrator and approver too, but did not approve Max's requests (P-037). */
 export const OLIVE: Person = { name: 'Olive Owner', email: 'olive.owner@example.com', admin: true };
+/** A bookkeeper: in the Purchase Bookkeepers group, not an administrator (P-052). */
+export const BEA: Person = { name: 'Bea Keeper', email: 'bea.keeper@example.com', admin: false, bookkeeper: true };
 
 /** A change made to a row directly in SharePoint, outside the app and its locks (travel D-002). */
 export interface DirectLineEdit {
@@ -215,8 +220,18 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
   describe(`${label}: who may do what`, () => {
     it('knows who is signed in and whether they are an administrator', async () => {
       const h = await makeHarness();
-      expect(await h.as(JANE).getCurrentUser()).toEqual({ displayName: 'Jane Doe', email: 'jane.doe@example.com', isAdministrator: false });
-      expect(await h.as(MAX).getCurrentUser()).toEqual({ displayName: 'Max Wamsley', email: 'max.wamsley@example.com', isAdministrator: true });
+      expect(await h.as(JANE).getCurrentUser()).toEqual({
+        displayName: 'Jane Doe',
+        email: 'jane.doe@example.com',
+        isAdministrator: false,
+        isBookkeeper: false
+      });
+      expect(await h.as(MAX).getCurrentUser()).toEqual({
+        displayName: 'Max Wamsley',
+        email: 'max.wamsley@example.com',
+        isAdministrator: true,
+        isBookkeeper: false
+      });
     });
 
     it('shows employees only their own requests, and everything to an administrator', async () => {
@@ -300,6 +315,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       await refusal(jane.markProcessed(id));
       await refusal(jane.retryPackaging(submission.id));
       await refusal(jane.getFlowSettings('test', 'https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx'));
+      await refusal(jane.getBackupFlowSettings('test', 'https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx'));
       await refusal(jane.runSetup(() => undefined));
       expect((await refusal(jane.approveRequest(id, { note: '', categories: {} }))).message).toBe(notAllowed.administratorsOnly);
       // Nothing changed.
@@ -2221,6 +2237,185 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       await max.markPurchased(id);
       // Approving confirmed the category (P-024), so the approver's own decision is on record.
       expect((await max.markProcessed(id)).status).toBe('Processed');
+    });
+  });
+  describe(`${label}: the Ledger (P-052 to P-057)`, () => {
+    const ACCOUNT = '6182 R&D Materials & Supplies';
+    const OTHER_ACCOUNT = '6184 Shipping/Postage';
+    const CLASS = '5.0 Internal R&D';
+    const GRANT_CLASS = '1.0 Grants:1.01 NSF Phase 1 SBIR';
+
+    /** Jane's request, submitted, with two rows: one for each vendor. */
+    async function submittedRows(h: Harness) {
+      const jane = h.as(JANE, NOW);
+      const made = await fill(jane, [
+        POSTAGE,
+        { ...POSTAGE, vendor: 'Brightline Hosting', category: 'subscriptions', amountCents: 34800, receipts: ['hosting.pdf'] }
+      ]);
+      await jane.submitRequest(made.id, CERTIFICATION);
+      return made.id;
+    }
+
+    it('is for administrators and bookkeepers only', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      for (const person of [JANE, SAM]) {
+        const svc = h.as(person, NOW);
+        expect((await refusal(svc.listLedger())).message).toBe(messages.ledgerNotAllowed);
+        expect((await refusal(svc.updateLedgerEntry('1', { account: ACCOUNT }))).message).toBe(messages.ledgerNotAllowed);
+        expect((await refusal(svc.setPosted(['1'], true))).message).toBe(messages.ledgerNotAllowed);
+      }
+      expect(await h.as(MAX, NOW).listLedger()).toHaveLength(2);
+      expect(await h.as(BEA, NOW).listLedger()).toHaveLength(2);
+    });
+
+    it('tells the screens who is a bookkeeper', async () => {
+      const h = await makeHarness();
+      expect(await h.as(BEA, NOW).getCurrentUser()).toMatchObject({ isBookkeeper: true, isAdministrator: false });
+      expect(await h.as(JANE, NOW).getCurrentUser()).toMatchObject({ isBookkeeper: false });
+      expect(await h.as(MAX, NOW).getCurrentUser()).toMatchObject({ isBookkeeper: false, isAdministrator: true });
+    });
+
+    it('lists the lines of bought requests only, and not drafts, requests awaiting approval or returned ones', async () => {
+      const h = await makeHarness();
+      for (const status of STATUSES) await requestInState(h, status);
+      const rows = await h.as(MAX, NOW).listLedger();
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every((r) => inLedger(r.requestStatus))).toBe(true);
+      expect(new Set(rows.map((r) => r.requestStatus))).toEqual(new Set(['Submitted', 'Processed']));
+    });
+
+    it('shows each line with its category account as the starting point, and nothing posted', async () => {
+      const h = await makeHarness();
+      const id = await submittedRows(h);
+      const rows = await h.as(BEA, NOW).listLedger();
+      expect(rows.map((r) => r.line.vendor)).toEqual(['QuickShip Postage', 'Brightline Hosting']);
+      expect(rows[0]).toMatchObject({
+        requestNumber: (await h.as(MAX, NOW).getRequest(id)).request.requestNumber,
+        ownerName: 'Jane Doe',
+        entry: { account: '', className: '', posted: false, postedBy: '', postedOn: '' }
+      });
+      expect(rows[0].line.category).toBe('shipping');
+    });
+
+    it('lists receipts under the names the package gives them', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const rows = await h.as(MAX, NOW).listLedger();
+      expect(rows[0].receipts.map((r) => r.fileName)).toEqual(['R01_postage.pdf']);
+      expect(rows[1].receipts.map((r) => r.fileName)).toEqual(['R01_hosting.pdf'].map((n) => n.replace('R01', 'R02')));
+    });
+
+    it('chooses an account and a class, only from the lists, and clears them', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const bea = h.as(BEA, NOW);
+      const [first] = await bea.listLedger();
+      const set = await bea.updateLedgerEntry(first.line.id, { account: ACCOUNT, className: GRANT_CLASS });
+      expect(set.entry).toMatchObject({ account: ACCOUNT, className: GRANT_CLASS, posted: false });
+      expect((await refusal(bea.updateLedgerEntry(first.line.id, { account: 'Hand typed account' }))).message).toBe(messages.ledgerBadAccount);
+      expect((await refusal(bea.updateLedgerEntry(first.line.id, { className: 'Hand typed class' }))).message).toBe(messages.ledgerBadClass);
+      expect((await bea.listLedger())[0].entry).toMatchObject({ account: ACCOUNT, className: GRANT_CLASS });
+      const cleared = await bea.updateLedgerEntry(first.line.id, { account: '', className: '' });
+      expect(cleared.entry).toMatchObject({ account: '', className: '' });
+    });
+
+    it('will not post a line without a class, and says which line', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const bea = h.as(BEA, NOW);
+      const [first] = await bea.listLedger();
+      const refused = (await refusal(bea.setPosted([first.line.id], true))).message;
+      expect(refused).toContain(`${first.requestNumber} row 1`);
+      expect(refused).toContain('choose a class');
+      expect((await bea.listLedger())[0].entry.posted).toBe(false);
+    });
+
+    it('posts with the category account when none was chosen, and records who and when', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const when = new Date(2026, 10, 16, 14, 5);
+      const bea = h.as(BEA, when);
+      const [first] = await bea.listLedger();
+      await bea.updateLedgerEntry(first.line.id, { className: CLASS });
+      const [posted] = await bea.setPosted([first.line.id], true);
+      expect(posted.entry).toEqual({ account: OTHER_ACCOUNT, className: CLASS, posted: true, postedBy: 'Bea Keeper', postedOn: '2026-11-16 14:05' });
+    });
+
+    it('is all or nothing: one line that cannot be posted stops the whole batch', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const bea = h.as(BEA, NOW);
+      const [first, second] = await bea.listLedger();
+      await bea.updateLedgerEntry(first.line.id, { className: CLASS });
+      expect((await refusal(bea.setPosted([first.line.id, second.line.id], true))).message).toContain('choose a class');
+      expect((await bea.listLedger()).map((r) => r.entry.posted)).toEqual([false, false]);
+      await bea.updateLedgerEntry(second.line.id, { className: GRANT_CLASS });
+      expect((await bea.setPosted([first.line.id, second.line.id], true)).map((r) => r.entry.posted)).toEqual([true, true]);
+    });
+
+    it('asks for something to post, and ignores a line listed twice', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const bea = h.as(BEA, NOW);
+      expect((await refusal(bea.setPosted([], true))).message).toBe(messages.ledgerNothingSelected);
+      const [first] = await bea.listLedger();
+      await bea.updateLedgerEntry(first.line.id, { className: CLASS });
+      expect(await bea.setPosted([first.line.id, first.line.id], true)).toHaveLength(1);
+    });
+
+    it('locks a Posted line until it is set back, and keeps its account and class when it is', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const bea = h.as(BEA, NOW);
+      const [first] = await bea.listLedger();
+      await bea.updateLedgerEntry(first.line.id, { account: ACCOUNT, className: CLASS });
+      await bea.setPosted([first.line.id], true);
+      expect((await refusal(bea.updateLedgerEntry(first.line.id, { className: GRANT_CLASS }))).message).toContain('Set it back to Not posted');
+      const [back] = await bea.setPosted([first.line.id], false);
+      expect(back.entry).toEqual({ account: ACCOUNT, className: CLASS, posted: false, postedBy: '', postedOn: '' });
+      expect((await bea.updateLedgerEntry(first.line.id, { className: GRANT_CLASS })).entry.className).toBe(GRANT_CLASS);
+    });
+
+    it('leaves a line already in the wanted state as it is, so the first poster stays on record', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const [first] = await h.as(BEA, NOW).listLedger();
+      await h.as(BEA, NOW).updateLedgerEntry(first.line.id, { className: CLASS });
+      await h.as(BEA, new Date(2026, 10, 16, 9, 0)).setPosted([first.line.id], true);
+      const again = await h.as(MAX, new Date(2026, 10, 17, 9, 0)).setPosted([first.line.id], true);
+      expect(again[0].entry).toMatchObject({ postedBy: 'Bea Keeper', postedOn: '2026-11-16 09:00' });
+    });
+
+    it("refuses a line that is not in the Ledger: a draft, someone else's, or one that does not exist", async () => {
+      const h = await makeHarness();
+      const draft = await fill(h.as(JANE, NOW), [POSTAGE]);
+      const bea = h.as(BEA, NOW);
+      expect((await refusal(bea.updateLedgerEntry(draft.lines[0].id, { className: CLASS }))).message).toBe(messages.ledgerLineMissing);
+      expect((await refusal(bea.setPosted([draft.lines[0].id], true))).message).toBe(messages.ledgerLineMissing);
+      expect((await refusal(bea.updateLedgerEntry('999999', { className: CLASS }))).message).toBe(messages.ledgerLineMissing);
+      expect((await refusal(bea.updateLedgerEntry('not-a-number', { className: CLASS }))).message).toBe(messages.ledgerLineMissing);
+    });
+
+    it('lists a line as its owner made it: another employee cannot change it', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const rows = await h.as(MAX, NOW).listLedger();
+      // Sam cannot change Jane's row: the Ledger rows are Jane's rows as Jane's request owns them.
+      await refusal(h.as(SAM, NOW).updateLine(rows[0].line.id, { amountCents: 1 }));
+      expect((await h.as(MAX, NOW).listLedger())[0].line.amountCents).toBe(12500);
+    });
+
+    it('keeps what was posted after the request is marked processed', async () => {
+      const h = await makeHarness();
+      const id = await submittedRows(h);
+      const bea = h.as(BEA, NOW);
+      const [first] = await bea.listLedger();
+      await bea.updateLedgerEntry(first.line.id, { className: CLASS });
+      await bea.setPosted([first.line.id], true);
+      await h.as(MAX, APPROVED_AT).markProcessed(id);
+      const rows = await bea.listLedger();
+      expect(rows[0]).toMatchObject({ requestStatus: 'Processed', entry: { posted: true } });
     });
   });
 }

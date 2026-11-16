@@ -114,12 +114,12 @@ export function approvalThresholdCents(buyer: BuyerId): number {
 
 /**
  * The accounts below are from the May 1, 2026 export of Clarus's QuickBooks
- * account list, as Max supplied them on 2026-10-01. Claude did not open the
- * file. Re-export the list and compare it with this file before the app goes
- * live (docs/CHECKPOINT.md). The administrator still decides the account, and
- * the class is a separate field the app does not set (P-025).
+ * account list, as Max supplied them on 2026-10-01. On 2026-11-15 Max
+ * exported the list again and Claude checked every category's account number
+ * and name against it: all 12 match (P-053). The bookkeeper still decides the
+ * account, and sets the class, in the Ledger (P-052, P-056).
  */
-export const QUICKBOOKS_MAPPING_STATUS = 'from the May 1, 2026 account list';
+export const QUICKBOOKS_MAPPING_STATUS = 'from the May 1, 2026 account list, checked against the November 15, 2026 export';
 
 export interface Category {
   id: CategoryId;
@@ -254,6 +254,15 @@ export const CATEGORIES: readonly Category[] = [
 
 export function findCategory(id: string): Category | undefined {
   return CATEGORIES.find((c) => c.id === id);
+}
+
+/**
+ * What the category dropdowns show: the QuickBooks account number with the name, "6182 R&D Materials & Supplies", so the
+ * choice reads the same as QuickBooks (P-053). Other has no account, so it shows its name alone. Only the display: what
+ * is stored, and what the CSV and emails say, is unchanged.
+ */
+export function categoryOptionText(category: Category): string {
+  return category.accountNumber ? `${category.accountNumber} ${category.label}` : category.label;
 }
 
 /** Whether the category is one the employee must describe (Other). */
@@ -697,3 +706,141 @@ export function sameAsSent(lines: readonly PurchaseLine[], sent: readonly SentRo
     })
   );
 }
+
+// ---- The ledger: bookkeepers, accounts and classes (P-052 to P-057) -------------
+
+/**
+ * The SharePoint group whose members may use the Ledger besides the administrators (P-052). Max creates it and
+ * adds the bookkeepers; the app only checks whether the signed-in person is in it.
+ */
+export const BOOKKEEPER_GROUP_NAME = 'Purchase Bookkeepers';
+
+/**
+ * Where the lists below come from: Max's QuickBooks Account List and Class list, both exported 2026-11-15
+ * (P-053). Claude read both files; only numbers and names are used, never balances.
+ */
+export const LEDGER_LISTS_STATUS = 'from the QuickBooks Account List and Class list exported on November 15, 2026';
+
+export interface LedgerAccount {
+  /** The QuickBooks account number. */
+  number: string;
+  /** The exact QuickBooks account name, a sub-account with its parent ("Travel:Airfare"). */
+  name: string;
+}
+
+/**
+ * The accounts a purchase line can be posted to (P-054): the numbered Expense, Cost of Goods Sold and Other
+ * Expense accounts in Max's list, and 1415 Fixed Assets:Equipment for equipment that is capitalized. The nine
+ * accounts QuickBooks made without a number (Insurance, Office expenses, Purchases and so on) are left out.
+ *
+ * The ORDER is Max's: the accounts an R&D company uses most first (P-055), then the rest by number. It is the
+ * last layer but one of the suggestions (`ledgerSuggestions.ts`) and the order a new site starts with.
+ */
+export const LEDGER_ACCOUNTS: readonly LedgerAccount[] = [
+  { number: '6182', name: 'R&D Materials & Supplies' },
+  { number: '6178', name: 'Computer, H/W & S/W Supplies' },
+  { number: '6180', name: 'Office Supplies' },
+  { number: '6184', name: 'Shipping/Postage' },
+  { number: '6150', name: 'Dues and Subscriptions' },
+  { number: '6500', name: 'Advertising/Marketing/Website' },
+  { number: '6175', name: 'Equipment' },
+  { number: '1415', name: 'Fixed Assets:Equipment' },
+  { number: '6215', name: 'Business Insurance' },
+  { number: '6050', name: 'Professional Services' },
+  { number: '6155', name: 'Training and Education' },
+  { number: '6170', name: 'Repairs & maintenance' },
+  { number: '6185', name: 'Telephone/Internet' },
+  { number: '5050', name: 'COGS Expenses:Materials & Supplies' },
+  { number: '5000', name: 'COGS Expenses' },
+  { number: '5001', name: 'COGS Expenses:Labor-Salaries & Wages' },
+  { number: '6000', name: 'OPERATING EXPENSES' },
+  { number: '6010', name: 'Payroll expenses' },
+  { number: '6011', name: 'Labor-Salaries & Wages' },
+  { number: '6015', name: 'Payroll Tax' },
+  { number: '6020', name: 'Benefits Administration' },
+  { number: '6052', name: 'Professional Services:Accounting Services' },
+  { number: '6053', name: 'Professional Services:Consultant Services' },
+  { number: '6054', name: 'Professional Services:Legal Services' },
+  { number: '6055', name: 'Subconsultants/Subawardees' },
+  { number: '6100', name: 'Travel' },
+  { number: '6101', name: 'Travel:Airfare' },
+  { number: '6102', name: 'Travel:Lodging' },
+  { number: '6103', name: 'Travel:Meals' },
+  { number: '6104', name: 'Travel:Transportation' },
+  { number: '6105', name: 'Travel:Seminars, Training, Conferences' },
+  { number: '6110', name: 'Employee Moving Expense' },
+  { number: '6160', name: 'Facilities Rent' },
+  { number: '6190', name: 'Utilities' },
+  { number: '6200', name: 'Depreciation Expense' },
+  { number: '6210', name: 'Banking Service Charges' },
+  { number: '6220', name: 'Business Meals' },
+  { number: '6230', name: 'Business licenses' },
+  { number: '6235', name: 'Business Taxes' },
+  { number: '6236', name: 'Business Taxes:Taxes-Federal Income' },
+  { number: '6237', name: 'Business Taxes:Taxes-State/Franchise/Local' },
+  { number: '6238', name: 'Business Taxes:Taxes-Sales Tax' },
+  { number: '6239', name: 'Business Taxes:Taxes-Property' },
+  { number: '6240', name: 'Business Taxes:Taxes-Other' },
+  { number: '6510', name: 'Entertainment' },
+  { number: '6525', name: 'Amortization Expense' },
+  { number: '6530', name: 'Bad Debt write-off' },
+  { number: '6535', name: 'Business Gifts' },
+  { number: '6540', name: 'Contributions/Donations' },
+  { number: '9000', name: 'Other Income/Expenses' },
+  { number: '9005', name: 'Interest Expense' },
+  { number: '9100', name: 'Valuations/Company Restructure' },
+  { number: '9200', name: 'Investor Relations' },
+  { number: '9300', name: 'Patent Expenses' },
+  { number: '9400', name: 'Stock Compensation Expense' },
+  { number: '9500', name: 'Finance Charges/Penalties' }
+];
+
+/** What QuickBooks shows for an account, and what is stored on a line: "6182 R&D Materials & Supplies". */
+export function accountText(account: LedgerAccount): string {
+  return `${account.number} ${account.name}`;
+}
+
+/** The account list entry with this number, if there is one. */
+export function findLedgerAccount(number: string): LedgerAccount | undefined {
+  return LEDGER_ACCOUNTS.find((a) => a.number === number);
+}
+
+/**
+ * The account a line starts with: its category's account (P-038), when that account is in the list. Other, and a
+ * category with no account, start with none, and the bookkeeper chooses.
+ */
+export function defaultLedgerAccount(categoryId: string): string {
+  const category = findCategory(categoryId);
+  const account = category && category.accountNumber ? findLedgerAccount(category.accountNumber) : undefined;
+  return account ? accountText(account) : '';
+}
+
+export interface LedgerClass {
+  /** What QuickBooks shows and what is stored: a grant class with its parent, "1.0 Grants:1.01 NSF Phase 1 SBIR". */
+  name: string;
+}
+
+/**
+ * The classes a purchase line can be posted to (P-054): seven of the nine in Max's QuickBooks. The 1.0 Grants
+ * parent is left out, so a grant line always names its grant, and 3.0 Other Income, which is for income. Order
+ * is Max's (P-055). The sub-class names show the parent as QuickBooks normally does (Unverified: Max to compare
+ * with one QuickBooks class dropdown).
+ */
+export const LEDGER_CLASSES: readonly LedgerClass[] = [
+  { name: '5.0 Internal R&D' },
+  { name: '1.0 Grants:1.01 NSF Phase 1 SBIR' },
+  { name: '1.0 Grants:1.03 NSF Phase 2 SBIR' },
+  { name: '1.0 Grants:1.02 X Competition' },
+  { name: '8.0 Indirect Expenses' },
+  { name: '2.0 Commercial' },
+  { name: '9.0 Unallowable Expenses' }
+];
+
+/** QuickBooks asks for a class on every line (Max, 2026-11-15, P-056), so a line cannot be posted without one. */
+export const CLASS_REQUIRED = true;
+
+/**
+ * The suggestions look at the most recently posted lines only (P-057), so the page stays fast as the years
+ * build up and follows recent practice.
+ */
+export const LEDGER_HISTORY_LIMIT = 500;

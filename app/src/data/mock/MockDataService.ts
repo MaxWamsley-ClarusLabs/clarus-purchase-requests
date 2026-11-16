@@ -8,6 +8,8 @@
 import { toIsoDate, toLocalDateTime } from '../../domain/dates';
 import { defaultPaidBy, latestDepartment } from '../../domain/defaults';
 import { LineRef } from '../../domain/duplicates';
+import { EMPTY_LEDGER_ENTRY, LedgerEntry, LedgerEntryChanges, LedgerRow } from '../../domain/ledger';
+import { ledgerRowsOfAll } from '../../domain/ledgerRows';
 import { messages } from '../../domain/messages';
 import { cleanFileName, requestNumber } from '../../domain/naming';
 import { DEFAULT_BUYER, EMPTY_APPROVAL, findBuyer, groupsForApproved, matchesWhatWasSent } from '../../domain/purchaseRules';
@@ -15,6 +17,7 @@ import { checkReceiptFile } from '../../domain/receipts';
 import { isEditable, mayBuy } from '../../domain/statuses';
 import { computeTotals } from '../../domain/totals';
 import { AttachedFile, BuyerId, CurrentUser, FileKind, PurchaseLine, PurchaseRequest, Submission } from '../../domain/types';
+import { BackupFlowConfig } from '../../export/backupFlow';
 import { FlowConfig, FlowMode, LIVE_DESTINATION, TEST_FOLDERS } from '../../export/flowPackage';
 import { PreparedSubmission, prepareApprovalRequest, prepareSubmission } from '../../export/submission';
 import { fingerprintFile, uniqueName } from '../files';
@@ -39,8 +42,10 @@ import {
   changesAfterDelete,
   employeeCertification,
   holdsApproval,
+  ledgerEntryWrite,
   nextRowNumber,
   notAllowed,
+  postWrites,
   previousFolderName,
   retryRefusal,
   returnStageFor,
@@ -50,7 +55,7 @@ import {
   staleUploading,
   statusAfterReturn
 } from '../sharepoint/serviceRules';
-import { SAMPLE_USERS, SampleStore, finishPendingWork, packagedFolderLink } from './sampleData';
+import { SAMPLE_USERS, SampleStore, finishPendingWork, packagedArchiveLink, packagedFolderLink } from './sampleData';
 
 export { NotAllowedError, finishPendingWork };
 
@@ -116,6 +121,21 @@ export class MockDataService implements PurchaseDataService {
     const blob = uploaded.get(file.id);
     if (blob) return typeof URL.createObjectURL === 'function' ? URL.createObjectURL(blob) : '';
     return file.url && !file.url.startsWith('blob:') ? file.url : '';
+  }
+
+  async getBackupFlowSettings(mode: FlowMode, appPageUrl: string): Promise<BackupFlowConfig> {
+    const config = await this.getFlowSettings(mode, appPageUrl);
+    return {
+      mode,
+      siteUrl: config.siteUrl,
+      requestsListId: this.setupStatus.lists[0].listId,
+      linesListId: this.setupStatus.lists[1].listId,
+      destinationSiteUrl: config.destinationSiteUrl,
+      libraryUrlName: config.libraryUrlName,
+      folders: config.folders,
+      adminEmail: config.adminEmail,
+      appPageUrl: config.appPageUrl
+    };
   }
 
   async listApprovers(): Promise<string[]> {
@@ -608,6 +628,61 @@ export class MockDataService implements PurchaseDataService {
     return clone(submission);
   }
 
+  // ---- The Ledger (P-052) ----------------------------------------------------
+
+  async listLedger(): Promise<LedgerRow[]> {
+    this.requireLedger();
+    await this.pause();
+    return clone(this.ledgerRows());
+  }
+
+  async updateLedgerEntry(lineId: string, changes: LedgerEntryChanges): Promise<LedgerRow> {
+    this.requireLedger();
+    await this.pause();
+    const write = ledgerEntryWrite(this.ledgerRow(lineId), changes);
+    this.storeEntry(lineId, write);
+    this.changed();
+    return clone(this.ledgerRow(lineId));
+  }
+
+  async setPosted(lineIds: string[], posted: boolean): Promise<LedgerRow[]> {
+    this.requireLedger();
+    await this.pause();
+    const ids = lineIds.filter((id, i) => lineIds.indexOf(id) === i);
+    // Every row is checked before any is changed, so a refusal changes nothing.
+    const writes = postWrites(
+      ids.map((id) => this.ledgerRow(id)),
+      posted,
+      this.user.displayName,
+      this.stamp()
+    );
+    for (const [id, write] of writes) this.storeEntry(id, write);
+    this.changed();
+    return clone(ids.map((id) => this.ledgerRow(id)));
+  }
+
+  private ledgerRows(): LedgerRow[] {
+    const entries = new Map(Object.entries(this.store.ledger ?? {}));
+    return ledgerRowsOfAll(
+      this.store.requests.map((request) => ({ request, lines: this.linesOf(request.id), entries, submissions: this.submissionsOf(request.id) }))
+    );
+  }
+
+  private ledgerRow(lineId: string): LedgerRow {
+    const row = this.ledgerRows().find((r) => r.line.id === lineId);
+    if (!row) throw new NotAllowedError(messages.ledgerLineMissing);
+    return row;
+  }
+
+  private storeEntry(lineId: string, write: Partial<LedgerEntry>): void {
+    const ledger = (this.store.ledger ??= {});
+    ledger[lineId] = { ...EMPTY_LEDGER_ENTRY, ...ledger[lineId], ...write };
+  }
+
+  private requireLedger(): void {
+    if (!this.user.isAdministrator && !this.user.isBookkeeper) throw new NotAllowedError(messages.ledgerNotAllowed);
+  }
+
   // ---- Helpers -------------------------------------------------------------
 
   private get email(): string {
@@ -649,7 +724,10 @@ export class MockDataService implements PurchaseDataService {
         s.lastChanged = this.stamp();
         if (status === 'Packaged') {
           s.packagedAt = this.stamp();
-          if (s.type === 'package') s.folderLink = packagedFolderLink(s.folderName);
+          if (s.type === 'package') {
+            s.folderLink = packagedFolderLink(s.folderName);
+            s.archiveLink = packagedArchiveLink(s.folderName);
+          }
         }
         this.changed();
       }, after);

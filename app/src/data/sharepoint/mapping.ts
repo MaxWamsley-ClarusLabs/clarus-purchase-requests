@@ -3,6 +3,7 @@
 // (travel D-002), so every value read here is checked, never trusted.
 
 import { toLocalDateTime } from '../../domain/dates';
+import { LedgerEntry } from '../../domain/ledger';
 import { requestNumber } from '../../domain/naming';
 import { normalizeRowKind } from '../../domain/extraCharges';
 import { normalizeQuantity } from '../../domain/quantity';
@@ -95,6 +96,12 @@ export interface LineItem {
   SuggestedFields?: string | null;
   /** Absent until Set-up adds the column: reads as an ordinary purchase. */
   RowKind?: string | null;
+  /** The Ledger's columns (P-054), absent until Set-up adds them: they read as not posted, with nothing chosen. */
+  LedgerAccount?: string | null;
+  LedgerClass?: string | null;
+  LedgerPosted?: boolean | null;
+  LedgerPostedBy?: string | null;
+  LedgerPostedOn?: string | null;
   AttachmentFiles?: SpAttachment[];
 }
 
@@ -129,6 +136,8 @@ export interface SubmissionItem {
   EmailSubject: string | null;
   EmailSummary: string | null;
   FolderLink: string | null;
+  /** Absent until Set-up adds the column (P-058). */
+  ArchiveLink?: string | null;
   PackagedAt: string | null;
   ErrorMessage: string | null;
   Created: string;
@@ -484,6 +493,28 @@ export function lineFromItem(item: LineItem): PurchaseLine {
   };
 }
 
+/** What the bookkeepers set on a row, read defensively: anything stored is text or a yes/no, and nothing else is believed (travel D-002). */
+export function ledgerEntryFromItem(item: LineItem): LedgerEntry {
+  return {
+    account: line255(str(item.LedgerAccount)),
+    className: line255(str(item.LedgerClass)),
+    posted: item.LedgerPosted === true,
+    postedBy: str(item.LedgerPostedBy),
+    postedOn: str(item.LedgerPostedOn)
+  };
+}
+
+/** The columns a Ledger change writes. Only fields present in `changes` are sent. */
+export function ledgerFields(changes: Partial<LedgerEntry>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (changes.account !== undefined) out.LedgerAccount = line255(changes.account);
+  if (changes.className !== undefined) out.LedgerClass = line255(changes.className);
+  if (changes.posted !== undefined) out.LedgerPosted = changes.posted;
+  if (changes.postedBy !== undefined) out.LedgerPostedBy = line255(changes.postedBy);
+  if (changes.postedOn !== undefined) out.LedgerPostedOn = line255(changes.postedOn);
+  return out;
+}
+
 /**
  * The row's unconfirmed suggestions (travel D-078), stored as "date,amount,vendor".
  * Read defensively (travel D-002): unknown names are dropped.
@@ -549,6 +580,7 @@ export function submissionFromItem(item: SubmissionItem, requestNo: string): Sub
     emailSubject: str(item.EmailSubject),
     emailSummary: str(item.EmailSummary),
     folderLink: str(item.FolderLink),
+    archiveLink: str(item.ArchiveLink),
     packagedAt: localTime(item.PackagedAt),
     errorMessage: str(item.ErrorMessage),
     packageFileNames: (item.AttachmentFiles ?? []).map((a) => a.FileName)

@@ -21,7 +21,8 @@ These are decided, not provisional. The new purchasing policy (the last stage) m
 - **Who approves.** The site Owners approve. An Owner may approve their own request; it is recorded as self-approved (2026-10-01).
 - **After approval, when the employee buys.** A vendor total that rises more than 10% above the approved amount, or a new vendor total of $500 or more, needs approval again (2026-10-01).
 - **A purchase the employee already made.** It can still be sent for approval first and submitted afterwards, flagged "Bought before approval". Max left the detail to Claude (2026-10-01).
-- **Equipment (closed in the policy workshop, P-044):** QuickBooks has no minimum cost for Equipment, so there is no capitalization threshold; the administrator decides how it is booked. The CSV has no QuickBooks class column, and none was asked for.
+- **Equipment (closed in the policy workshop, P-044):** QuickBooks has no minimum cost for Equipment, so there is no capitalization threshold; the administrator decides how it is booked.
+- **The Ledger (P-052 to P-059, 2026-11-15 and 2026-11-16).** Bookkeepers give each bought line a QuickBooks account and a class, from QuickBooks' own lists exported 2026-11-15, and mark it Posted in the app (Part D). QuickBooks needs a class on every line, so a line cannot be posted without one. A copy of the ledger is saved every night, and receipts are kept in a permanent archive so their links keep working.
 
 ---
 
@@ -84,7 +85,7 @@ This app replaces the Word purchase request form and posting it in the Purchasin
 
 ### Categories
 
-Each category is a QuickBooks account, named exactly as it is in QuickBooks, so your choice is the account. You suggest a category for each row. The approver, when approving, or the administrator can confirm or change it. Equipment is account 6175, or 1415 Fixed Assets:Equipment if it is capitalized, and Other has no account: the administrator decides both, and confirms them before the request is processed. Choose Other only when nothing fits, and describe the category in the box that appears.
+Each category is a QuickBooks account, named exactly as it is in QuickBooks, and the list shows its number with its name (for example 6182 R&D Materials & Supplies), so your choice is the account. You suggest a category for each row. The approver, when approving, or the administrator can confirm or change it. Equipment is account 6175, or 1415 Fixed Assets:Equipment if it is capitalized, and Other has no account: the administrator decides both, and confirms them before the request is processed. Choose Other only when nothing fits, and describe the category in the box that appears.
 
 - R&D Materials & Supplies: Materials and supplies for research and development work.
 - Equipment: Equipment. The administrator decides whether it is expensed or capitalized.
@@ -132,6 +133,16 @@ You certify the request with this sentence: "I certify that the listed purchases
 - If you cannot buy it, return it to the employee with a note from its page. Delete any rows you added first. If the administrator returns it to you after you marked it purchased, fix it and mark it purchased again.
 - Only the approver who approved a request buys it. Another site Owner can read it and can return it to the employee with a note, so it is never stuck, but cannot change its rows or mark it purchased.
 - Bought something yourself and need it on record? Choose Record a purchase, at the top of Approvals or Requests to process. Add a row for each purchase, attach the receipt or invoice (one per vendor is enough) and choose Record purchase. There is no approval and no certification: it goes straight to Requests to process with its folder and spreadsheet, marked as recorded by you. Only administrators see this button.
+
+### For bookkeepers: the Ledger
+
+Administrators and members of the Purchase Bookkeepers group see Ledger in the sidebar. It lists every purchase line of a request that has been bought, ready to enter in QuickBooks. Each line shows the request, the vendor, what was bought, the total and who paid, a link to the receipt, a QuickBooks account and a class.
+
+- Choose the account and the class from the lists. Click a box, then choose from the list or type to narrow it: type an account number (6182) or any word (ship, supplies). The list is shown in layers so the likeliest choice is on top: From this request (the line's own category), Used for this vendor before, Used most often, Usual for Clarus, and All other accounts. An item shows once, at the highest layer it fits. The layers only decide the order; nothing is filled in for you, and you always choose the class.
+- QuickBooks needs a class on every line, so a line cannot be marked Posted until it has an account and a class.
+- When you have entered lines in QuickBooks, tick them and choose Mark Posted. Posting records your name and the time. If one selected line cannot be posted, none is, and the message names it. A Posted line is locked: choose the Posted tab, tick it and choose Set back to Not posted to change it.
+- Click a receipt to open the copy kept in the receipt archive. A request bought before the archive existed links to its request folder instead, which stops working when the folder is filed under its year.
+- Download Excel saves the lines you are looking at (the tab and the search) as an Excel file, with a clickable link to each receipt. A copy of the whole ledger is also saved every night in Accounting, Purchases, Ledger_Backups.
 
 ### What this app does not cover
 
@@ -190,7 +201,9 @@ Use this when you bought something yourself and there is no request to approve.
 3. The folder holds a copy of each receipt (`R01_<original name>`, a second file on the same row `R01-2_...`), a copy of each quote (`Q01_<original name>`), and one CSV file, `PR-0042_Purchases.csv`.
 4. In the app, the request is under **Requests to process**.
 
-The app and the flow never change, move or delete anything else in the Accounting folder. They only create new folders and files inside `Purchases_To_Process`.
+4a. The flow also copies each receipt (not the quotes or the CSV) into `Accounting/Purchases/Purchase_Receipts/<same folder name>/`. That archive stays where it is when you file the request folder, so the Ledger's receipt links keep working (P-058).
+
+The app and the flows never change, move or delete anything else in the Accounting folder. They only create new folders and files, in three places: `Purchases_To_Process` (the request folders), `Purchase_Receipts` (the receipt archive) and `Ledger_Backups` (the nightly backup, Part D).
 
 ### B4. Processing
 
@@ -232,6 +245,72 @@ Done once per site: the test site first, the production site at the pilot. Exact
 3. Under "2. Flow package", choose Test (test site) or Live (production), then Download flow package.
 4. In Power Automate, open My flows, then Import, then Import Package (Legacy). Upload the file, choose your own SharePoint and Office 365 Outlook connections, import, then open the flow and turn it on.
 5. After installing a new version of the app, open Set-up again and choose Check again; update the lists if asked.
+6. Under "3. Ledger backup flow", choose Download backup flow package (it uses the same Test or Live choice) and import it the same way. Turn it on. It runs every night at 2:30 a.m. Central time.
+7. In SharePoint, create the group **Purchase Bookkeepers** and give it Edit permission on the three lists (Part D, D5). Add the bookkeepers to it.
+
+---
+
+## Part D. Bookkeepers: the Ledger (P-052 to P-059)
+
+The Ledger is where the bookkeepers turn bought purchases into QuickBooks entries. It is open to administrators and to the members of the SharePoint group **Purchase Bookkeepers**. The employee pages and the approval pages are not open to a bookkeeper who is not an administrator.
+
+### D1. What the Ledger shows
+
+- One row for each purchase line of a request that has been **bought and packaged** (status Submitted, which the app shows as Purchased when the approver bought it, or Processed). A line appears as soon as the package is made; it does not wait for you to mark the request processed. **Posted** and **Processed** are different: Processed means the request folder has been filed and the request closed; Posted means the line has been entered in QuickBooks.
+- Per line: the request and row, the date, the vendor, what was bought, the total (and "Paid by company" or "To reimburse"), a link to the receipt, the QuickBooks **account** and the **class**.
+- Tabs: **Not posted** (the usual one), **Posted** and **All**, with their counts, and a search over the request number, vendor, description, account and class. A long list is drawn 150 lines at a time ("Show more").
+
+### D2. Working through it
+
+1. Open **Ledger**. Open a line's receipt (it opens in a new tab) and check the line.
+2. Choose the **account** and the **class**. A line starts with the account of its category (for example 6182 R&D Materials & Supplies for an R&D Materials line); change it if QuickBooks should have another. The class is always your choice. **QuickBooks needs a class on every line**, so a line cannot be posted without one.
+3. Enter the line in QuickBooks as set out in `Clarus_Accounting_SOP.md`, then tick it and choose **Mark Posted**. You can tick many lines and mark them together. The app records your name and the time.
+4. If one line you ticked cannot be posted (it has no class, say), **none** is posted, and the message names the line. Fix it and try again.
+5. A **Posted** line is locked. To change one, open the **Posted** tab, tick it and choose **Set back to Not posted**; its account and class stay, and the name and time are cleared. Then change it and post it again.
+
+### D3. How the account and class boxes work
+
+Click a box. A list opens. You can choose with the mouse, or use the arrow keys and Enter, or just type. **Typing narrows the list**: type a number (`6182`), a word (`ship`, `supplies`), or several words (`office supplies`), in any case. Every word you type must appear in the account's number or name. Escape closes the list and keeps what was chosen. Only an item from the list can be chosen, so the account and class are always exactly as QuickBooks has them.
+
+The list is shown in **layers**, so the choice you most likely want is at the top. Each layer has a heading. An item is shown only once, at the highest layer it fits:
+
+1. **From this request.** The account of the line's own category. (Accounts only.)
+2. **Used for this vendor before.** What a bookkeeper posted the last time for the same vendor. The vendor is matched the way the vendor totals match it, so "ACME lab supply" and "Acme Lab Supply" are the same vendor.
+3. **Used most often.** The accounts (or classes) the company has posted most, at most five.
+4. **Usual for Clarus.** The order Max chose for an R&D company, below. A new site starts here.
+5. **All other accounts.** The rest of the list, by account number. (Accounts only; every class is in layer 4.)
+
+**A worked example.** A line from Northside Lab Supply, category Office Supplies. The bookkeepers have posted Northside before, mostly to 6184 Shipping/Postage, and the company posts 6180 Office Supplies and 6184 most often. The account list opens as: *From this request:* 6180 Office Supplies. *Used for this vendor before:* 6184 Shipping/Postage. *Used most often:* then whichever of the company's top five are not already shown. *Usual for Clarus:* 6182 R&D Materials & Supplies, 6178 Computer, H/W & S/W Supplies and so on. *All other accounts:* the rest by number. If you type `ship`, only 6184 Shipping/Postage remains, still in its layer.
+
+**What the suggestions do not do.** They only decide the **order**. Nothing is filled in because of them, and no line is ever posted by them. They never use anything but the 500 lines posted most recently, so they follow the way the company posts now, and the page stays fast: the counting is done once when the page opens, a box builds its list only when you open it, and typing filters about 56 items already in memory.
+
+**Max's order of accounts (layer 4, then the rest by number):** 6182 R&D Materials & Supplies; 6178 Computer, H/W & S/W Supplies; 6180 Office Supplies; 6184 Shipping/Postage; 6150 Dues and Subscriptions; 6500 Advertising/Marketing/Website; 6175 Equipment; 1415 Fixed Assets:Equipment; 6215 Business Insurance; 6050 Professional Services; 6155 Training and Education; 6170 Repairs & maintenance; 6185 Telephone/Internet; 5050 COGS Expenses:Materials & Supplies.
+
+**Max's order of classes:** 5.0 Internal R&D; 1.0 Grants:1.01 NSF Phase 1 SBIR; 1.0 Grants:1.03 NSF Phase 2 SBIR; 1.0 Grants:1.02 X Competition; 8.0 Indirect Expenses; 2.0 Commercial; 9.0 Unallowable Expenses. The 1.0 Grants parent and 3.0 Other Income are not offered.
+
+**The lists come from QuickBooks.** The 56 accounts are the numbered Expense, Cost of Goods Sold and Other Expense accounts, plus 1415 Fixed Assets:Equipment, from the Account List exported on 2026-11-15; the 7 classes are from the Class list exported the same day. When QuickBooks changes (a new account or class), tell the administrator: the lists are in the app and are changed with a new version.
+
+### D4. Receipts and the Excel download
+
+- A receipt link opens the copy in `Accounting/Purchases/Purchase_Receipts/<request folder name>/`. Filing the request folder under its year does not move this copy, so the link keeps working. A request packaged before the archive existed links to its request folder, which stops working once it is filed (the Ledger marks these "request folder").
+- **Download Excel** saves the lines you are looking at (the tab and the search) as an Excel file: Posted first, then who and when, the request, the purchase, the QuickBooks account and class, the total, who paid, a clickable receipt link and the rest of what the bookkeeper needs. Text is saved as text, so nothing in it can run when the file is opened.
+
+### D5. Setting up bookkeepers (administrator, once)
+
+The Ledger works for a person only if SharePoint lets them in, which is a Microsoft 365 change Max makes (steps in `docs/UPDATE_1.0.3.0.md`):
+
+1. Create a SharePoint group named exactly **Purchase Bookkeepers** on the Forms and Apps site, and add the bookkeepers to it.
+2. Give the group **Edit** permission on the three lists (Purchase Requests, Purchase Request Lines, Purchase Submissions). Edit lets them read every employee's line and change the Ledger columns. It does not let them approve a request (that needs "Manage web site").
+3. Give the group **Read** access to `Accounting/Purchases/Purchase_Receipts`, so the receipt links open.
+4. A bookkeeper outside the company needs a guest account in your Microsoft 365. That depends on your tenant's external-sharing settings (Unverified) and is not set up. There is no separate username and password for the app: everyone signs in with a Microsoft identity.
+
+Unverified until the Test site: that SharePoint tells the app which groups the signed-in person is in, and that Edit on the lists lets a bookkeeper read every employee's items despite "own items only".
+
+### D6. The nightly backup
+
+A second flow saves a copy of the ledger every night at 02:30 Central time, in `Accounting/Purchases/Ledger_Backups/`: a CSV and a Markdown file named `Ledger_<date>_<time>`. Each holds every purchase line of every request that has been bought, with the account, class, Posted, who and when. **Each night is a new pair of files: nothing is overwritten, moved or deleted**; delete old ones yourself when you wish. If a night fails, you are emailed and nothing is changed.
+
+If a list were ever damaged or lines lost, the newest backup is the record of the account, class and Posted status. The Markdown file can be read by an AI (for example to help re-enter the status); the CSV opens in Excel. The Ledger in the app is the live record; the files are the copy.
 
 ---
 
@@ -250,6 +329,11 @@ To be completed from the test-site runs at the checkpoint. These messages are wr
 | "The employee's certification is missing from this request." (approver) | The employee's approval request does not hold the exact certification sentence | Return the request to the employee; they send it again with the certification ticked |
 | "You added row N to this request, so it cannot be returned yet." (approver) | Returning an approved request takes the approval back, and rows you added would then stop counting | Delete the rows you added, then return it |
 | "Confirm the category of row N first: the account depends on a decision." (administrator) | The row is Equipment or Other and nobody has confirmed its category | Use Confirm categories, then Mark processed |
+| "Only administrators and members of the Purchase Bookkeepers group can use the Ledger." | The person is not an administrator and SharePoint did not report them in the group | Check they are in the group exactly named Purchase Bookkeepers, then reload the page |
+| "PR-0042 row 1: choose a class before posting. QuickBooks needs one on every line." (bookkeeper) | The line has no class | Choose a class, then mark it Posted. When several lines were ticked, none was posted |
+| "PR-0042 row 1 is Posted. Set it back to Not posted before changing its account or class." (bookkeeper) | A Posted line is locked | Use the Posted tab, tick it and choose Set back to Not posted |
+| "PR-0042 row 1: its account is not in the account list. Choose the account again before posting." (bookkeeper) | Something other than a listed account was typed into the list in SharePoint | Choose the account again from the list |
+| "That purchase line is not in the Ledger. It may have been returned or removed." (bookkeeper) | The request was returned or the line deleted since the page was loaded | Reload the page |
 | "Row N has no receipt of its own to share." (employee) | The row points at a row that has no receipt | Choose a row that has one, or attach a receipt |
 | "This row has a receipt of its own." (employee) | A row cannot hold its own receipt and also use another row's | Remove its own receipt first |
 
@@ -264,3 +348,4 @@ To be completed from the test-site runs at the checkpoint. These messages are wr
 | 2026-10-01 | 5 to 9 | Part A generated from the Instructions (Stage 5). Part B brought up to date with the built screens and the review fixes (opening quotes, approving what was sent, Retry rules); Part C started from the app's own messages |
 | 2026-10-01 | 15 | Added the training quiz line (the link is a placeholder until the Form exists), P-045 |
 | 2026-11-09 | 16 | Part A regenerated (quantity, one receipt per vendor, shipping and tax boxes, Unsend, Record a purchase); Part B gained B2b (recording a purchase) and B5a (an unsent request); P-047 to P-051 |
+| 2026-11-16 | 17 | The Ledger (Part D), the receipt archive and the nightly backup (B3, B9, D4 to D6); Part A regenerated (account numbers in the category list, For bookkeepers: the Ledger); Part C gained five Ledger refusals; P-052 to P-059 |

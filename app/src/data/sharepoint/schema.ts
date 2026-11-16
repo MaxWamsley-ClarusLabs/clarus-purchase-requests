@@ -129,7 +129,13 @@ export const LISTS: Record<ListKey, ListDef> = {
       // Values the app filled in that the employee has not confirmed (travel D-078).
       text('SuggestedFields', 'Suggested, not confirmed'),
       // 'shipping' or 'tax' for a row a Vendor totals box keeps while the approver buys (P-048); empty for a purchase.
-      text('RowKind', 'Row type')
+      text('RowKind', 'Row type'),
+      // What the bookkeepers set in the Ledger (P-052, P-054): the exact QuickBooks account and class, and whether it is posted.
+      text('LedgerAccount', 'Ledger account'),
+      text('LedgerClass', 'Ledger class'),
+      yesNo('LedgerPosted', 'Posted'),
+      text('LedgerPostedBy', 'Posted by'),
+      text('LedgerPostedOn', 'Posted on')
     ]
   },
   submissions: {
@@ -172,6 +178,8 @@ export const LISTS: Record<ListKey, ListDef> = {
       text('EmailSubject', 'Email subject'),
       note('EmailSummary', 'Email summary'),
       note('FolderLink', 'Folder link'),
+      // Where the flow copied the receipts for good (P-058); the Ledger's receipt links point here.
+      note('ArchiveLink', 'Receipt archive link'),
       when('PackagedAt', 'Packaged'),
       note('ErrorMessage', 'Error')
     ]

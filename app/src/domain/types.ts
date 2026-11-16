@@ -237,6 +237,11 @@ export interface Submission {
   emailSubject: string;
   emailSummary: string;
   folderLink: string;
+  /**
+   * The permanent folder the flow copied the receipts into (P-058), a web address; empty on a package made before
+   * the archive existed and until the flow has run. The Ledger's receipt links point here.
+   */
+  archiveLink?: string;
   packagedAt: string;
   errorMessage: string;
   /** Names of the files attached for the flow to copy. */
@@ -252,4 +257,9 @@ export interface CurrentUser {
   displayName: string;
   email: string;
   isAdministrator: boolean;
+  /**
+   * In the SharePoint group "Purchase Bookkeepers" (P-052): may use the Ledger, and nothing else an administrator
+   * can do. An administrator is not marked here; the Ledger is open to both.
+   */
+  isBookkeeper: boolean;
 }

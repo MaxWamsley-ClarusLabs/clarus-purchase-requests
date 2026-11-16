@@ -8,10 +8,12 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BackupFlowConfig, buildBackupFlowPackage } from '../../src/export/backupFlow';
 import { FlowConfig, LIVE_DESTINATION, buildFlowPackage } from '../../src/export/flowPackage';
 
 const REPO = fileURLToPath(new URL('../../../', import.meta.url));
 const EXAMPLE = join(REPO, 'flow/example/definition.json');
+const BACKUP_EXAMPLE = join(REPO, 'flow/example/backup_definition.json');
 
 const example: FlowConfig = {
   mode: 'live',
@@ -47,5 +49,40 @@ describe('flow package', () => {
       return;
     }
     expect(readFileSync(EXAMPLE, 'utf8')).toBe(expected);
+  });
+});
+
+const backupExample: BackupFlowConfig = {
+  mode: 'live',
+  siteUrl: 'https://contoso.sharepoint.com/sites/FormsAndApps',
+  requestsListId: '00000000-0000-0000-0000-000000000001',
+  linesListId: '00000000-0000-0000-0000-000000000002',
+  destinationSiteUrl: LIVE_DESTINATION.siteUrl,
+  libraryUrlName: LIVE_DESTINATION.libraryUrlName,
+  folders: [...LIVE_DESTINATION.folders],
+  adminEmail: 'administrator@example.com',
+  appPageUrl: 'https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx'
+};
+
+describe('ledger backup flow package (P-059)', () => {
+  let m = 0;
+  const backupIds = () => `00000000-0000-0000-0000-${String(++m).padStart(12, '0')}`;
+  const pkg = buildBackupFlowPackage(backupExample, backupIds, new Date(Date.UTC(2026, 10, 16, 12, 0, 0)));
+
+  it('passes the package checker', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'backup-flow-')), pkg.fileName);
+    writeFileSync(file, pkg.zip);
+    const out = execFileSync('python3', [join(REPO, 'flow/tools/check_package.py'), file], { encoding: 'utf8' });
+    expect(out.trim()).toBe('OK');
+  });
+
+  it('matches flow/example/backup_definition.json', () => {
+    const definitionPath = Object.keys(pkg.files).find((p) => p.endsWith('/definition.json'))!;
+    const expected = pkg.files[definitionPath] + '\n';
+    if (process.env.UPDATE_FLOW_EXAMPLE === '1') {
+      writeFileSync(BACKUP_EXAMPLE, expected);
+      return;
+    }
+    expect(readFileSync(BACKUP_EXAMPLE, 'utf8')).toBe(expected);
   });
 });

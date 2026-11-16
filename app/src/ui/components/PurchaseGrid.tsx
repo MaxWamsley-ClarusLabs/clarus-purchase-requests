@@ -5,6 +5,7 @@ import { centsToPlain, parseAmountToCents } from '../../domain/money';
 import { QUANTITY_MAX, parseQuantityText } from '../../domain/quantity';
 import {
   CATEGORIES,
+  categoryOptionText,
   ITEM_LINK_MAX_LENGTH,
   LineApproval,
   NO_LINK_REASONS,
@@ -565,7 +566,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                   <td>
                     <FullTextSelect
                       boxClassName={cellClass(line, 'category')}
-                      shownText={category ? category.label : 'Choose'}
+                      shownText={category ? categoryOptionText(category) : 'Choose'}
                       nothingChosen={!category}
                       title={cellTitle(line, 'category')}
                       aria-label={`Row ${line.rowNumber} category`}
@@ -576,7 +577,7 @@ export function PurchaseGrid(props: Props): React.ReactElement {
                       <option value="">Choose</option>
                       {CATEGORIES.map((c) => (
                         <option key={c.id} value={c.id} title={c.covers}>
-                          {c.label}
+                          {categoryOptionText(c)}
                         </option>
                       ))}
                     </FullTextSelect>

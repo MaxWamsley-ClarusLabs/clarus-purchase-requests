@@ -287,9 +287,21 @@ From your next message the normal rule applies again: Claude pauses and asks, at
 - **Recommendation:** A. Neither blocks the checkpoint, and the flow is easiest to judge once it has run on the real site.
 - **If you choose B:** `app/src/export/flowPackage.ts` (`Claim_the_submission`, `Create_file`), `flow/FLOW.md`, the flow example (`npm run flow-example`), and a checkpoint step.
 
+## 34. Check one thing in QuickBooks: how a grant class is written (new 2026-11-16)
+
+- **What happens:** the Ledger offers `1.0 Grants:1.01 NSF Phase 1 SBIR` (the parent, a colon, the grant class), because QuickBooks normally shows a sub-class that way. Your Class export lists the indentation only. **Unverified.**
+- **What I need:** open any QuickBooks expense form, click its Class box and read how the NSF Phase 1 SBIR class is written. If it differs, tell me the exact text.
+- **If it differs:** the three grant classes in `purchaseRules.ts` (`LEDGER_CLASSES`) and their tests.
+
+## 35. Do any of the 56 accounts need removing? (new 2026-11-16, low priority)
+
+- **What happens:** the account list is the 55 numbered Expense, Cost of Goods Sold and Other Expense accounts plus 1415 Fixed Assets:Equipment. A few are unlikely for a purchase (6010 Payroll expenses, 6011 Labor-Salaries & Wages, 6015 Payroll Tax, 5001 COGS Expenses:Labor-Salaries & Wages, 6200 Depreciation Expense, 6525 Amortization Expense, 6000 OPERATING EXPENSES, the 623x taxes).
+- **Options:** A. Leave them (recommended: a bookkeeper simply does not choose them, and the list matches QuickBooks). B. Tell me which to remove.
+- **If you choose B:** `LEDGER_ACCOUNTS` in `purchaseRules.ts`.
+
 ## Reminders (no answer needed)
 
-- Before go-live: if the QuickBooks chart of accounts has changed since the list Max pasted on 2026-10-01 (which matches all 13 categories), export it again and compare it with `purchaseRules.ts` (`docs/CHECKPOINT.md` step 35).
+- Before go-live: if the QuickBooks chart of accounts has changed since 2026-11-15, export it again and compare it with `purchaseRules.ts` (`docs/CHECKPOINT.md` step 35). The 12 category accounts and the 56 Ledger accounts were checked against the export of 2026-11-15.
 - The suggested-account Unverified label is gone because you supplied the accounts. The numbers and names were checked against the list you pasted on 2026-10-01; Claude did not open the spreadsheet.
 
 ## Not built, on purpose

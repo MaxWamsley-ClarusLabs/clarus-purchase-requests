@@ -4,6 +4,7 @@ import { useApp } from '../../AppContext';
 import { Badge, Card, HeaderCard } from '../../components/common';
 import { Icon } from '../../components/Icon';
 import { BadgeTone } from '../../../domain/statuses';
+import { BackupFlowConfig, buildBackupFlowPackage } from '../../../export/backupFlow';
 import { FlowConfig, FlowMode, buildFlowPackage } from '../../../export/flowPackage';
 import { downloadFile } from '../../download';
 
@@ -41,6 +42,8 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
   const [mode, setMode] = React.useState<FlowMode>('test');
   const [making, setMaking] = React.useState(false);
   const [made, setMade] = React.useState<{ fileName: string; config: FlowConfig; approvalRecipients: string[] } | null>(null);
+  const [makingBackup, setMakingBackup] = React.useState(false);
+  const [madeBackup, setMadeBackup] = React.useState<{ fileName: string; config: BackupFlowConfig } | null>(null);
   const mounted = React.useRef(true);
   React.useEffect(
     () => () => {
@@ -88,6 +91,22 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
       app.reportError(e);
     } finally {
       if (mounted.current) setMaking(false);
+    }
+  };
+
+  // The nightly ledger backup flow (P-059): made the same way, from the same site details.
+  const makeBackupPackage = async (): Promise<void> => {
+    setMakingBackup(true);
+    setMadeBackup(null);
+    try {
+      const config = await app.service.getBackupFlowSettings(mode, window.location.origin + window.location.pathname);
+      const pkg = buildBackupFlowPackage(config);
+      downloadFile(pkg.zip, pkg.fileName, 'application/zip');
+      if (mounted.current) setMadeBackup({ fileName: pkg.fileName, config });
+    } catch (e) {
+      app.reportError(e);
+    } finally {
+      if (mounted.current) setMakingBackup(false);
     }
   };
 
@@ -225,6 +244,38 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
           <p className="ctx-hint" style={{ margin: '12px 0 0' }}>
             To add an approver, add them as an Owner of this site, then make a new flow package here and import it.
           </p>
+        </Card>
+        <Card title="3. Ledger backup flow">
+          <p className="ctx-hint" style={{ marginTop: 0 }}>
+            A second flow that, every night at 2:30 a.m. Central time, saves a new dated CSV file and Markdown file with every purchase line that has been
+            bought, including the account, class and Posted status set in the Ledger. It is a copy for safekeeping if a list is ever damaged. It uses the Test
+            or Live choice above.
+          </p>
+          <div>
+            <button className="ctx-btn ctx-btn-primary" disabled={!status || !status.ready || makingBackup} onClick={makeBackupPackage}>
+              <Icon name="gear" size={16} />
+              Download backup flow package
+            </button>
+            {status && !status.ready ? (
+              <div className="ctx-hint" style={{ marginTop: 8 }}>
+                Create the lists first.
+              </div>
+            ) : null}
+          </div>
+          {madeBackup ? (
+            <div className="ctx-banner green" role="status" style={{ marginTop: 16, display: 'block', overflowWrap: 'anywhere' }}>
+              <strong>{madeBackup.fileName}</strong> downloaded. Backups go to {madeBackup.config.destinationSiteUrl}/{madeBackup.config.libraryUrlName}/
+              {madeBackup.config.folders[madeBackup.config.folders.length - 2]}/Ledger_Backups. A failed night is emailed to {madeBackup.config.adminEmail}.
+            </div>
+          ) : null}
+          <ol className="ctx-hint" style={{ margin: '16px 0 0', paddingLeft: 18 }}>
+            <li>Import it in Power Automate the same way: My flows, Import, Import Package (Legacy).</li>
+            <li>Choose your own account for SharePoint and for Office 365 Outlook, import, then open the flow and turn it on.</li>
+          </ol>
+          <ul style={{ margin: '12px 0 0', paddingLeft: 18 }} className="ctx-hint">
+            <li>Each night makes a new pair of files named for the date and time. It never overwrites, moves or deletes anything.</li>
+            <li>The Ledger in Purchase Requests is the live record. These files are the copy.</li>
+          </ul>
         </Card>
       </div>
     </>

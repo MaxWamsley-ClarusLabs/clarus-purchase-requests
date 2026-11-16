@@ -6,11 +6,12 @@
 import { messages } from '../../domain/messages';
 import { CERTIFICATION } from '../../domain/purchaseRules';
 import { PurchaseRequest } from '../../domain/types';
+import { buildBackupFlowPackage } from '../../export/backupFlow';
 import { MAX_APPROVERS, checkFlowConfig } from '../../export/flowPackage';
 import { PurchaseDataService } from '../PurchaseDataService';
 import { FakeOwner, FakeSharePoint, FakeUser } from '../../testing/FakeSharePoint';
 import { uniqueName } from '../files';
-import { Harness, JANE, MAX, OLIVE, Person, SAM, describeDataServiceRules } from '../mock/dataServiceContract';
+import { BEA, Harness, JANE, MAX, OLIVE, Person, SAM, describeDataServiceRules } from '../mock/dataServiceContract';
 import { SharePointRequestError, SpClient, SpFetch } from './http';
 import { LISTS, SUBMISSION_TYPE_LABELS } from './schema';
 import { notAllowed } from './serviceRules';
@@ -20,7 +21,9 @@ const FAKE_USERS: Record<string, FakeUser> = {
   [MAX.email]: { id: 1, title: MAX.name, email: MAX.email, admin: true },
   [JANE.email]: { id: 7, title: JANE.name, email: JANE.email, admin: false },
   [SAM.email]: { id: 8, title: SAM.name, email: SAM.email, admin: false },
-  [OLIVE.email]: { id: 9, title: OLIVE.name, email: OLIVE.email, admin: true }
+  [OLIVE.email]: { id: 9, title: OLIVE.name, email: OLIVE.email, admin: true },
+  // A bookkeeper: in the Purchase Bookkeepers group, with Edit permission on the lists (P-052).
+  [BEA.email]: { id: 10, title: BEA.name, email: BEA.email, admin: false, groups: ['Purchase Bookkeepers'], editsLists: true }
 };
 const FAKE_MAX = FAKE_USERS[MAX.email];
 const FAKE_JANE = FAKE_USERS[JANE.email];
@@ -147,7 +150,7 @@ describe('SharePoint permissions', () => {
     const site = await setUpSite();
     const mixed: FakeUser = { id: 9, title: 'Jane Doe', email: 'Jane.Doe@Example.com', admin: false };
     const jane = serviceFor(site, mixed);
-    expect(await jane.getCurrentUser()).toEqual({ displayName: 'Jane Doe', email: 'jane.doe@example.com', isAdministrator: false });
+    expect(await jane.getCurrentUser()).toEqual({ displayName: 'Jane Doe', email: 'jane.doe@example.com', isAdministrator: false, isBookkeeper: false });
     const created = await jane.createRequest();
     expect(created.ownerEmail).toBe('jane.doe@example.com');
     await jane.updateRequest(created.id, { department: 'R&D' });
@@ -708,6 +711,25 @@ describe('the approvers (P-018, P-020)', () => {
 });
 
 describe('Flow package settings (travel D-047, P-018)', () => {
+  it('reads the Purchase Requests and Purchase Request Lines lists, the library and the administrator for the ledger backup package (P-059)', async () => {
+    const site = await setUpSite();
+    const config = await serviceFor(site, FAKE_MAX).getBackupFlowSettings('test', PAGE);
+    expect(config).toEqual({
+      mode: 'test',
+      siteUrl: site.webUrl,
+      requestsListId: site.listByUrlName('PurchaseRequests')!.id,
+      linesListId: site.listByUrlName('PurchaseRequestLines')!.id,
+      destinationSiteUrl: site.webUrl,
+      libraryUrlName: 'Shared Documents',
+      folders: ['Purchases_Test', 'Purchases_Test/Purchases_To_Process'],
+      adminEmail: MAX.email,
+      appPageUrl: PAGE
+    });
+    expect(() => buildBackupFlowPackage(config)).not.toThrow();
+    // Not before the lists are ready, as for the other flow.
+    await expect(serviceFor(new FakeSharePoint(), FAKE_MAX).getBackupFlowSettings('test', PAGE)).rejects.toThrow();
+  });
+
   it('reads the Purchase Submissions list, the test library, the administrator and the approvers for a test package', async () => {
     const site = await setUpSite();
     site.owners = [
@@ -1376,5 +1398,151 @@ describe('a request the approver buys: what is stored, and whose rows and submis
     const { id } = await approvedForMax(site);
     const all = await serviceFor(site, FAKE_MAX).listAllRequests();
     expect(all.find((r) => r.id === id)).toMatchObject({ buyer: 'approver', status: 'Approved', approvedBy: 'Max Wamsley', approvedByEmail: MAX.email });
+  });
+});
+
+describe('the Purchase Bookkeepers group (P-052)', () => {
+  it('is found by its name, in any letter case, among the groups the person is in', async () => {
+    const site = await setUpSite();
+    const named = (groups: string[]): FakeUser => ({ id: 20, title: 'Bea Keeper', email: BEA.email, admin: false, groups, editsLists: true });
+    expect((await serviceFor(site, named(['Purchase Bookkeepers'])).getCurrentUser()).isBookkeeper).toBe(true);
+    expect((await serviceFor(site, named(['purchase bookkeepers '])).getCurrentUser()).isBookkeeper).toBe(true);
+    expect((await serviceFor(site, named(['Forms and Apps Members'])).getCurrentUser()).isBookkeeper).toBe(false);
+    expect((await serviceFor(site, named([])).getCurrentUser()).isBookkeeper).toBe(false);
+  });
+
+  it('counts a person as not a bookkeeper when their groups cannot be read, and the Ledger then refuses them', async () => {
+    const site = await setUpSite();
+    const blocked: FakeUser = {
+      id: 21,
+      title: 'Bea Keeper',
+      email: BEA.email,
+      admin: false,
+      groups: ['Purchase Bookkeepers'],
+      editsLists: true,
+      groupsUnreadable: true
+    };
+    const svc = serviceFor(site, blocked);
+    expect((await svc.getCurrentUser()).isBookkeeper).toBe(false);
+    await expect(svc.listLedger()).rejects.toThrow(messages.ledgerNotAllowed);
+  });
+
+  it('lets an administrator use the Ledger without being in the group', async () => {
+    const site = await setUpSite();
+    await expect(serviceFor(site, FAKE_MAX).listLedger()).resolves.toEqual([]);
+  });
+});
+
+describe('what the Ledger stores on a line (P-054)', () => {
+  it("writes the account, class, Posted, who and when to the line's own columns, and nothing else on the line", async () => {
+    const h = await harness();
+    const jane = h.as(JANE, NOW);
+    const made = await jane.createRequest();
+    await jane.updateRequest(made.id, { businessPurpose: 'Postage', department: 'R&D', buyer: 'self' });
+    const line = await jane.addEmptyLine(made.id);
+    await jane.updateLine(line.id, {
+      date: '2026-10-20',
+      vendor: 'QuickShip Postage',
+      description: 'Postage',
+      category: 'shipping',
+      amountCents: 12500,
+      paidBy: 'company'
+    });
+    await jane.addFileToLine(line.id, file('postage.pdf'), 'receipt');
+    await jane.submitRequest(made.id, CERTIFICATION);
+    const before = { ...h.site.listByUrlName('PurchaseRequestLines')!.items.get(Number(line.id))!.fields };
+    const bea = h.as(BEA, new Date(2026, 10, 16, 14, 5));
+    await bea.updateLedgerEntry(line.id, { account: '6184 Shipping/Postage', className: '5.0 Internal R&D' });
+    await bea.setPosted([line.id], true);
+    const after = h.site.listByUrlName('PurchaseRequestLines')!.items.get(Number(line.id))!.fields;
+    expect(after).toMatchObject({
+      LedgerAccount: '6184 Shipping/Postage',
+      LedgerClass: '5.0 Internal R&D',
+      LedgerPosted: true,
+      LedgerPostedBy: 'Bea Keeper',
+      LedgerPostedOn: '2026-11-16 14:05'
+    });
+    // Nothing the employee entered changed.
+    for (const key of ['Vendor', 'Description', 'Category', 'Amount', 'PurchaseDate', 'RowNumber', 'RequestId', 'FileFingerprints'])
+      expect(after[key]).toEqual(before[key]);
+  });
+
+  it('reads the columns defensively: a posted flag typed as text is not believed, and an account that is not in the list is never posted', async () => {
+    const h = await harness();
+    const jane = h.as(JANE, NOW);
+    const made = await jane.createRequest();
+    await jane.updateRequest(made.id, { businessPurpose: 'Postage', department: 'R&D', buyer: 'self' });
+    const line = await jane.addEmptyLine(made.id);
+    await jane.updateLine(line.id, {
+      date: '2026-10-20',
+      vendor: 'QuickShip Postage',
+      description: 'Postage',
+      category: 'shipping',
+      amountCents: 12500,
+      paidBy: 'company'
+    });
+    await jane.addFileToLine(line.id, file('postage.pdf'), 'receipt');
+    await jane.submitRequest(made.id, CERTIFICATION);
+    Object.assign(h.site.listByUrlName('PurchaseRequestLines')!.items.get(Number(line.id))!.fields, {
+      LedgerPosted: 'yes',
+      LedgerAccount: 12345,
+      LedgerClass: null
+    });
+    const [row] = await h.as(MAX, NOW).listLedger();
+    expect(row.entry).toEqual({ account: '12345', className: '', posted: false, postedBy: '', postedOn: '' });
+    // Text that is not an account in the list is never posted: the bookkeeper chooses again.
+    await expect(h.as(MAX, NOW).setPosted([line.id], true)).rejects.toThrow('not in the account list');
+  });
+
+  it('only believes a plain web address as a receipt link, never one written as script', async () => {
+    const h = await harness();
+    const jane = h.as(JANE, NOW);
+    const made = await jane.createRequest();
+    await jane.updateRequest(made.id, { businessPurpose: 'Postage', department: 'R&D', buyer: 'self' });
+    const line = await jane.addEmptyLine(made.id);
+    await jane.updateLine(line.id, {
+      date: '2026-10-20',
+      vendor: 'QuickShip Postage',
+      description: 'Postage',
+      category: 'shipping',
+      amountCents: 12500,
+      paidBy: 'company'
+    });
+    await jane.addFileToLine(line.id, file('postage.pdf'), 'receipt');
+    const submission = await jane.submitRequest(made.id, CERTIFICATION);
+    const items = h.site.listByUrlName('PurchaseSubmissions')!.items;
+    items.get(submission.id)!.fields.ArchiveLink = 'javascript:alert(1)';
+    items.get(submission.id)!.fields.FolderLink = '';
+    expect((await h.as(MAX, NOW).listLedger())[0].receipts[0]).toEqual({ fileName: 'R01_postage.pdf', url: '' });
+    items.get(submission.id)!.fields.ArchiveLink =
+      'https://contoso.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/Accounting/Purchases/Purchase_Receipts/2026-10-20_Jane-Doe_Postage_PR-0001';
+    const row = (await h.as(MAX, NOW).listLedger())[0];
+    expect(row.receiptPlace).toBe('archive');
+    expect(row.receipts[0].url).toBe(
+      'https://contoso.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/Accounting/Purchases/Purchase_Receipts/2026-10-20_Jane-Doe_Postage_PR-0001/R01_postage.pdf'
+    );
+  });
+
+  it('falls back to the request folder for a package made before the archive existed', async () => {
+    const h = await harness();
+    const jane = h.as(JANE, NOW);
+    const made = await jane.createRequest();
+    await jane.updateRequest(made.id, { businessPurpose: 'Postage', department: 'R&D', buyer: 'self' });
+    const line = await jane.addEmptyLine(made.id);
+    await jane.updateLine(line.id, {
+      date: '2026-10-20',
+      vendor: 'QuickShip Postage',
+      description: 'Postage',
+      category: 'shipping',
+      amountCents: 12500,
+      paidBy: 'company'
+    });
+    await jane.addFileToLine(line.id, file('postage.pdf'), 'receipt');
+    const submission = await jane.submitRequest(made.id, CERTIFICATION);
+    h.site.listByUrlName('PurchaseSubmissions')!.items.get(submission.id)!.fields.FolderLink =
+      'https://contoso.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/Accounting/Purchases/Purchases_To_Process/X';
+    const row = (await h.as(MAX, NOW).listLedger())[0];
+    expect(row.receiptPlace).toBe('request folder');
+    expect(row.receipts[0].url.endsWith('/Purchases_To_Process/X/R01_postage.pdf')).toBe(true);
   });
 });

@@ -163,3 +163,9 @@ When a decision here changes what the app should do, tell Max in a short note he
 - A different step in SOP B4 or B5 (`docs/SOP.md`).
 
 The build chat then updates its records and tests. Until then, the app and its CSV stay as described above.
+
+---
+
+## Update, 2026-11-16: the Ledger now holds the account and class
+
+Since version 1.0.3.0 the app has a **Ledger** page where the bookkeepers choose each line's QuickBooks account (from the 56 accounts in `purchaseRules.ts`, taken from the Account List exported 2026-11-15) and class (7 of the 9 classes), and mark it **Posted** once it is entered. QuickBooks needs a class on every line, so a line cannot be posted without one. The CSV in each request folder is unchanged: it still has the suggested account, no class, and **32 columns** (Quantity was added in 1.0.2.0; older text above that says 31 is out of date). The Ledger's **Download Excel** and the nightly files in `Accounting/Purchases/Ledger_Backups` hold the chosen account, class and Posted status per line, with a clickable receipt link (the receipts are copied to `Accounting/Purchases/Purchase_Receipts/<request folder>/`, which does not move when the request folder is filed). The QuickBooks chat still never writes anything without Max's explicit approval of each entry.

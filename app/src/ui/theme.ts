@@ -285,6 +285,35 @@ select.ctx-cell { cursor: pointer; appearance: auto; }
 .ctx-approval-cell .ctx-badge, .ctx-approval-cell .ctx-tag { white-space: normal; }
 .ctx-flag { display: inline-flex; vertical-align: middle; color: var(--c-warning); margin-left: 6px; }
 .ctx-cell.category-other { margin-top: 4px; font-size: 0.8rem; border-color: var(--c-border); background: #fff; }
+/* The type-ahead dropdown of the Ledger (P-055). The list is fixed to the screen so a table's scrolling never clips it. */
+.ctx-combo { position: relative; min-width: 0; }
+.ctx-combo-input { border-color: var(--c-border); background: #fff; text-overflow: ellipsis; }
+.ctx-combo-input.unchosen::placeholder { color: var(--c-muted); }
+.ctx-combo-input:disabled { background: transparent; border-color: transparent; }
+.ctx-combo-list { position: fixed; z-index: 45; list-style: none; margin: 0; padding: 6px; background: #fff; border: 1px solid var(--c-border); border-radius: 12px; box-shadow: 0 18px 44px rgba(59, 30, 77, 0.18); max-height: min(340px, 50vh); overflow-y: auto; }
+.ctx-combo-heading { font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--c-muted); padding: 8px 10px 3px; }
+.ctx-combo-heading:first-child { padding-top: 3px; }
+.ctx-combo-option { padding: 7px 10px; border-radius: 8px; font-size: 0.86rem; cursor: pointer; overflow-wrap: anywhere; }
+.ctx-combo-option.active { background: var(--c-lavender); }
+.ctx-combo-option.selected { font-weight: 700; }
+.ctx-combo-none { color: var(--c-muted); font-style: italic; }
+.ctx-combo-empty { padding: 10px; font-size: 0.84rem; color: var(--c-muted); }
+/* The Ledger page (P-052). */
+.ctx-ledger-bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.ctx-ledger-bar .ctx-tabs { margin-bottom: 0; }
+.ctx-ledger-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ctx-ledger-search { width: 290px; }
+.ctx-ledger-table td { vertical-align: top; }
+.ctx-ledger-table .ctx-ledger-pick { min-width: 172px; }
+.ctx-ledger-table .ctx-ledger-what { min-width: 170px; }
+.ctx-ledger-table td .ctx-combo { min-width: 160px; }
+.ctx-table.ctx-ledger-table .ctx-badge { white-space: nowrap; }
+.ctx-ledger-table .ctx-ledger-receipt { min-width: 100px; max-width: 130px; }
+.ctx-ledger-table .ctx-ledger-receipt a, .ctx-ledger-table .ctx-ledger-receipt span { display: block; max-width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-ledger-table td a { overflow-wrap: anywhere; }
+.ctx-ledger-table td { padding-left: 7px; padding-right: 7px; }
+.ctx-ledger-done td { background: #fafcfa; }
+.ctx-ledger-more { margin-top: 10px; display: flex; justify-content: center; }
 .ctx-menu-wrap { position: relative; }
 .ctx-btn.ctx-row-menu-button { padding: 6px 5px; }
 .ctx-menu { position: fixed; background: #fff; border: 1px solid var(--c-border); border-radius: 12px; box-shadow: 0 18px 44px rgba(59, 30, 77, 0.18); padding: 6px; z-index: 30; min-width: 250px; max-height: calc(100vh - 24px); overflow-y: auto; }

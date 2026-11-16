@@ -9,7 +9,9 @@
 // approver who approved the request, while it is Approved (P-040).
 
 import { LineRef } from '../domain/duplicates';
+import { LedgerEntryChanges, LedgerRow } from '../domain/ledger';
 import { AttachedFile, CategoryId, CurrentUser, FileKind, PurchaseLine, PurchaseRequest, Submission } from '../domain/types';
+import { BackupFlowConfig } from '../export/backupFlow';
 import { FlowConfig, FlowMode } from '../export/flowPackage';
 import { SetupStatus } from './setup';
 
@@ -74,6 +76,11 @@ export interface PurchaseDataService {
    * email and the approvers' emails (the site Owners). Administrators only.
    */
   getFlowSettings(mode: FlowMode, appPageUrl: string): Promise<FlowConfig>;
+  /**
+   * What the nightly ledger backup flow needs from this site (P-059): the Purchase Requests and Purchase Request Lines
+   * lists, the destination library and the administrator's email. Administrators only; the lists must be ready.
+   */
+  getBackupFlowSettings(mode: FlowMode, appPageUrl: string): Promise<BackupFlowConfig>;
   /**
    * The names of the people who approve: the site Owners (P-020). Empty when
    * this person cannot read the Owners group (Unverified, strategy section
@@ -178,4 +185,22 @@ export interface PurchaseDataService {
   markProcessed(requestId: number): Promise<PurchaseRequest>;
   /** Sets a failed or stuck submission, of either type, back to Ready. */
   retryPackaging(submissionId: number): Promise<Submission>;
+
+  // The Ledger: administrators and members of the Purchase Bookkeepers group (P-052)
+  /**
+   * Every purchase line of a request that has been bought and packaged (Submitted or Processed), with the account,
+   * class and Posted status the bookkeepers have set, and links to the receipts. Administrators and bookkeepers only.
+   */
+  listLedger(): Promise<LedgerRow[]>;
+  /**
+   * Chooses a line's QuickBooks account or class, or clears it ('' for a choice). Only items from the lists
+   * (purchaseRules.ts) are accepted, and a Posted line is locked until it is set back (P-056). Throws NotAllowedError
+   * with plain wording when refused. Returns the line as it stands.
+   */
+  updateLedgerEntry(lineId: string, changes: LedgerEntryChanges): Promise<LedgerRow>;
+  /**
+   * Marks lines Posted, or sets them back to Not posted, recording who and when. Posting needs an account and a class
+   * on every line chosen (P-056) and is checked for all of them before any is changed. Returns the lines as they stand.
+   */
+  setPosted(lineIds: string[], posted: boolean): Promise<LedgerRow[]>;
 }

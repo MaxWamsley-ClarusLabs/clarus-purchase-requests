@@ -1,6 +1,7 @@
 // Builders for synthetic test data. Used by unit tests only. Vendors and
 // people are made up.
 
+import { EMPTY_LEDGER_ENTRY, LedgerEntry, LedgerRow } from '../domain/ledger';
 import { ApprovalRecord, AttachedFile, PurchaseLine, PurchaseRequest } from '../domain/types';
 
 export function file(overrides: Partial<AttachedFile> = {}): AttachedFile {
@@ -73,5 +74,29 @@ export function request(overrides: RequestOverrides = {}): PurchaseRequest {
     lastChanged: '2026-10-16 09:00',
     ...rest,
     approval: { sent: [], approved: [], earlier: [], ...approval }
+  };
+}
+
+/** A Ledger row: a submitted purchase line of Jane Doe's request, not yet posted. */
+export function ledgerRow(overrides: Partial<Omit<LedgerRow, 'entry'>> & { entry?: Partial<LedgerEntry> } = {}): LedgerRow {
+  const { entry, ...rest } = overrides;
+  return {
+    line: line(),
+    requestNumber: 'PR-0042',
+    requestStatus: 'Submitted',
+    buyer: 'approver',
+    ownerName: 'Jane Doe',
+    businessPurpose: 'Lab supplies for the Phase 1 assay',
+    department: 'R&D',
+    projectCode: '',
+    approvedBy: 'Max Wamsley',
+    approvedOn: '2026-10-13 09:00',
+    submissionNumber: 1,
+    submitterName: 'Max Wamsley',
+    submittedOn: '2026-10-14 10:00',
+    receipts: [],
+    receiptPlace: 'none',
+    ...rest,
+    entry: { ...EMPTY_LEDGER_ENTRY, ...entry }
   };
 }

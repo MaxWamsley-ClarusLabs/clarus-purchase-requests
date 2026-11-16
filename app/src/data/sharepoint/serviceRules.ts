@@ -3,6 +3,7 @@
 // rules; P-006, P-020, P-024, P-027). Pure functions and plain text only: no
 // SharePoint calls and no stored state.
 
+import { LedgerEntry, LedgerEntryChanges, LedgerRow, effectiveAccount, entryChangeProblem, postProblem } from '../../domain/ledger';
 import { messages } from '../../domain/messages';
 import {
   CERTIFICATION,
@@ -434,4 +435,38 @@ export function previousFolderName(earlier: readonly Submission[], submissionNum
   const packages = earlier.filter((s) => s.type === 'package' && s.submissionNumber < submissionNumber);
   const last = packages.sort((a, b) => b.submissionNumber - a.submissionNumber)[0];
   return last ? last.folderName : '';
+}
+
+// ---- The Ledger (P-052 to P-057) -----------------------------------------------
+
+/** What to store for a change of a row's account or class. Throws NotAllowedError with plain wording when it is refused. */
+export function ledgerEntryWrite(row: LedgerRow, changes: LedgerEntryChanges): Partial<LedgerEntry> {
+  const problem = entryChangeProblem(row, changes);
+  if (problem) throw new NotAllowedError(problem);
+  const write: Partial<LedgerEntry> = {};
+  if (changes.account !== undefined) write.account = changes.account;
+  if (changes.className !== undefined) write.className = changes.className;
+  return write;
+}
+
+/**
+ * What to store for marking rows Posted, or setting them back (P-056). Posting is checked for every row before any is
+ * written: one row that cannot be posted refuses them all, and the message names it. Rows already in the wanted state
+ * are left as they are. Posting also stores the account the row showed, so what was posted is what is kept even when it
+ * started as the category's account. Throws NotAllowedError.
+ */
+export function postWrites(rows: readonly LedgerRow[], posted: boolean, who: string, stamp: string): Map<string, Partial<LedgerEntry>> {
+  if (rows.length === 0) throw new NotAllowedError(messages.ledgerNothingSelected);
+  const writes = new Map<string, Partial<LedgerEntry>>();
+  for (const row of rows) {
+    if (row.entry.posted === posted) continue;
+    if (posted) {
+      const problem = postProblem(row);
+      if (problem) throw new NotAllowedError(problem);
+      writes.set(row.line.id, { account: effectiveAccount(row), posted: true, postedBy: who, postedOn: stamp });
+    } else {
+      writes.set(row.line.id, { posted: false, postedBy: '', postedOn: '' });
+    }
+  }
+  return writes;
 }

@@ -90,5 +90,17 @@ export const messages = {
   markPurchasedConfirm:
     'After you mark it purchased, the request is locked and a folder with the receipts and the CSV is made for processing. It can be changed again only if the administrator returns it to you.',
   saved: 'Saved',
-  saving: 'Saving'
+  saving: 'Saving',
+
+  // The Ledger (P-052 to P-057).
+  ledgerNotAllowed: 'Only administrators and members of the Purchase Bookkeepers group can use the Ledger.',
+  ledgerLineMissing: 'That purchase line is not in the Ledger. It may have been returned or removed. Refresh the page.',
+  ledgerNothingSelected: 'Select at least one line.',
+  ledgerPostedLocked: (what: string) => `${what} is Posted. Set it back to Not posted before changing its account or class.`,
+  ledgerBadAccount: 'Choose an account from the list.',
+  ledgerBadClass: 'Choose a class from the list.',
+  ledgerNeedsAccount: (what: string) => `${what}: choose an account before posting.`,
+  ledgerNeedsClass: (what: string) => `${what}: choose a class before posting. QuickBooks needs one on every line.`,
+  ledgerUnknownAccount: (what: string) => `${what}: its account is not in the account list. Choose the account again before posting.`,
+  ledgerUnknownClass: (what: string) => `${what}: its class is not in the class list. Choose the class again before posting.`
 } as const;

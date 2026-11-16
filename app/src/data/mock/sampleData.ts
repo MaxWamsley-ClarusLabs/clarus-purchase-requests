@@ -5,10 +5,12 @@
 // duplicate receipt between two people).
 
 import { dateRange, dateRangeText, toLocalDateTime } from '../../domain/dates';
+import { LedgerEntry } from '../../domain/ledger';
 import { csvFileName, folderName, packageFiles } from '../../domain/naming';
 import {
   CERTIFICATION,
   EMPTY_APPROVAL,
+  defaultLedgerAccount,
   PROJECT_QUICK_PICKS,
   anyBoughtBefore,
   groupsForApproval,
@@ -34,11 +36,18 @@ import { validateRequest } from '../../domain/validation';
 import { buildPurchasesCsv } from '../../export/csv';
 import { approvalEmailSubject, buildApprovalEmailSummary, buildSubmissionEmailSummary, submissionEmailSubject } from '../../export/email';
 
-export const SAMPLE_USERS: Record<'jane' | 'sam' | 'admin', CurrentUser> = {
-  jane: { displayName: 'Jane Doe', email: 'jane.doe@example.com', isAdministrator: false },
-  sam: { displayName: 'Sam Lee', email: 'sam.lee@example.com', isAdministrator: false },
-  admin: { displayName: 'Max Wamsley', email: 'max.wamsley@example.com', isAdministrator: true }
+export const SAMPLE_USERS: Record<'jane' | 'sam' | 'admin' | 'bea', CurrentUser> = {
+  jane: { displayName: 'Jane Doe', email: 'jane.doe@example.com', isAdministrator: false, isBookkeeper: false },
+  sam: { displayName: 'Sam Lee', email: 'sam.lee@example.com', isAdministrator: false, isBookkeeper: false },
+  admin: { displayName: 'Max Wamsley', email: 'max.wamsley@example.com', isAdministrator: true, isBookkeeper: false },
+  // A member of the Purchase Bookkeepers group (P-052): may use the Ledger and nothing else an administrator can do.
+  bea: { displayName: 'Bea Keeper', email: 'bea.keeper@example.com', isAdministrator: false, isBookkeeper: true }
 };
+
+/** Where the flow says the receipts were archived for good, for the preview (P-058). A made-up address. */
+export function packagedArchiveLink(folderNameText: string): string {
+  return `https://contoso.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Purchases/Purchase_Receipts/${folderNameText}`;
+}
 
 /** Where the flow says a package went, for the preview (P-008). */
 export function packagedFolderLink(folderNameText: string): string {
@@ -128,6 +137,8 @@ export interface SampleStore {
   csvBySubmission: Record<number, string>;
   /** Rows the approver added while buying (P-037, P-040), which are not the employee's. */
   approverLineIds?: string[];
+  /** What the bookkeepers have set in the Ledger, by line ID (P-054). A line with no entry has not been touched. */
+  ledger?: Record<string, LedgerEntry>;
   nextRequestId: number;
   nextSubmissionId: number;
 }
@@ -570,7 +581,34 @@ export function createSampleStore(): SampleStore {
       .map((l) => l.id)
   };
   completeSampleOutputs(store);
+  store.ledger = sampleLedger(store);
   return store;
+}
+
+/**
+ * What the bookkeepers have done so far, for the preview (P-052): the lines of Processed requests are posted, with each
+ * category's account and a class; one line of a Submitted request has its account and class chosen but is not posted.
+ */
+function sampleLedger(store: SampleStore): Record<string, LedgerEntry> {
+  const entries: Record<string, LedgerEntry> = {};
+  let day = 3;
+  for (const request of store.requests.filter((r) => r.status === 'Processed')) {
+    const className = request.projectCode ? '1.0 Grants:1.01 NSF Phase 1 SBIR' : '5.0 Internal R&D';
+    for (const line of store.lines.filter((l) => l.requestId === request.id)) {
+      entries[line.id] = {
+        account: defaultLedgerAccount(line.category),
+        className,
+        posted: true,
+        postedBy: 'Bea Keeper',
+        postedOn: `2026-10-${String(day).padStart(2, '0')} 15:20`
+      };
+    }
+    day += 1;
+  }
+  const waiting = store.lines.find((l) => store.requests.some((r) => r.id === l.requestId && r.status === 'Submitted'));
+  if (waiting)
+    entries[waiting.id] = { account: defaultLedgerAccount(waiting.category), className: '5.0 Internal R&D', posted: false, postedBy: '', postedOn: '' };
+  return entries;
 }
 
 /**
@@ -683,6 +721,7 @@ function completeSampleOutputs(store: SampleStore): void {
         previousFolderName: ''
       }),
       folderLink: spec.status === 'Packaged' ? packagedFolderLink(name) : '',
+      archiveLink: spec.status === 'Packaged' ? packagedArchiveLink(name) : '',
       packageFileNames: [...files.map((f) => f.packageName), csvFileName(request.requestNumber, spec.number)]
     });
     store.csvBySubmission[spec.id] = buildPurchasesCsv({
@@ -732,6 +771,9 @@ export function finishPendingWork(store: SampleStore, now: Date = new Date()): v
     if (s.packageStatus !== 'Uploading' && s.packageStatus !== 'Ready' && s.packageStatus !== 'Processing') continue;
     s.packageStatus = 'Packaged';
     s.packagedAt = toLocalDateTime(now);
-    if (s.type === 'package') s.folderLink = packagedFolderLink(s.folderName);
+    if (s.type === 'package') {
+      s.folderLink = packagedFolderLink(s.folderName);
+      s.archiveLink = packagedArchiveLink(s.folderName);
+    }
   }
 }

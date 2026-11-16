@@ -337,12 +337,22 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
         'Check_folder_2',
         'If_folder_2_is_missing',
         'Create_folder_2',
+        'Check_archive_root',
+        'If_archive_root_is_missing',
+        'Create_archive_root',
         'Check_report_folder',
         'If_the_report_folder_is_new',
         'Create_report_folder',
+        'Check_archive_folder',
+        'If_archive_folder_is_missing',
+        'Create_archive_folder',
         'Copy_files',
         'Get_attachment_content',
         'Create_file',
+        'Filter_receipts',
+        'Archive_receipts',
+        'Get_receipt_content',
+        'Create_archive_file',
         'Mark_packaged',
         'Send_notification',
         'Mark_not_packaged',
@@ -378,6 +388,36 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
       expect(text).toContain('A folder with this name already exists in Purchases_To_Process, so nothing was copied or overwritten.');
       expect(text).not.toMatch(/overwrite=true|nameConflictBehavior/i);
       expect(text).not.toMatch(/DeleteItem|DeleteFile|MoveFile|recycle/);
+    });
+
+    it('copies the receipts, and only the receipts, into a permanent archive beside Purchases_To_Process (P-058)', () => {
+      const archived = inside(pkg.If_the_report_folder_is_new);
+      // The archive is a sibling of Purchases_To_Process, one level, one folder per request: never a year folder.
+      expect(text).toContain("/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts/'");
+      expect(param(inside(archived.If_archive_folder_is_missing as FlowAction).Create_archive_folder, 'parameters/uri')).toContain('Purchase_Receipts/');
+      expect(text).not.toMatch(/Purchase_Receipts\/20\d\d/);
+      // Only the files whose copies are named for receipts (R...) are archived; quotes (Q...) and the CSV (PR-...) are not.
+      expect(archived.Filter_receipts.inputs?.where).toBe("@startsWith(item()?['DisplayName'], 'R')");
+      const copy = inside(archived.Archive_receipts as FlowAction);
+      expect(String(copy.Create_archive_file.inputs?.parameters?.folderPath)).toBe(
+        "@{concat('/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts/', outputs('Safe_folder_name'))}"
+      );
+      expect(param(copy.Create_archive_file, 'dataset')).toBe(live.destinationSiteUrl);
+      // The archive's root is made on the first run only, and a folder left by an earlier attempt is reused, never recreated.
+      expect(Object.keys(pkg).filter((k) => k.startsWith('If_archive_root'))).toEqual(['If_archive_root_is_missing']);
+      expect(Object.keys(inside(pkg.If_archive_root_is_missing))).toEqual(['Create_archive_root']);
+      expect(Object.keys(inside(archived.If_archive_folder_is_missing as FlowAction))).toEqual(['Create_archive_folder']);
+      // Nothing is archived until the request folder's copies are made, and the status waits for the archive.
+      expect(archived.Filter_receipts.runAfter).toEqual({ Copy_files: ['Succeeded'] });
+      expect(archived.Mark_packaged.runAfter).toEqual({ Archive_receipts: ['Succeeded'] });
+    });
+
+    it('records where the receipts were archived, from the fixed archive path and the cleaned folder name', () => {
+      const mark = inside(pkg.If_the_report_folder_is_new).Mark_packaged;
+      expect(param(mark, 'item/ArchiveLink')).toBe(
+        "@{concat('https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Purchases/Purchase_Receipts/', encodeUriComponent(outputs('Safe_folder_name')))}"
+      );
+      expect(param(mark, 'item/FolderLink')).toContain('Purchases_To_Process/');
     });
 
     it('marks failures and emails the administrator', () => {
@@ -420,7 +460,7 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
   describe('the whole definition', () => {
     it('gives every action its own name, at any depth', () => {
       const names = all.map((f) => f.name);
-      expect(names).toHaveLength(33);
+      expect(names).toHaveLength(43);
       expect(names.filter((name, i) => names.indexOf(name) !== i)).toEqual([]);
     });
 
@@ -450,7 +490,13 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
 
     it('nests actions five levels deep, one more than the travel flow (flow/FLOW.md point 1)', () => {
       expect(Math.max(...all.map((f) => f.depth))).toBe(5);
-      expect(all.find((f) => f.depth === 5)?.name).toBe('Get_attachment_content');
+      expect(all.filter((f) => f.depth === 5).map((f) => f.name)).toEqual([
+        'Create_archive_folder',
+        'Get_attachment_content',
+        'Create_file',
+        'Get_receipt_content',
+        'Create_archive_file'
+      ]);
     });
 
     it('uses only statuses and columns of the Purchase Submissions list', () => {
@@ -484,9 +530,14 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
         'Create_folder_1',
         'Check_folder_2',
         'Create_folder_2',
+        'Check_archive_root',
+        'Create_archive_root',
         'Check_report_folder',
         'Create_report_folder',
-        'Create_file'
+        'Check_archive_folder',
+        'Create_archive_folder',
+        'Create_file',
+        'Create_archive_file'
       ]);
       for (const f of writers) expect(String(f.action.inputs?.parameters?.dataset)).toBe(live.destinationSiteUrl);
       expect(writers.every((f) => walk(packagingBranch).some((g) => g.action === f.action))).toBe(true);
@@ -545,7 +596,7 @@ describe('the import package', () => {
     expect(resources).toHaveLength(5);
     expect(manifest.details.displayName).toBe('Purchase Requests flow');
     expect(manifest.details.description).toBe(
-      'Emails the approvers when a purchase request needs approval, creates the request folder for each submitted purchase request and emails the administrator. Generated by the Purchase Requests Set-up page.'
+      'Emails the approvers when a purchase request needs approval, creates the request folder for each submitted purchase request, copies its receipts into the receipt archive and emails the administrator. Generated by the Purchase Requests Set-up page.'
     );
   });
 

@@ -1,0 +1,391 @@
+{
+  "name": "00000000-0000-0000-0000-000000000001",
+  "id": "/providers/Microsoft.Flow/flows/00000000-0000-0000-0000-000000000001",
+  "type": "Microsoft.Flow/flows",
+  "properties": {
+    "apiId": "/providers/Microsoft.PowerApps/apis/shared_logicflows",
+    "displayName": "Purchase Requests ledger backup",
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$connections": {
+          "defaultValue": {},
+          "type": "Object"
+        },
+        "$authentication": {
+          "defaultValue": {},
+          "type": "SecureObject"
+        }
+      },
+      "triggers": {
+        "Every_night": {
+          "type": "Recurrence",
+          "recurrence": {
+            "frequency": "Day",
+            "interval": 1,
+            "timeZone": "Central Standard Time",
+            "schedule": {
+              "hours": [
+                "2"
+              ],
+              "minutes": [
+                30
+              ]
+            }
+          }
+        }
+      },
+      "actions": {
+        "Backup": {
+          "runAfter": {},
+          "type": "Scope",
+          "actions": {
+            "Get_bought_requests": {
+              "runAfter": {},
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                  "connectionName": "shared_sharepointonline",
+                  "operationId": "GetItems"
+                },
+                "parameters": {
+                  "dataset": "https://contoso.sharepoint.com/sites/FormsAndApps",
+                  "table": "00000000-0000-0000-0000-000000000001",
+                  "$filter": "RequestStatus eq 'Submitted' or RequestStatus eq 'Processed'",
+                  "$top": 5000
+                },
+                "authentication": "@parameters('$authentication')"
+              },
+              "runtimeConfiguration": {
+                "paginationPolicy": {
+                  "minimumItemCount": 5000
+                }
+              }
+            },
+            "Bought_request_ids": {
+              "runAfter": {
+                "Get_bought_requests": [
+                  "Succeeded"
+                ]
+              },
+              "type": "Select",
+              "inputs": {
+                "from": "@body('Get_bought_requests')?['value']",
+                "select": "@item()?['ID']"
+              }
+            },
+            "Get_all_lines": {
+              "runAfter": {
+                "Bought_request_ids": [
+                  "Succeeded"
+                ]
+              },
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                  "connectionName": "shared_sharepointonline",
+                  "operationId": "GetItems"
+                },
+                "parameters": {
+                  "dataset": "https://contoso.sharepoint.com/sites/FormsAndApps",
+                  "table": "00000000-0000-0000-0000-000000000002",
+                  "$top": 5000
+                },
+                "authentication": "@parameters('$authentication')"
+              },
+              "runtimeConfiguration": {
+                "paginationPolicy": {
+                  "minimumItemCount": 5000
+                }
+              }
+            },
+            "Ledger_lines": {
+              "runAfter": {
+                "Get_all_lines": [
+                  "Succeeded"
+                ]
+              },
+              "type": "Query",
+              "inputs": {
+                "from": "@body('Get_all_lines')?['value']",
+                "where": "@contains(body('Bought_request_ids'), item()?['RequestId'])"
+              }
+            },
+            "Stamp": {
+              "runAfter": {
+                "Ledger_lines": [
+                  "Succeeded"
+                ]
+              },
+              "type": "Compose",
+              "inputs": "@formatDateTime(convertTimeZone(utcNow(), 'UTC', 'Central Standard Time'), 'yyyy-MM-dd_HHmm')"
+            },
+            "Lines_csv": {
+              "runAfter": {
+                "Stamp": [
+                  "Succeeded"
+                ]
+              },
+              "type": "Table",
+              "inputs": {
+                "from": "@body('Ledger_lines')",
+                "format": "CSV",
+                "columns": [
+                  {
+                    "header": "Line",
+                    "value": "@if(or(startsWith(coalesce(item()?['Title'], ''), '='), startsWith(coalesce(item()?['Title'], ''), '+'), startsWith(coalesce(item()?['Title'], ''), '-'), startsWith(coalesce(item()?['Title'], ''), '@')), concat('''', coalesce(item()?['Title'], '')), coalesce(item()?['Title'], ''))"
+                  },
+                  {
+                    "header": "Request ID",
+                    "value": "@string(coalesce(item()?['RequestId'], ''))"
+                  },
+                  {
+                    "header": "Row",
+                    "value": "@string(coalesce(item()?['RowNumber'], ''))"
+                  },
+                  {
+                    "header": "Date",
+                    "value": "@if(or(startsWith(coalesce(item()?['PurchaseDate'], ''), '='), startsWith(coalesce(item()?['PurchaseDate'], ''), '+'), startsWith(coalesce(item()?['PurchaseDate'], ''), '-'), startsWith(coalesce(item()?['PurchaseDate'], ''), '@')), concat('''', coalesce(item()?['PurchaseDate'], '')), coalesce(item()?['PurchaseDate'], ''))"
+                  },
+                  {
+                    "header": "Vendor",
+                    "value": "@if(or(startsWith(coalesce(item()?['Vendor'], ''), '='), startsWith(coalesce(item()?['Vendor'], ''), '+'), startsWith(coalesce(item()?['Vendor'], ''), '-'), startsWith(coalesce(item()?['Vendor'], ''), '@')), concat('''', coalesce(item()?['Vendor'], '')), coalesce(item()?['Vendor'], ''))"
+                  },
+                  {
+                    "header": "What was bought and why",
+                    "value": "@if(or(startsWith(coalesce(item()?['Description'], ''), '='), startsWith(coalesce(item()?['Description'], ''), '+'), startsWith(coalesce(item()?['Description'], ''), '-'), startsWith(coalesce(item()?['Description'], ''), '@')), concat('''', coalesce(item()?['Description'], '')), coalesce(item()?['Description'], ''))"
+                  },
+                  {
+                    "header": "Category",
+                    "value": "@if(or(startsWith(coalesce(item()?['Category']?['Value'], ''), '='), startsWith(coalesce(item()?['Category']?['Value'], ''), '+'), startsWith(coalesce(item()?['Category']?['Value'], ''), '-'), startsWith(coalesce(item()?['Category']?['Value'], ''), '@')), concat('''', coalesce(item()?['Category']?['Value'], '')), coalesce(item()?['Category']?['Value'], ''))"
+                  },
+                  {
+                    "header": "Other category",
+                    "value": "@if(or(startsWith(coalesce(item()?['CategoryOther'], ''), '='), startsWith(coalesce(item()?['CategoryOther'], ''), '+'), startsWith(coalesce(item()?['CategoryOther'], ''), '-'), startsWith(coalesce(item()?['CategoryOther'], ''), '@')), concat('''', coalesce(item()?['CategoryOther'], '')), coalesce(item()?['CategoryOther'], ''))"
+                  },
+                  {
+                    "header": "Quantity",
+                    "value": "@string(coalesce(item()?['Quantity'], 1))"
+                  },
+                  {
+                    "header": "Amount",
+                    "value": "@string(coalesce(item()?['Amount'], ''))"
+                  },
+                  {
+                    "header": "Who paid",
+                    "value": "@if(or(startsWith(coalesce(item()?['PaidBy']?['Value'], ''), '='), startsWith(coalesce(item()?['PaidBy']?['Value'], ''), '+'), startsWith(coalesce(item()?['PaidBy']?['Value'], ''), '-'), startsWith(coalesce(item()?['PaidBy']?['Value'], ''), '@')), concat('''', coalesce(item()?['PaidBy']?['Value'], '')), coalesce(item()?['PaidBy']?['Value'], ''))"
+                  },
+                  {
+                    "header": "QuickBooks account",
+                    "value": "@if(or(startsWith(coalesce(item()?['LedgerAccount'], ''), '='), startsWith(coalesce(item()?['LedgerAccount'], ''), '+'), startsWith(coalesce(item()?['LedgerAccount'], ''), '-'), startsWith(coalesce(item()?['LedgerAccount'], ''), '@')), concat('''', coalesce(item()?['LedgerAccount'], '')), coalesce(item()?['LedgerAccount'], ''))"
+                  },
+                  {
+                    "header": "Class",
+                    "value": "@if(or(startsWith(coalesce(item()?['LedgerClass'], ''), '='), startsWith(coalesce(item()?['LedgerClass'], ''), '+'), startsWith(coalesce(item()?['LedgerClass'], ''), '-'), startsWith(coalesce(item()?['LedgerClass'], ''), '@')), concat('''', coalesce(item()?['LedgerClass'], '')), coalesce(item()?['LedgerClass'], ''))"
+                  },
+                  {
+                    "header": "Posted",
+                    "value": "@if(equals(item()?['LedgerPosted'], true), 'Y', 'N')"
+                  },
+                  {
+                    "header": "Posted by",
+                    "value": "@if(or(startsWith(coalesce(item()?['LedgerPostedBy'], ''), '='), startsWith(coalesce(item()?['LedgerPostedBy'], ''), '+'), startsWith(coalesce(item()?['LedgerPostedBy'], ''), '-'), startsWith(coalesce(item()?['LedgerPostedBy'], ''), '@')), concat('''', coalesce(item()?['LedgerPostedBy'], '')), coalesce(item()?['LedgerPostedBy'], ''))"
+                  },
+                  {
+                    "header": "Posted on",
+                    "value": "@if(or(startsWith(coalesce(item()?['LedgerPostedOn'], ''), '='), startsWith(coalesce(item()?['LedgerPostedOn'], ''), '+'), startsWith(coalesce(item()?['LedgerPostedOn'], ''), '-'), startsWith(coalesce(item()?['LedgerPostedOn'], ''), '@')), concat('''', coalesce(item()?['LedgerPostedOn'], '')), coalesce(item()?['LedgerPostedOn'], ''))"
+                  },
+                  {
+                    "header": "No-receipt reason",
+                    "value": "@if(or(startsWith(coalesce(item()?['NoReceiptReason'], ''), '='), startsWith(coalesce(item()?['NoReceiptReason'], ''), '+'), startsWith(coalesce(item()?['NoReceiptReason'], ''), '-'), startsWith(coalesce(item()?['NoReceiptReason'], ''), '@')), concat('''', coalesce(item()?['NoReceiptReason'], '')), coalesce(item()?['NoReceiptReason'], ''))"
+                  }
+                ]
+              }
+            },
+            "Markdown_rows": {
+              "runAfter": {
+                "Lines_csv": [
+                  "Succeeded"
+                ]
+              },
+              "type": "Select",
+              "inputs": {
+                "from": "@body('Ledger_lines')",
+                "select": "@concat('| ', replace(replace(replace(coalesce(item()?['Title'], ''), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(string(coalesce(item()?['RequestId'], '')), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(string(coalesce(item()?['RowNumber'], '')), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(coalesce(item()?['PurchaseDate'], ''), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(coalesce(item()?['Vendor'], ''), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(coalesce(item()?['Description'], ''), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(coalesce(item()?['Category']?['Value'], ''), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(coalesce(item()?['CategoryOther'], ''), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(string(coalesce(item()?['Quantity'], 1)), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(string(coalesce(item()?['Amount'], '')), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(coalesce(item()?['PaidBy']?['Value'], ''), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(coalesce(item()?['LedgerAccount'], ''), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(coalesce(item()?['LedgerClass'], ''), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(if(equals(item()?['LedgerPosted'], true), 'Y', 'N'), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(coalesce(item()?['LedgerPostedBy'], ''), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(coalesce(item()?['LedgerPostedOn'], ''), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' | ', replace(replace(replace(coalesce(item()?['NoReceiptReason'], ''), '|', '\\|'), decodeUriComponent('%0D'), ' '), decodeUriComponent('%0A'), ' '), ' |')"
+              }
+            },
+            "Check_backup_folder": {
+              "runAfter": {
+                "Markdown_rows": [
+                  "Succeeded"
+                ]
+              },
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                  "connectionName": "shared_sharepointonline",
+                  "operationId": "HttpRequest"
+                },
+                "parameters": {
+                  "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                  "parameters/method": "GET",
+                  "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Ledger_Backups')/Exists",
+                  "parameters/headers": {
+                    "Accept": "application/json;odata=verbose"
+                  }
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            },
+            "If_the_backup_folder_is_missing": {
+              "runAfter": {
+                "Check_backup_folder": [
+                  "Succeeded"
+                ]
+              },
+              "type": "If",
+              "expression": {
+                "and": [
+                  {
+                    "equals": [
+                      "@body('Check_backup_folder')?['d']?['Exists']",
+                      false
+                    ]
+                  }
+                ]
+              },
+              "actions": {
+                "Create_backup_folder": {
+                  "runAfter": {},
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                      "connectionName": "shared_sharepointonline",
+                      "operationId": "HttpRequest"
+                    },
+                    "parameters": {
+                      "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                      "parameters/method": "POST",
+                      "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Ledger_Backups')",
+                      "parameters/headers": {
+                        "Accept": "application/json;odata=verbose"
+                      }
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                }
+              },
+              "else": {
+                "actions": {}
+              }
+            },
+            "Create_csv_file": {
+              "runAfter": {
+                "If_the_backup_folder_is_missing": [
+                  "Succeeded"
+                ]
+              },
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                  "connectionName": "shared_sharepointonline",
+                  "operationId": "CreateFile"
+                },
+                "parameters": {
+                  "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                  "folderPath": "/Shared Documents/01_Company Documents/Accounting/Purchases/Ledger_Backups/",
+                  "name": "@{concat('Ledger_', outputs('Stamp'), '.csv')}",
+                  "body": "@concat(decodeUriComponent('%EF%BB%BF'), body('Lines_csv'))"
+                },
+                "authentication": "@parameters('$authentication')"
+              },
+              "runtimeConfiguration": {
+                "contentTransfer": {
+                  "transferMode": "Chunked"
+                }
+              }
+            },
+            "Create_markdown_file": {
+              "runAfter": {
+                "Create_csv_file": [
+                  "Succeeded"
+                ]
+              },
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                  "connectionName": "shared_sharepointonline",
+                  "operationId": "CreateFile"
+                },
+                "parameters": {
+                  "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                  "folderPath": "/Shared Documents/01_Company Documents/Accounting/Purchases/Ledger_Backups/",
+                  "name": "@{concat('Ledger_', outputs('Stamp'), '.md')}",
+                  "body": "@concat('# Purchases ledger backup', decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Taken ', outputs('Stamp'), ' (Central time). Every purchase line of every request that has been bought, with the QuickBooks account, class and Posted status set in the Ledger. A copy for safekeeping: the Ledger in Purchase Requests is the live record.', decodeUriComponent('%0A'), decodeUriComponent('%0A'), '| Line | Request ID | Row | Date | Vendor | What was bought and why | Category | Other category | Quantity | Amount | Who paid | QuickBooks account | Class | Posted | Posted by | Posted on | No-receipt reason |', decodeUriComponent('%0A'), '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |', decodeUriComponent('%0A'), join(body('Markdown_rows'), decodeUriComponent('%0A')), decodeUriComponent('%0A'))"
+                },
+                "authentication": "@parameters('$authentication')"
+              },
+              "runtimeConfiguration": {
+                "contentTransfer": {
+                  "transferMode": "Chunked"
+                }
+              }
+            }
+          }
+        },
+        "On_backup_failure": {
+          "runAfter": {
+            "Backup": [
+              "Failed",
+              "TimedOut"
+            ]
+          },
+          "type": "Scope",
+          "actions": {
+            "Send_backup_failure_email": {
+              "runAfter": {},
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                  "connectionName": "shared_office365",
+                  "operationId": "SendEmailV2"
+                },
+                "parameters": {
+                  "emailMessage/To": "administrator@example.com",
+                  "emailMessage/Subject": "Purchase Requests ledger backup failed",
+                  "emailMessage/Body": "<div style=\"font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;\"><p>Last night's ledger backup did not finish, so no new backup files were made. Nothing in the Ledger or the lists was changed.</p><p><a href=\"@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}\">Open the flow run</a> &middot; <a href=\"https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx#/ledger\">Open the Ledger</a></p></div>",
+                  "emailMessage/Importance": "Normal"
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            }
+          }
+        }
+      }
+    },
+    "connectionReferences": {
+      "shared_sharepointonline": {
+        "connectionName": "shared-sharepointonline-00000000-0000-0000-0000-000000000003",
+        "source": "Embedded",
+        "id": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+        "tier": "NotSpecified"
+      },
+      "shared_office365": {
+        "connectionName": "shared-office365-00000000-0000-0000-0000-000000000005",
+        "source": "Embedded",
+        "id": "/providers/Microsoft.PowerApps/apis/shared_office365",
+        "tier": "NotSpecified"
+      }
+    },
+    "flowFailureAlertSubscribed": false,
+    "isManaged": false
+  }
+}

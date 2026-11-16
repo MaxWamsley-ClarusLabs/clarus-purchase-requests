@@ -88,7 +88,7 @@ export const INSTRUCTIONS: InstructionSection[] = [
   {
     heading: 'Categories',
     paragraphs: [
-      'Each category is a QuickBooks account, named exactly as it is in QuickBooks, so your choice is the account. You suggest a category for each row. The approver, when approving, or the administrator can confirm or change it. Equipment is account 6175, or 1415 Fixed Assets:Equipment if it is capitalized, and Other has no account: the administrator decides both, and confirms them before the request is processed. Choose Other only when nothing fits, and describe the category in the box that appears.'
+      'Each category is a QuickBooks account, named exactly as it is in QuickBooks, and the list shows its number with its name (for example 6182 R&D Materials & Supplies), so your choice is the account. You suggest a category for each row. The approver, when approving, or the administrator can confirm or change it. Equipment is account 6175, or 1415 Fixed Assets:Equipment if it is capitalized, and Other has no account: the administrator decides both, and confirms them before the request is processed. Choose Other only when nothing fits, and describe the category in the box that appears.'
     ],
     bullets: CATEGORIES.map((c) => `${c.label}: ${c.covers}.`)
   },
@@ -129,6 +129,19 @@ export const INSTRUCTIONS: InstructionSection[] = [
       'If you cannot buy it, return it to the employee with a note from its page. Delete any rows you added first. If the administrator returns it to you after you marked it purchased, fix it and mark it purchased again.',
       'Only the approver who approved a request buys it. Another site Owner can read it and can return it to the employee with a note, so it is never stuck, but cannot change its rows or mark it purchased.',
       'Bought something yourself and need it on record? Choose Record a purchase, at the top of Approvals or Requests to process. Add a row for each purchase, attach the receipt or invoice (one per vendor is enough) and choose Record purchase. There is no approval and no certification: it goes straight to Requests to process with its folder and spreadsheet, marked as recorded by you. Only administrators see this button.'
+    ]
+  },
+  {
+    heading: 'For bookkeepers: the Ledger',
+    paragraphs: [
+      'Administrators and members of the Purchase Bookkeepers group see Ledger in the sidebar. It lists every purchase line of a request that has been bought, ready to enter in QuickBooks. Each line shows the request, the vendor, what was bought, the total and who paid, a link to the receipt, a QuickBooks account and a class.'
+    ],
+    bullets: [
+      "Choose the account and the class from the lists. Click a box, then choose from the list or type to narrow it: type an account number (6182) or any word (ship, supplies). The list is shown in layers so the likeliest choice is on top: From this request (the line's own category), Used for this vendor before, Used most often, Usual for Clarus, and All other accounts. An item shows once, at the highest layer it fits. The layers only decide the order; nothing is filled in for you, and you always choose the class.",
+      'QuickBooks needs a class on every line, so a line cannot be marked Posted until it has an account and a class.',
+      'When you have entered lines in QuickBooks, tick them and choose Mark Posted. Posting records your name and the time. If one selected line cannot be posted, none is, and the message names it. A Posted line is locked: choose the Posted tab, tick it and choose Set back to Not posted to change it.',
+      'Click a receipt to open the copy kept in the receipt archive. A request bought before the archive existed links to its request folder instead, which stops working when the folder is filed under its year.',
+      'Download Excel saves the lines you are looking at (the tab and the search) as an Excel file, with a clickable link to each receipt. A copy of the whole ledger is also saved every night in Accounting, Purchases, Ledger_Backups.'
     ]
   },
   {

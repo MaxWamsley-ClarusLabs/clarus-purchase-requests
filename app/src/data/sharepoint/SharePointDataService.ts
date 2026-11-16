@@ -11,16 +11,20 @@
 // on the request (P-037, P-040); any other is ignored everywhere, so nobody
 // can add a purchase to someone else's request.
 
-import { toIsoDate } from '../../domain/dates';
+import { toIsoDate, toLocalDateTime } from '../../domain/dates';
 import { defaultPaidBy, latestDepartment } from '../../domain/defaults';
 import { LineRef } from '../../domain/duplicates';
+import { LedgerEntryChanges, LedgerRow } from '../../domain/ledger';
+import { ledgerRowsOf } from '../../domain/ledgerRows';
 import { messages } from '../../domain/messages';
 import { cleanFileName, requestNumber } from '../../domain/naming';
-import { DEFAULT_BUYER, EMPTY_APPROVAL, findBuyer, groupsForApproved, matchesWhatWasSent } from '../../domain/purchaseRules';
+import { BOOKKEEPER_GROUP_NAME, DEFAULT_BUYER, EMPTY_APPROVAL, findBuyer, groupsForApproved, matchesWhatWasSent } from '../../domain/purchaseRules';
 import { checkReceiptFile } from '../../domain/receipts';
 import { isEditable, mayBuy } from '../../domain/statuses';
+import { inLedger } from '../../domain/ledger';
 import { computeTotals } from '../../domain/totals';
 import { AttachedFile, CurrentUser, FileKind, PurchaseLine, PurchaseRequest, Submission } from '../../domain/types';
+import { BackupFlowConfig } from '../../export/backupFlow';
 import { FlowConfig, FlowMode, LIVE_DESTINATION, MAX_APPROVERS, TEST_FOLDERS, TEST_LIBRARY_URL_NAME, isSafeEmailAddress } from '../../export/flowPackage';
 import { PreparedSubmission, prepareApprovalRequest, prepareSubmission } from '../../export/submission';
 import { fingerprintFile, uniqueName } from '../files';
@@ -33,6 +37,8 @@ import {
   RequestWrite,
   SubmissionItem,
   buyerFrom,
+  ledgerEntryFromItem,
+  ledgerFields,
   lineFields,
   lineFromItem,
   requestFields,
@@ -57,8 +63,10 @@ import {
   changesAfterDelete,
   employeeCertification,
   holdsApproval,
+  ledgerEntryWrite,
   nextRowNumber,
   notAllowed,
+  postWrites,
   previousFolderName,
   retryRefusal,
   returnStageFor,
@@ -81,6 +89,12 @@ const LINE_FIELDS =
   'Id,AuthorId,RequestId,RowNumber,PurchaseDate,Vendor,Description,Category,CategoryOther,CategoryConfirmedBy,Quantity,Amount,PaidBy,NoQuoteReason,NoReceiptReason,' +
   'ItemLink,NoLinkReason,SameReceiptAsRow,FileFingerprints,SuggestedFields,RowKind';
 const LINE_SELECT = `$select=${LINE_FIELDS},AttachmentFiles&$expand=AttachmentFiles`;
+/** The Ledger's reads: the line's columns and the bookkeepers' own, with no attachment list (the stored fingerprints name the files). */
+const LEDGER_LINE_SELECT = `$select=${LINE_FIELDS},LedgerAccount,LedgerClass,LedgerPosted,LedgerPostedBy,LedgerPostedOn`;
+const LEDGER_SUBMISSION_SELECT =
+  '$select=Id,AuthorId,RequestId,SubmissionType,SubmissionNumber,PackageStatus,FolderName,SubmitterName,SubmitterEmail,FolderLink,ArchiveLink,PackagedAt,Created,Modified';
+/** The groups the signed-in person belongs to (their own: no permission to read other people's is needed). */
+const MY_GROUPS_PATH = 'web/currentuser/groups?$select=Title';
 const SUBMISSION_SELECT =
   '$select=Id,AuthorId,RequestId,SubmissionType,SubmissionNumber,PackageStatus,FolderName,PreviousFolderName,SubmitterName,SubmitterEmail,CertificationText,' +
   'BusinessPurpose,Department,ProjectCode,PurchaseDates,TotalReimburse,TotalCompany,TotalRequest,ReceiptCount,QuoteCount,RowsWithoutReceipt,BoughtBeforeApproval,' +
@@ -122,6 +136,9 @@ interface StoredRequest {
   approverId: number;
 }
 
+/** A whole number, or 0 for anything that is not one (stored values may have been edited directly). */
+const int = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : 0);
+
 /** The user ID of the person who created an item; 0 when SharePoint did not give one. */
 function authorOf(item: { AuthorId?: number | null }): number {
   return typeof item.AuthorId === 'number' && item.AuthorId > 0 ? item.AuthorId : 0;
@@ -146,6 +163,9 @@ function storedFrom(item: RequestItem): StoredRequest {
 }
 
 type Signed = CurrentUser & { id: number };
+
+/** The people allowed to use the Ledger: administrators, and members of the Purchase Bookkeepers group (P-052). */
+const mayUseLedger = (user: Pick<CurrentUser, 'isAdministrator' | 'isBookkeeper'>): boolean => user.isAdministrator || user.isBookkeeper;
 type ListKey = keyof typeof LISTS;
 
 export class SharePointDataService implements PurchaseDataService {
@@ -163,7 +183,7 @@ export class SharePointDataService implements PurchaseDataService {
 
   async getCurrentUser(): Promise<CurrentUser> {
     const user = await this.currentUser();
-    return { displayName: user.displayName, email: user.email, isAdministrator: user.isAdministrator };
+    return { displayName: user.displayName, email: user.email, isAdministrator: user.isAdministrator, isBookkeeper: user.isBookkeeper };
   }
 
   getSetupStatus(): Promise<SetupStatus> {
@@ -220,6 +240,24 @@ export class SharePointDataService implements PurchaseDataService {
       adminEmail: me.email,
       approverEmails: approverEmails.length > 0 ? approverEmails : [me.email].filter(isSafeEmailAddress),
       approverSource: approverEmails.length > 0 ? 'owners' : 'administrator',
+      appPageUrl
+    };
+  }
+
+  async getBackupFlowSettings(mode: FlowMode, appPageUrl: string): Promise<BackupFlowConfig> {
+    // The same checks and the same destination as the Purchase Requests flow, then the two lists the backup reads.
+    const config = await this.getFlowSettings(mode, appPageUrl);
+    const setup = await this.setup.check();
+    const listId = (key: 'requests' | 'lines') => setup.lists.find((l) => l.key === key)?.listId ?? '';
+    return {
+      mode,
+      siteUrl: config.siteUrl,
+      requestsListId: listId('requests'),
+      linesListId: listId('lines'),
+      destinationSiteUrl: config.destinationSiteUrl,
+      libraryUrlName: config.libraryUrlName,
+      folders: config.folders,
+      adminEmail: config.adminEmail,
       appPageUrl
     };
   }
@@ -667,14 +705,112 @@ export class SharePointDataService implements PurchaseDataService {
     return this.readSubmission(submissionId, request.requestNumber);
   }
 
+  // ---- The Ledger (P-052) ----------------------------------------------------------
+
+  async listLedger(): Promise<LedgerRow[]> {
+    await this.requireLedger();
+    const stored = (await this.readAllStored()).filter((s) => inLedger(s.request.status));
+    if (stored.length === 0) return [];
+    const [lineItems, submissionItems] = await Promise.all([
+      this.sp.getAll<LineItem>(`${this.items('lines')}?${LEDGER_LINE_SELECT}&${PAGE}`),
+      this.sp.getAll<SubmissionItem>(`${this.items('submissions')}?${LEDGER_SUBMISSION_SELECT}&${PAGE}`)
+    ]);
+    const rows = stored.flatMap((s) => this.ledgerRowsFrom(s, lineItems, submissionItems));
+    return rows.sort((a, b) => (a.requestNumber === b.requestNumber ? a.line.rowNumber - b.line.rowNumber : b.requestNumber.localeCompare(a.requestNumber)));
+  }
+
+  async updateLedgerEntry(lineId: string, changes: LedgerEntryChanges): Promise<LedgerRow> {
+    await this.requireLedger();
+    const row = await this.ledgerRow(lineId);
+    const write = ledgerEntryWrite(row, changes);
+    if (Object.keys(write).length > 0) await this.sp.merge(this.item('lines', Number(lineId)), ledgerFields(write));
+    return this.ledgerRow(lineId);
+  }
+
+  async setPosted(lineIds: string[], posted: boolean): Promise<LedgerRow[]> {
+    const me = await this.requireLedger();
+    const ids = lineIds.filter((id, i) => lineIds.indexOf(id) === i);
+    const rows: LedgerRow[] = [];
+    for (const id of ids) rows.push(await this.ledgerRow(id));
+    // Every row is checked before any is written, so a refusal changes nothing.
+    const writes = postWrites(rows, posted, me.displayName, toLocalDateTime(this.now()));
+    for (const [id, write] of writes) await this.sp.merge(this.item('lines', Number(id)), ledgerFields(write));
+    const after: LedgerRow[] = [];
+    for (const id of ids) after.push(await this.ledgerRow(id));
+    return after;
+  }
+
+  /** The rows of one request from lines and submissions already read: only what the request's owner (and approver) made counts. */
+  private ledgerRowsFrom(stored: StoredRequest, lineItems: readonly LineItem[], submissionItems: readonly SubmissionItem[]): LedgerRow[] {
+    const authors = authorsOf(stored);
+    const mine = lineItems.filter((i) => int(i.RequestId) === stored.request.id && madeBy(i, authors));
+    const entries = new Map(mine.map((i) => [String(i.Id), ledgerEntryFromItem(i)]));
+    const submissions = submissionItems
+      .filter((i) => int(i.RequestId) === stored.request.id && madeBy(i, authors))
+      .map((i) => submissionFromItem(i, stored.request.requestNumber));
+    return ledgerRowsOf({ request: stored.request, lines: mine.map(lineFromItem), entries, submissions });
+  }
+
+  /** One line's Ledger row. A line that is not in the Ledger (not bought yet, not the request's, or not there) is refused. */
+  private async ledgerRow(lineId: string): Promise<LedgerRow> {
+    if (!/^[1-9]\d*$/.test(lineId)) throw new NotAllowedError(messages.ledgerLineMissing);
+    let item: LineItem;
+    try {
+      item = await this.sp.getJson<LineItem>(`${this.item('lines', Number(lineId))}?${LEDGER_LINE_SELECT}`);
+    } catch (e) {
+      // A line that is not there looks the same as one that is not in the Ledger.
+      if (e instanceof SharePointRequestError && e.status === 404) throw new NotAllowedError(messages.ledgerLineMissing);
+      throw e;
+    }
+    const requestId = int(item.RequestId);
+    const stored = await this.readStored(requestId).catch((e: unknown) => {
+      if (e instanceof NotAllowedError) throw new NotAllowedError(messages.ledgerLineMissing);
+      throw e;
+    });
+    if (!inLedger(stored.request.status) || !madeBy(item, authorsOf(stored))) throw new NotAllowedError(messages.ledgerLineMissing);
+    const [lineItems, submissionItems] = await Promise.all([
+      this.sp.getAll<LineItem>(`${this.items('lines')}?${LEDGER_LINE_SELECT}&$filter=RequestId eq ${requestId}&${PAGE}`),
+      this.sp.getAll<SubmissionItem>(`${this.items('submissions')}?${LEDGER_SUBMISSION_SELECT}&$filter=RequestId eq ${requestId}&${PAGE}`)
+    ]);
+    const row = this.ledgerRowsFrom(stored, lineItems, submissionItems).find((r) => r.line.id === lineId);
+    if (!row) throw new NotAllowedError(messages.ledgerLineMissing);
+    return row;
+  }
+
   // ---- Helpers ---------------------------------------------------------------
 
   private async currentUser(): Promise<Signed> {
     if (this.me) return this.me;
     const user = await this.sp.getJson<{ Id: number; Title: string; Email: string }>('web/currentuser?$select=Id,Title,Email');
     const perms = await this.sp.getJson<{ High: string; Low: string }>('web/effectiveBasePermissions');
-    this.me = { id: user.Id, displayName: user.Title, email: (user.Email || '').toLowerCase(), isAdministrator: hasPermission(perms, MANAGE_WEB) };
+    const isBookkeeper = await this.inBookkeeperGroup();
+    this.me = {
+      id: user.Id,
+      displayName: user.Title,
+      email: (user.Email || '').toLowerCase(),
+      isAdministrator: hasPermission(perms, MANAGE_WEB),
+      isBookkeeper
+    };
     return this.me;
+  }
+
+  /**
+   * Whether the signed-in person is in the Purchase Bookkeepers group (P-052). Reading one's own groups needs no special
+   * permission (Unverified: to be checked on the Test site); if it cannot be read, the person is not a bookkeeper.
+   */
+  private async inBookkeeperGroup(): Promise<boolean> {
+    try {
+      const groups = await this.sp.getAll<{ Title?: unknown }>(MY_GROUPS_PATH);
+      return groups.some((g) => typeof g.Title === 'string' && g.Title.trim().toLowerCase() === BOOKKEEPER_GROUP_NAME.toLowerCase());
+    } catch {
+      return false;
+    }
+  }
+
+  private async requireLedger(): Promise<Signed> {
+    const me = await this.currentUser();
+    if (!mayUseLedger(me)) throw new NotAllowedError(messages.ledgerNotAllowed);
+    return me;
   }
 
   private async requireAdmin(): Promise<Signed> {

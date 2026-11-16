@@ -12,7 +12,8 @@ describe('page addresses', () => {
     ['#/admin/attention', { name: 'adminAttention' }],
     ['#/admin/all', { name: 'adminAll' }],
     ['#/admin/request/42', { name: 'adminRequest', requestId: 42 }],
-    ['#/admin/setup', { name: 'setup' }]
+    ['#/admin/setup', { name: 'setup' }],
+    ['#/ledger', { name: 'ledger' }]
   ];
 
   it.each(routes)('%s is the address of one page, both ways', (hash, route) => {

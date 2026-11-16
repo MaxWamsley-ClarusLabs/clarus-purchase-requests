@@ -377,9 +377,76 @@
                       "actions": {}
                     }
                   },
-                  "Check_report_folder": {
+                  "Check_archive_root": {
                     "runAfter": {
                       "If_folder_2_is_missing": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "OpenApiConnection",
+                    "inputs": {
+                      "host": {
+                        "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                        "connectionName": "shared_sharepointonline",
+                        "operationId": "HttpRequest"
+                      },
+                      "parameters": {
+                        "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                        "parameters/method": "GET",
+                        "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts')/Exists",
+                        "parameters/headers": {
+                          "Accept": "application/json;odata=verbose"
+                        }
+                      },
+                      "authentication": "@parameters('$authentication')"
+                    }
+                  },
+                  "If_archive_root_is_missing": {
+                    "runAfter": {
+                      "Check_archive_root": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "If",
+                    "expression": {
+                      "and": [
+                        {
+                          "equals": [
+                            "@body('Check_archive_root')?['d']?['Exists']",
+                            false
+                          ]
+                        }
+                      ]
+                    },
+                    "actions": {
+                      "Create_archive_root": {
+                        "runAfter": {},
+                        "type": "OpenApiConnection",
+                        "inputs": {
+                          "host": {
+                            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                            "connectionName": "shared_sharepointonline",
+                            "operationId": "HttpRequest"
+                          },
+                          "parameters": {
+                            "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                            "parameters/method": "POST",
+                            "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts')",
+                            "parameters/headers": {
+                              "Accept": "application/json;odata=verbose"
+                            }
+                          },
+                          "authentication": "@parameters('$authentication')"
+                        }
+                      }
+                    },
+                    "else": {
+                      "actions": {}
+                    }
+                  },
+                  "Check_report_folder": {
+                    "runAfter": {
+                      "If_archive_root_is_missing": [
                         "Succeeded"
                       ]
                     },
@@ -445,9 +512,76 @@
                           "authentication": "@parameters('$authentication')"
                         }
                       },
-                      "Copy_files": {
+                      "Check_archive_folder": {
                         "runAfter": {
                           "Create_report_folder": [
+                            "Succeeded"
+                          ]
+                        },
+                        "type": "OpenApiConnection",
+                        "inputs": {
+                          "host": {
+                            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                            "connectionName": "shared_sharepointonline",
+                            "operationId": "HttpRequest"
+                          },
+                          "parameters": {
+                            "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                            "parameters/method": "GET",
+                            "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('@{concat('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts/', outputs('Safe_folder_name'))}')/Exists",
+                            "parameters/headers": {
+                              "Accept": "application/json;odata=verbose"
+                            }
+                          },
+                          "authentication": "@parameters('$authentication')"
+                        }
+                      },
+                      "If_archive_folder_is_missing": {
+                        "runAfter": {
+                          "Check_archive_folder": [
+                            "Succeeded"
+                          ]
+                        },
+                        "type": "If",
+                        "expression": {
+                          "and": [
+                            {
+                              "equals": [
+                                "@body('Check_archive_folder')?['d']?['Exists']",
+                                false
+                              ]
+                            }
+                          ]
+                        },
+                        "actions": {
+                          "Create_archive_folder": {
+                            "runAfter": {},
+                            "type": "OpenApiConnection",
+                            "inputs": {
+                              "host": {
+                                "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                                "connectionName": "shared_sharepointonline",
+                                "operationId": "HttpRequest"
+                              },
+                              "parameters": {
+                                "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                                "parameters/method": "POST",
+                                "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='@{concat('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts/', outputs('Safe_folder_name'))}')",
+                                "parameters/headers": {
+                                  "Accept": "application/json;odata=verbose"
+                                }
+                              },
+                              "authentication": "@parameters('$authentication')"
+                            }
+                          }
+                        },
+                        "else": {
+                          "actions": {}
+                        }
+                      },
+                      "Copy_files": {
+                        "runAfter": {
+                          "If_archive_folder_is_missing": [
                             "Succeeded"
                           ]
                         },
@@ -506,9 +640,82 @@
                           }
                         }
                       },
-                      "Mark_packaged": {
+                      "Filter_receipts": {
                         "runAfter": {
                           "Copy_files": [
+                            "Succeeded"
+                          ]
+                        },
+                        "type": "Query",
+                        "inputs": {
+                          "from": "@body('Get_attachments')",
+                          "where": "@startsWith(item()?['DisplayName'], 'R')"
+                        }
+                      },
+                      "Archive_receipts": {
+                        "runAfter": {
+                          "Filter_receipts": [
+                            "Succeeded"
+                          ]
+                        },
+                        "type": "Foreach",
+                        "foreach": "@body('Filter_receipts')",
+                        "runtimeConfiguration": {
+                          "concurrency": {
+                            "repetitions": 1
+                          }
+                        },
+                        "actions": {
+                          "Get_receipt_content": {
+                            "runAfter": {},
+                            "type": "OpenApiConnection",
+                            "inputs": {
+                              "host": {
+                                "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                                "connectionName": "shared_sharepointonline",
+                                "operationId": "GetAttachmentContent"
+                              },
+                              "parameters": {
+                                "dataset": "https://contoso.sharepoint.com/sites/FormsAndApps",
+                                "table": "00000000-0000-0000-0000-000000000003",
+                                "itemId": "@triggerBody()?['ID']",
+                                "attachmentId": "@items('Archive_receipts')?['Id']"
+                              },
+                              "authentication": "@parameters('$authentication')"
+                            }
+                          },
+                          "Create_archive_file": {
+                            "runAfter": {
+                              "Get_receipt_content": [
+                                "Succeeded"
+                              ]
+                            },
+                            "type": "OpenApiConnection",
+                            "inputs": {
+                              "host": {
+                                "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                                "connectionName": "shared_sharepointonline",
+                                "operationId": "CreateFile"
+                              },
+                              "parameters": {
+                                "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                                "folderPath": "@{concat('/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts/', outputs('Safe_folder_name'))}",
+                                "name": "@items('Archive_receipts')?['DisplayName']",
+                                "body": "@body('Get_receipt_content')"
+                              },
+                              "authentication": "@parameters('$authentication')"
+                            },
+                            "runtimeConfiguration": {
+                              "contentTransfer": {
+                                "transferMode": "Chunked"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "Mark_packaged": {
+                        "runAfter": {
+                          "Archive_receipts": [
                             "Succeeded"
                           ]
                         },
@@ -525,6 +732,7 @@
                             "id": "@triggerBody()?['ID']",
                             "item/PackageStatus/Value": "Packaged",
                             "item/FolderLink": "@{concat('https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Purchases/Purchases_To_Process/', encodeUriComponent(outputs('Safe_folder_name')))}",
+                            "item/ArchiveLink": "@{concat('https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Purchases/Purchase_Receipts/', encodeUriComponent(outputs('Safe_folder_name')))}",
                             "item/PackagedAt": "@{utcNow()}",
                             "item/ErrorMessage": ""
                           },

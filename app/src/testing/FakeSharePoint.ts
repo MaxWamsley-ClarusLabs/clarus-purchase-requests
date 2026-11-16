@@ -12,6 +12,15 @@ export interface FakeUser {
   title: string;
   email: string;
   admin: boolean;
+  /**
+   * SharePoint groups the person is in, by title (web/currentuser/groups). A member of the Purchase Bookkeepers
+   * group has Edit permission on the three lists (docs/UPDATE_1.0.3.0.md), which lifts the "own items only" limits;
+   * the fake models that as `editsLists`.
+   */
+  groups?: string[];
+  editsLists?: boolean;
+  /** When true, reading the person's own groups fails, as it would if it needed a permission they lack. */
+  groupsUnreadable?: boolean;
 }
 
 /** A member of the site's Owners group as SharePoint lists it (PrincipalType: 1 a person, 4 a security group, 8 a SharePoint group). */
@@ -168,6 +177,9 @@ export class FakeSharePoint {
     );
 
     if (route === 'web/currentuser') return response(200, { Id: user.id, Title: user.title, Email: user.email });
+    if (route === 'web/currentuser/groups' && method === 'GET') {
+      return user.groupsUnreadable ? response(403) : response(200, { value: (user.groups ?? []).map((Title) => ({ Title })) });
+    }
     if (route === 'web/AssociatedOwnerGroup/users' && method === 'GET') {
       return this.ownersStatus === 200 ? response(200, { value: this.owners.map((o) => ({ ...o })) }) : response(this.ownersStatus);
     }
@@ -339,11 +351,11 @@ export class FakeSharePoint {
   }
 
   private canRead(user: FakeUser, list: FakeList, item: FakeItem): boolean {
-    return user.admin || list.info.ReadSecurity !== 2 || item.fields.AuthorId === user.id;
+    return user.admin || user.editsLists === true || list.info.ReadSecurity !== 2 || item.fields.AuthorId === user.id;
   }
 
   private canWrite(user: FakeUser, list: FakeList, item: FakeItem): boolean {
-    return user.admin || list.info.WriteSecurity !== 2 || item.fields.AuthorId === user.id;
+    return user.admin || user.editsLists === true || list.info.WriteSecurity !== 2 || item.fields.AuthorId === user.id;
   }
 
   private present(list: FakeList, id: number, item: FakeItem, params: Map<string, string>): Record<string, unknown> {

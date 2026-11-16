@@ -5,6 +5,7 @@ import { formatCents } from '../../../domain/money';
 import {
   APPROVAL_THRESHOLD_TEXT,
   CATEGORIES,
+  categoryOptionText,
   QUICKBOOKS_MAPPING_STATUS,
   anyBoughtBefore,
   categoryNeedsDescription,
@@ -91,6 +92,12 @@ function boughtBeforeText(request: PurchaseRequest): string {
     .map((g) => `${g.vendor || 'a purchase with no vendor'} (${formatCents(g.cents)})`)
     .join(', ');
 }
+
+/** The category as the dropdown shows it, with its account number (P-053). */
+const optionTextOf = (id: string): string => {
+  const category = findCategory(id);
+  return category ? categoryOptionText(category) : 'Choose';
+};
 
 export function AdminRequestPage(props: { requestId: number }): React.ReactElement {
   const app = useApp();
@@ -507,7 +514,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                             <div className="ctx-category-edit">
                               <FullTextSelect
                                 boxClassName="ctx-box"
-                                shownText={findCategory(choice.category)?.label ?? 'Choose'}
+                                shownText={optionTextOf(choice.category)}
                                 nothingChosen={choice.category === ''}
                                 aria-label={`Row ${l.rowNumber} category`}
                                 value={choice.category}
@@ -516,7 +523,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                                 {choice.category === '' ? <option value="">Choose</option> : null}
                                 {CATEGORIES.map((c) => (
                                   <option key={c.id} value={c.id} title={c.covers}>
-                                    {c.label}
+                                    {categoryOptionText(c)}
                                   </option>
                                 ))}
                               </FullTextSelect>

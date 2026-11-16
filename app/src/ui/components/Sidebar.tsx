@@ -109,6 +109,20 @@ export function Sidebar(props: Props): React.ReactElement {
         </div>
       ) : null}
 
+      {props.user.isAdministrator || props.user.isBookkeeper ? (
+        <div className="ctx-nav">
+          <div className="ctx-nav-label ctx-hide-collapsed">Bookkeeping</div>
+          <button className={item(route.name === 'ledger')} onClick={() => navigate({ name: 'ledger' })} title="Ledger">
+            <span className="ctx-nav-icon">
+              <Icon name="book" size={15} />
+            </span>
+            <span className="ctx-nav-text ctx-hide-collapsed">
+              <span className="ctx-nav-name">Ledger</span>
+            </span>
+          </button>
+        </div>
+      ) : null}
+
       {props.user.isAdministrator ? (
         <div className="ctx-nav">
           <div className="ctx-nav-label ctx-hide-collapsed">Administrator</div>
@@ -130,7 +144,7 @@ export function Sidebar(props: Props): React.ReactElement {
       <div className="ctx-sidebar-footer">
         <div className="ctx-user ctx-hide-collapsed">
           <strong>{props.user.displayName}</strong>
-          {props.user.isAdministrator ? 'Administrator' : 'Employee'}
+          {props.user.isAdministrator ? 'Administrator' : props.user.isBookkeeper ? 'Bookkeeper' : 'Employee'}
         </div>
         <button
           className="ctx-btn ctx-btn-small ctx-btn-sidebar"

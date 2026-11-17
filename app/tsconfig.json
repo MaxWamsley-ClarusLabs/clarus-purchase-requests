@@ -1,0 +1,14 @@
+{
+  // Used by the SharePoint Framework build (heft) and by "npm run typecheck".
+  // The base settings come from the SPFx build rig. The overrides below target
+  // current browsers (SharePoint Online and Teams no longer support Internet
+  // Explorer) and keep the checks the prototype already used.
+  "extends": "./node_modules/@microsoft/spfx-web-build-rig/profiles/default/tsconfig-base.json",
+  "compilerOptions": {
+    "target": "es2017",
+    "lib": ["es2019", "dom", "dom.iterable"],
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}

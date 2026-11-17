@@ -102,6 +102,8 @@ export interface LineItem {
   LedgerPosted?: boolean | null;
   LedgerPostedBy?: string | null;
   LedgerPostedOn?: string | null;
+  LedgerPostedAmount?: number | null;
+  LedgerNote?: string | null;
   AttachmentFiles?: SpAttachment[];
 }
 
@@ -500,7 +502,11 @@ export function ledgerEntryFromItem(item: LineItem): LedgerEntry {
     className: line255(str(item.LedgerClass)),
     posted: item.LedgerPosted === true,
     postedBy: str(item.LedgerPostedBy),
-    postedOn: str(item.LedgerPostedOn)
+    postedOn: str(item.LedgerPostedOn),
+    // Only a real number counts: a blank (never recorded) stays null.
+    postedAmountCents:
+      typeof item.LedgerPostedAmount === 'number' && Number.isFinite(item.LedgerPostedAmount) ? Math.round(item.LedgerPostedAmount * 100) : null,
+    note: line255(str(item.LedgerNote))
   };
 }
 
@@ -512,6 +518,8 @@ export function ledgerFields(changes: Partial<LedgerEntry>): Record<string, unkn
   if (changes.posted !== undefined) out.LedgerPosted = changes.posted;
   if (changes.postedBy !== undefined) out.LedgerPostedBy = line255(changes.postedBy);
   if (changes.postedOn !== undefined) out.LedgerPostedOn = line255(changes.postedOn);
+  if (changes.postedAmountCents !== undefined) out.LedgerPostedAmount = changes.postedAmountCents === null ? null : centsToDollars(changes.postedAmountCents);
+  if (changes.note !== undefined) out.LedgerNote = line255(changes.note);
   return out;
 }
 

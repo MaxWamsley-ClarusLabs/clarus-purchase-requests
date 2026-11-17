@@ -99,6 +99,7 @@ export const messages = {
   ledgerPostedLocked: (what: string) => `${what} is Posted. Set it back to Not posted before changing its account or class.`,
   ledgerBadAccount: 'Choose an account from the list.',
   ledgerBadClass: 'Choose a class from the list.',
+  ledgerNoteTooLong: (max: number) => `A note can be at most ${max} characters.`,
   ledgerNeedsAccount: (what: string) => `${what}: choose an account before posting.`,
   ledgerNeedsClass: (what: string) => `${what}: choose a class before posting. QuickBooks needs one on every line.`,
   ledgerUnknownAccount: (what: string) => `${what}: its account is not in the account list. Choose the account again before posting.`,

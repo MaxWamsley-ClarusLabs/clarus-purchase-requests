@@ -33,6 +33,8 @@ interface Props {
   navigate: (route: Route) => void;
   requestNav: RequestNav | null;
   adminCounts: AdminCounts;
+  /** Lines in the Ledger that are not posted yet (P-060). */
+  ledgerCount: number;
   /** The list an administrator came from to the request page they are on; null when unknown. */
   adminListOpenedFrom: AdminList | null;
   logoUrl: string;
@@ -119,6 +121,7 @@ export function Sidebar(props: Props): React.ReactElement {
             <span className="ctx-nav-text ctx-hide-collapsed">
               <span className="ctx-nav-name">Ledger</span>
             </span>
+            {props.ledgerCount > 0 ? <span className="ctx-nav-count ctx-hide-collapsed">{props.ledgerCount}</span> : null}
           </button>
         </div>
       ) : null}

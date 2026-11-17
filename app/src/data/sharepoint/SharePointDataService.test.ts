@@ -1460,7 +1460,8 @@ describe('what the Ledger stores on a line (P-054)', () => {
       LedgerClass: '5.0 Internal R&D',
       LedgerPosted: true,
       LedgerPostedBy: 'Bea Keeper',
-      LedgerPostedOn: '2026-11-16 14:05'
+      LedgerPostedOn: '2026-11-16 14:05',
+      LedgerPostedAmount: 125
     });
     // Nothing the employee entered changed.
     for (const key of ['Vendor', 'Description', 'Category', 'Amount', 'PurchaseDate', 'RowNumber', 'RequestId', 'FileFingerprints'])
@@ -1489,7 +1490,7 @@ describe('what the Ledger stores on a line (P-054)', () => {
       LedgerClass: null
     });
     const [row] = await h.as(MAX, NOW).listLedger();
-    expect(row.entry).toEqual({ account: '12345', className: '', posted: false, postedBy: '', postedOn: '' });
+    expect(row.entry).toEqual({ account: '12345', className: '', posted: false, postedBy: '', postedOn: '', postedAmountCents: null, note: '' });
     // Text that is not an account in the list is never posted: the bookkeeper chooses again.
     await expect(h.as(MAX, NOW).setPosted([line.id], true)).rejects.toThrow('not in the account list');
   });

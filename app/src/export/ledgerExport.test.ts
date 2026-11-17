@@ -89,7 +89,7 @@ describe('the Ledger download', () => {
     // The description that looks like a formula is stored as text in an inline string, not as a formula element.
     expect(sheet).toContain('t="inlineStr"');
     expect(sheet).not.toContain('<f>');
-    expect(sheet).toContain('<hyperlink ref="R2" r:id="rId1"/>');
+    expect(sheet).toContain(`<hyperlink ref="${columnName(LEDGER_COLUMNS.indexOf('Receipt'))}2" r:id="rId1"/>`);
     expect(files['xl/worksheets/_rels/sheet1.xml.rels']).toContain(
       'Target="https://contoso.sharepoint.com/Purchase_Receipts/PR-0042/R01_hosting.pdf" TargetMode="External"'
     );

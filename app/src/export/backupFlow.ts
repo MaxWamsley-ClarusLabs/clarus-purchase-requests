@@ -106,6 +106,8 @@ const COLUMNS: readonly BackupColumn[] = [
   { header: 'Posted', value: postedOf, text: false },
   { header: 'Posted by', value: textOf('LedgerPostedBy'), text: true },
   { header: 'Posted on', value: textOf('LedgerPostedOn'), text: true },
+  { header: 'Amount when posted', value: "string(coalesce(item()?['LedgerPostedAmount'], ''))", text: false },
+  { header: 'Note', value: textOf('LedgerNote'), text: true },
   { header: 'No-receipt reason', value: textOf('NoReceiptReason'), text: true }
 ];
 

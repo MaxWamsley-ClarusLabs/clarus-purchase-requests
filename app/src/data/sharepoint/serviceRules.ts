@@ -446,7 +446,20 @@ export function ledgerEntryWrite(row: LedgerRow, changes: LedgerEntryChanges): P
   const write: Partial<LedgerEntry> = {};
   if (changes.account !== undefined) write.account = changes.account;
   if (changes.className !== undefined) write.className = changes.className;
+  if (changes.note !== undefined) write.note = changes.note;
   return write;
+}
+
+/**
+ * What to store for changing the account, class or note of several rows at once (P-060): every row is checked before any
+ * is written, so one row that is refused (a Posted row, say) refuses them all, and the message names it. Throws
+ * NotAllowedError.
+ */
+export function bulkEntryWrites(rows: readonly LedgerRow[], changes: LedgerEntryChanges): Map<string, Partial<LedgerEntry>> {
+  if (rows.length === 0) throw new NotAllowedError(messages.ledgerNothingSelected);
+  const writes = new Map<string, Partial<LedgerEntry>>();
+  for (const row of rows) writes.set(row.line.id, ledgerEntryWrite(row, changes));
+  return writes;
 }
 
 /**
@@ -463,9 +476,10 @@ export function postWrites(rows: readonly LedgerRow[], posted: boolean, who: str
     if (posted) {
       const problem = postProblem(row);
       if (problem) throw new NotAllowedError(problem);
-      writes.set(row.line.id, { account: effectiveAccount(row), posted: true, postedBy: who, postedOn: stamp });
+      // The amount is kept as posted, so a later change to the line shows (P-060).
+      writes.set(row.line.id, { account: effectiveAccount(row), posted: true, postedBy: who, postedOn: stamp, postedAmountCents: row.line.amountCents });
     } else {
-      writes.set(row.line.id, { posted: false, postedBy: '', postedOn: '' });
+      writes.set(row.line.id, { posted: false, postedBy: '', postedOn: '', postedAmountCents: null });
     }
   }
   return writes;

@@ -302,7 +302,7 @@ select.ctx-cell { cursor: pointer; appearance: auto; }
 .ctx-ledger-bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .ctx-ledger-bar .ctx-tabs { margin-bottom: 0; }
 .ctx-ledger-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.ctx-ledger-search { width: 290px; }
+.ctx-ledger-search { width: 340px; max-width: 100%; }
 .ctx-ledger-table td { vertical-align: top; }
 .ctx-ledger-table .ctx-ledger-pick { min-width: 172px; }
 .ctx-ledger-table .ctx-ledger-what { min-width: 170px; }
@@ -314,6 +314,15 @@ select.ctx-cell { cursor: pointer; appearance: auto; }
 .ctx-ledger-table td { padding-left: 7px; padding-right: 7px; }
 .ctx-ledger-done td { background: #fafcfa; }
 .ctx-ledger-more { margin-top: 10px; display: flex; justify-content: center; }
+.ctx-ledger-note { display: block; width: 100%; margin-top: 5px; padding: 4px 8px; font-size: 0.8rem; border: 1px solid var(--c-border); border-radius: 8px; background: #fff; color: var(--c-text); }
+.ctx-ledger-note:placeholder-shown { border-style: dashed; color: var(--c-muted); }
+.ctx-ledger-looks { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: flex-end; margin-bottom: 12px; }
+.ctx-ledger-looks label { display: flex; flex-direction: column; gap: 3px; }
+.ctx-ledger-look { width: auto; min-width: 210px; padding: 6px 9px; font-size: 0.86rem; }
+.ctx-ledger-bulk { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; padding: 10px 12px; background: var(--c-lavender); border: 1px solid #e0cdef; border-radius: 12px; }
+.ctx-ledger-bulk .ctx-combo { min-width: 230px; }
+.ctx-ledger-changed { margin-top: 4px; font-size: 0.78rem; font-weight: 600; color: #8c1d13; background: #fdecea; border: 1px solid #f5c7c1; border-radius: 8px; padding: 3px 7px; max-width: 170px; white-space: normal; }
+.ctx-banner.amber .ctx-btn { margin-left: auto; flex: none; }
 .ctx-menu-wrap { position: relative; }
 .ctx-btn.ctx-row-menu-button { padding: 6px 5px; }
 .ctx-menu { position: fixed; background: #fff; border: 1px solid var(--c-border); border-radius: 12px; box-shadow: 0 18px 44px rgba(59, 30, 77, 0.18); padding: 6px; z-index: 30; min-width: 250px; max-height: calc(100vh - 24px); overflow-y: auto; }

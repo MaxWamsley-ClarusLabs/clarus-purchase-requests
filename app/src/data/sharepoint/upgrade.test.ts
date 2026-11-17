@@ -15,7 +15,7 @@ const NOW = new Date(2026, 9, 16, 9, 30);
 /** The columns this update adds, by list. */
 const NEW_COLUMNS: Record<string, string[]> = {
   PurchaseRequests: [],
-  PurchaseRequestLines: ['LedgerAccount', 'LedgerClass', 'LedgerPosted', 'LedgerPostedBy', 'LedgerPostedOn'],
+  PurchaseRequestLines: ['LedgerAccount', 'LedgerClass', 'LedgerPosted', 'LedgerPostedBy', 'LedgerPostedOn', 'LedgerPostedAmount', 'LedgerNote'],
   PurchaseSubmissions: ['ArchiveLink']
 };
 const LISTS = ['PurchaseRequests', 'PurchaseRequestLines', 'PurchaseSubmissions'] as const;

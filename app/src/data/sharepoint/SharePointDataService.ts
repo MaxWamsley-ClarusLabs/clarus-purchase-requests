@@ -63,6 +63,7 @@ import {
   changesAfterDelete,
   employeeCertification,
   holdsApproval,
+  bulkEntryWrites,
   ledgerEntryWrite,
   nextRowNumber,
   notAllowed,
@@ -90,7 +91,7 @@ const LINE_FIELDS =
   'ItemLink,NoLinkReason,SameReceiptAsRow,FileFingerprints,SuggestedFields,RowKind';
 const LINE_SELECT = `$select=${LINE_FIELDS},AttachmentFiles&$expand=AttachmentFiles`;
 /** The Ledger's reads: the line's columns and the bookkeepers' own, with no attachment list (the stored fingerprints name the files). */
-const LEDGER_LINE_SELECT = `$select=${LINE_FIELDS},LedgerAccount,LedgerClass,LedgerPosted,LedgerPostedBy,LedgerPostedOn`;
+const LEDGER_LINE_SELECT = `$select=${LINE_FIELDS},LedgerAccount,LedgerClass,LedgerPosted,LedgerPostedBy,LedgerPostedOn,LedgerPostedAmount,LedgerNote`;
 const LEDGER_SUBMISSION_SELECT =
   '$select=Id,AuthorId,RequestId,SubmissionType,SubmissionNumber,PackageStatus,FolderName,SubmitterName,SubmitterEmail,FolderLink,ArchiveLink,PackagedAt,Created,Modified';
 /** The groups the signed-in person belongs to (their own: no permission to read other people's is needed). */
@@ -725,6 +726,19 @@ export class SharePointDataService implements PurchaseDataService {
     const write = ledgerEntryWrite(row, changes);
     if (Object.keys(write).length > 0) await this.sp.merge(this.item('lines', Number(lineId)), ledgerFields(write));
     return this.ledgerRow(lineId);
+  }
+
+  async updateLedgerEntries(lineIds: string[], changes: LedgerEntryChanges): Promise<LedgerRow[]> {
+    await this.requireLedger();
+    const ids = lineIds.filter((id, i) => lineIds.indexOf(id) === i);
+    const rows: LedgerRow[] = [];
+    for (const id of ids) rows.push(await this.ledgerRow(id));
+    // Every line is checked before any is written, so a refusal changes nothing.
+    const writes = bulkEntryWrites(rows, changes);
+    for (const [id, write] of writes) if (Object.keys(write).length > 0) await this.sp.merge(this.item('lines', Number(id)), ledgerFields(write));
+    const after: LedgerRow[] = [];
+    for (const id of ids) after.push(await this.ledgerRow(id));
+    return after;
   }
 
   async setPosted(lineIds: string[], posted: boolean): Promise<LedgerRow[]> {

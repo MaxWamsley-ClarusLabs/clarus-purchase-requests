@@ -743,6 +743,51 @@ try {
   await p.getByRole('button', { name: /back to Not posted/ }).click();
   await p.getByText('Set 1 line back to Not posted.').waitFor();
   check(true, 'A Posted line can be set back to Not posted');
+  // The polish (P-060): a note, the changed-since-posted warning, narrower looks, sorting, the sidebar count, apply to selected.
+  await p.getByRole('tab', { name: /^Posted \(2\)/ }).click();
+  check(
+    await p
+      .getByText(/Changed since posted: was \$/)
+      .first()
+      .isVisible(),
+    'A posted line whose amount changed says so, with both amounts'
+  );
+  check(await p.getByText(/1 posted line has changed since it was posted/).isVisible(), 'The Ledger warns at the top about the changed line');
+  await p.getByRole('tab', { name: /^Not posted/ }).click();
+  const noteBox = p.locator('.ctx-ledger-note:not([disabled])').first();
+  await noteBox.fill('Split with the next line');
+  await noteBox.press('Enter');
+  await p.waitForTimeout(300);
+  check((await noteBox.inputValue()) === 'Split with the next line', 'A note is kept after Enter');
+  await p.getByRole('tab', { name: /^Posted \(/ }).click();
+  const postedNote = p.locator('.ctx-ledger-note').first();
+  check(!(await postedNote.isDisabled()), 'A note can be written on a Posted line');
+  await p.getByRole('button', { name: 'Show it' }).click();
+  check((await p.locator('.ctx-ledger-table tbody tr').count()) === 1, 'Show it narrows the Ledger to the one changed line');
+  await shot(p, '46-ledger-changed');
+  await p.getByLabel('Show only', exact).selectOption('any');
+  await p.getByRole('tab', { name: /^Not posted/ }).click();
+  const needsClass = await p.getByLabel('Show only', exact).locator('option', { hasText: 'Needs a class' }).textContent();
+  check(/Needs a class \(\d+\)/.test(needsClass ?? ''), 'The Show only list counts the lines that need a class', needsClass ?? '');
+  await p.getByLabel('Show only', exact).selectOption('needsClass');
+  const needing = await p.locator('.ctx-ledger-table tbody tr').count();
+  check(needing > 0 && `Needs a class (${needing})` === needsClass, 'Show only Needs a class lists exactly those lines');
+  await p.getByLabel('Show only', exact).selectOption('any');
+  await p.getByLabel('Sort by', exact).selectOption('amount');
+  const amounts = (await p.locator('.ctx-ledger-table tbody tr td.num').allTextContents()).map((t) => Number(t.replace(/[^0-9.]/g, '').slice(0, 12) || 0));
+  check(amounts.length > 1 && amounts[0] >= amounts[1], 'Sort by amount puts the largest line first');
+  await p.getByLabel('Sort by', exact).selectOption('request');
+  const badge = await p.locator('.ctx-nav-count').first().textContent();
+  check(/\d/.test(badge ?? ''), 'The sidebar shows how many lines are still to post', badge ?? '');
+  // Apply to selected: one class to every line shown, and Posted lines are left out.
+  await p.getByLabel('Select all lines shown', exact).check();
+  const bulkClass = p.getByLabel('Class for the selected lines', exact);
+  await bulkClass.click();
+  await p.locator('.ctx-combo-option', { hasText: '5.0 Internal R&D' }).first().click();
+  await shot(p, '47-ledger-apply-to-selected', false);
+  await p.getByRole('button', { name: /^Apply to \d+$/ }).click();
+  await p.getByText(/^Updated \d+ lines?\.$/).waitFor();
+  check((await p.getByLabel('PR-0039 row 2 class', exact).inputValue()) === '5.0 Internal R&D', 'Apply to selected gives every selected line the chosen class');
   // The download is a file named for the day.
   await p.getByRole('tab', { name: /^All/ }).click();
   const xlsx = p.waitForEvent('download');

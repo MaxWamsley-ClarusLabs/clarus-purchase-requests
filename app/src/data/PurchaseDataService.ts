@@ -199,6 +199,11 @@ export interface PurchaseDataService {
    */
   updateLedgerEntry(lineId: string, changes: LedgerEntryChanges): Promise<LedgerRow>;
   /**
+   * Chooses the same account, class or note for several lines at once (P-060). Every line is checked before any is
+   * changed: a line that is Posted, or a choice that is not in the lists, refuses them all. Returns the lines as they stand.
+   */
+  updateLedgerEntries(lineIds: string[], changes: LedgerEntryChanges): Promise<LedgerRow[]>;
+  /**
    * Marks lines Posted, or sets them back to Not posted, recording who and when. Posting needs an account and a class
    * on every line chosen (P-056) and is checked for all of them before any is changed. Returns the lines as they stand.
    */

@@ -600,14 +600,31 @@ function sampleLedger(store: SampleStore): Record<string, LedgerEntry> {
         className,
         posted: true,
         postedBy: 'Bea Keeper',
-        postedOn: `2026-10-${String(day).padStart(2, '0')} 15:20`
+        postedOn: `2026-10-${String(day).padStart(2, '0')} 15:20`,
+        postedAmountCents: line.amountCents,
+        note: ''
       };
     }
     day += 1;
   }
+  // For the preview: one posted line was changed afterwards, and one carries a note.
+  const posted = Object.keys(entries).filter((id) => entries[id].posted);
+  if (posted.length > 1) {
+    const changed = entries[posted[1]];
+    changed.postedAmountCents = (changed.postedAmountCents ?? 0) + 1500;
+  }
+  if (posted.length > 0) entries[posted[0]].note = 'Receipt covers this line and the next';
   const waiting = store.lines.find((l) => store.requests.some((r) => r.id === l.requestId && r.status === 'Submitted'));
   if (waiting)
-    entries[waiting.id] = { account: defaultLedgerAccount(waiting.category), className: '5.0 Internal R&D', posted: false, postedBy: '', postedOn: '' };
+    entries[waiting.id] = {
+      account: defaultLedgerAccount(waiting.category),
+      className: '5.0 Internal R&D',
+      posted: false,
+      postedBy: '',
+      postedOn: '',
+      postedAmountCents: null,
+      note: ''
+    };
   return entries;
 }
 

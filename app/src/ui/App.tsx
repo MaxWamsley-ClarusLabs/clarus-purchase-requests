@@ -60,6 +60,7 @@ export function App(props: { service: PurchaseDataService; logoUrl: string; read
   const [toasts, setToasts] = React.useState<Toast[]>([]);
   const [requestNav, setRequestNav] = React.useState<RequestNav | null>(null);
   const [adminCounts, setAdminCounts] = React.useState<AdminCounts>({ approvals: 0, process: 0, attention: 0 });
+  const [ledgerCount, setLedgerCount] = React.useState(0);
   const [adminListOpenedFrom, setAdminListOpenedFrom] = React.useState<AdminList | null>(null);
   const toastId = React.useRef(0);
 
@@ -118,6 +119,26 @@ export function App(props: { service: PurchaseDataService; logoUrl: string; read
     }, 5000);
     return () => window.clearInterval(t);
   }, [refreshAdminCounts]);
+
+  // The count of lines not posted, for the sidebar (P-060): read when the page opens and then once a minute, so a bookkeeper sees new work arrive.
+  React.useEffect(() => {
+    if (!user || !(user.isAdministrator || user.isBookkeeper) || !setup || !setup.ready) return;
+    let stopped = false;
+    const refresh = () => {
+      service
+        .listLedger()
+        .then((rows) => {
+          if (!stopped) setLedgerCount(rows.filter((r) => !r.entry.posted).length);
+        })
+        .catch(() => undefined); // Keep the last count; the Ledger page shows its own errors.
+    };
+    refresh();
+    const t = window.setInterval(refresh, 60000);
+    return () => {
+      stopped = true;
+      window.clearInterval(t);
+    };
+  }, [service, user, setup]);
 
   const toast = React.useCallback((text: string, tone: 'info' | 'warning' = 'info') => {
     toastId.current += 1;
@@ -178,7 +199,8 @@ export function App(props: { service: PurchaseDataService; logoUrl: string; read
     setRequestNav,
     refreshAdminCounts: () => {
       void refreshAdminCounts();
-    }
+    },
+    setLedgerCount
   };
   // Until the lists are ready, an administrator is kept on Set-up (travel D-063).
   const route: Route = setup.ready ? location.route : { name: 'setup' };
@@ -223,6 +245,7 @@ export function App(props: { service: PurchaseDataService; logoUrl: string; read
           navigate={navigate}
           requestNav={requestNav}
           adminCounts={adminCounts}
+          ledgerCount={ledgerCount}
           adminListOpenedFrom={adminListOpenedFrom}
           logoUrl={props.logoUrl}
         />

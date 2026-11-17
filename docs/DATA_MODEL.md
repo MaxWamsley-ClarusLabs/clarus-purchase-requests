@@ -84,6 +84,8 @@ There is no separate requester field (travel D-039). The purchase dates are not 
 | LedgerPosted | Posted | Yes/No | Bookkeeper | | Whether the line has been entered in QuickBooks. Default No. Read as yes only when it is exactly yes |
 | LedgerPostedBy | Posted by | Single line of text | Bookkeeper | | The display name of the person who marked it Posted; empty when not posted |
 | LedgerPostedOn | Posted on | Single line of text | Bookkeeper | | "YYYY-MM-DD HH:MM" when it was marked Posted; empty when not posted |
+| LedgerPostedAmount | Amount when posted | Currency | Bookkeeper | | The line's amount in dollars at the moment it was marked Posted; empty when not posted and for a line posted before this column existed. The Ledger compares it with the line's amount and warns if they differ (P-060) |
+| LedgerNote | Ledger note | Single line of text | Bookkeeper | | The bookkeeper's own note on the line, up to 255 characters. Can be written on a Posted line (P-060) |
 | RowKind | Row type | Single line of text | | | Empty for a purchase. `shipping` or `tax` for a row that a Shipping or Tax box in the Vendor totals card keeps while the approver buys (P-048). It only tells the boxes which row is theirs: it changes no total, rule or file. Read back as one of the two known kinds or empty, whatever is stored (an employee can edit the item directly) |
 
 **Defaults (P-023):** when the employee buys, a new row's Who paid is the row above's, or Company for the first row; Category is filled from the last time the employee used the same vendor, when empty. When the approver buys, Who paid is not shown and vendor memory leaves it alone (P-037).

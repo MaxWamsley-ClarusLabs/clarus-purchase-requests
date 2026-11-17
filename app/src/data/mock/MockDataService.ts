@@ -42,6 +42,7 @@ import {
   changesAfterDelete,
   employeeCertification,
   holdsApproval,
+  bulkEntryWrites,
   ledgerEntryWrite,
   nextRowNumber,
   notAllowed,
@@ -643,6 +644,20 @@ export class MockDataService implements PurchaseDataService {
     this.storeEntry(lineId, write);
     this.changed();
     return clone(this.ledgerRow(lineId));
+  }
+
+  async updateLedgerEntries(lineIds: string[], changes: LedgerEntryChanges): Promise<LedgerRow[]> {
+    this.requireLedger();
+    await this.pause();
+    const ids = lineIds.filter((id, i) => lineIds.indexOf(id) === i);
+    // Every line is checked before any is changed, so a refusal changes nothing.
+    const writes = bulkEntryWrites(
+      ids.map((id) => this.ledgerRow(id)),
+      changes
+    );
+    for (const [id, write] of writes) this.storeEntry(id, write);
+    this.changed();
+    return clone(ids.map((id) => this.ledgerRow(id)));
   }
 
   async setPosted(lineIds: string[], posted: boolean): Promise<LedgerRow[]> {

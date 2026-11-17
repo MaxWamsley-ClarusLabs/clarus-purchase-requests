@@ -17,6 +17,8 @@ export interface AppContextValue {
   openInstructions: () => void;
   setRequestNav: (nav: RequestNav | null) => void;
   refreshAdminCounts: () => void;
+  /** The Ledger page tells the sidebar how many lines are still not posted (P-060). */
+  setLedgerCount: (count: number) => void;
 }
 
 export const AppContext = React.createContext<AppContextValue | null>(null);

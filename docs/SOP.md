@@ -141,6 +141,10 @@ Administrators and members of the Purchase Bookkeepers group see Ledger in the s
 - Choose the account and the class from the lists. Click a box, then choose from the list or type to narrow it: type an account number (6182) or any word (ship, supplies). The list is shown in layers so the likeliest choice is on top: From this request (the line's own category), Used for this vendor before, Used most often, Usual for Clarus, and All other accounts. An item shows once, at the highest layer it fits. The layers only decide the order; nothing is filled in for you, and you always choose the class.
 - QuickBooks needs a class on every line, so a line cannot be marked Posted until it has an account and a class.
 - When you have entered lines in QuickBooks, tick them and choose Mark Posted. Posting records your name and the time. If one selected line cannot be posted, none is, and the message names it. A Posted line is locked: choose the Posted tab, tick it and choose Set back to Not posted to change it.
+- Each line has a note box under its description, for things like "split with PR-0042 row 2". A note saves when you click away or press Enter, and can be written at any time, even on a Posted line.
+- To give several lines the same account or class, tick them, choose the account and class in the bar that appears and choose Apply. Only what you choose is changed, Posted lines are left out, and if any selected line cannot be changed, none is.
+- Show only narrows a tab to the lines that Need a class, Need an account, Changed since posted, or where the Administrator decides (Equipment and Other lines whose account has not been confirmed). Sort by changes the order: request, vendor, purchase date or amount. The number beside Ledger in the sidebar is how many lines are still not posted.
+- If a Posted line was changed afterwards (a request was returned and fixed, say), the Ledger shows a red note "Changed since posted: was $X, now $Y" and a warning at the top. Check QuickBooks, then either set the line back to Not posted and post it again, or add a note.
 - Click a receipt to open the copy kept in the receipt archive. A request bought before the archive existed links to its request folder instead, which stops working when the folder is filed under its year.
 - Download Excel saves the lines you are looking at (the tab and the search) as an Excel file, with a clickable link to each receipt. A copy of the whole ledger is also saved every night in Accounting, Purchases, Ledger_Backups.
 
@@ -250,7 +254,7 @@ Done once per site: the test site first, the production site at the pilot. Exact
 
 ---
 
-## Part D. Bookkeepers: the Ledger (P-052 to P-059)
+## Part D. Bookkeepers: the Ledger (P-052 to P-060)
 
 The Ledger is where the bookkeepers turn bought purchases into QuickBooks entries. It is open to administrators and to the members of the SharePoint group **Purchase Bookkeepers**. The employee pages and the approval pages are not open to a bookkeeper who is not an administrator.
 
@@ -258,7 +262,9 @@ The Ledger is where the bookkeepers turn bought purchases into QuickBooks entrie
 
 - One row for each purchase line of a request that has been **bought and packaged** (status Submitted, which the app shows as Purchased when the approver bought it, or Processed). A line appears as soon as the package is made; it does not wait for you to mark the request processed. **Posted** and **Processed** are different: Processed means the request folder has been filed and the request closed; Posted means the line has been entered in QuickBooks.
 - Per line: the request and row, the date, the vendor, what was bought, the total (and "Paid by company" or "To reimburse"), a link to the receipt, the QuickBooks **account** and the **class**.
-- Tabs: **Not posted** (the usual one), **Posted** and **All**, with their counts, and a search over the request number, vendor, description, account and class. A long list is drawn 150 lines at a time ("Show more").
+- Tabs: **Not posted** (the usual one), **Posted** and **All**, with their counts, and a search over the request number, vendor, description, account, class and note. A long list is drawn 150 lines at a time ("Show more").
+- **Show only** narrows a tab to **Needs a class**, **Needs an account**, **Changed since posted** or **Administrator decides**, each with the number of lines it would show. **Sort by** orders the lines by request (newest first, the usual), vendor, purchase date or amount.
+- A **note box** under each line's description, and a count beside **Ledger** in the sidebar: the number of lines still not Posted (it refreshes every minute and whenever you change the Ledger).
 
 ### D2. Working through it
 
@@ -267,6 +273,15 @@ The Ledger is where the bookkeepers turn bought purchases into QuickBooks entrie
 3. Enter the line in QuickBooks as set out in `Clarus_Accounting_SOP.md`, then tick it and choose **Mark Posted**. You can tick many lines and mark them together. The app records your name and the time.
 4. If one line you ticked cannot be posted (it has no class, say), **none** is posted, and the message names the line. Fix it and try again.
 5. A **Posted** line is locked. To change one, open the **Posted** tab, tick it and choose **Set back to Not posted**; its account and class stay, and the name and time are cleared. Then change it and post it again.
+6. **A note** can be written on any line, Posted or not (for example "split with PR-0042 row 2"). It saves when you press Enter or click away. It changes nothing that was posted.
+7. **Apply to selected lines.** Tick lines that are not Posted, choose an account, a class or both in the bar that appears, and choose **Apply to N**. Only what you choose changes. Posted lines you ticked are left out. If any selected line cannot be changed, none is.
+8. **Show only: Administrator decides.** An amber tag on Equipment or Other lines whose account depends on Max's decision and is not confirmed yet. Leave these until Max says which account (for example 6175 Equipment, or 1415 Fixed Assets:Equipment).
+
+### D2a. Warnings
+
+- **Needs a class** or **Needs an account** under a line's status: it cannot be marked Posted yet.
+- **Changed since posted: was $X, now $Y** (a red note on the line, and an amber banner at the top of the page). The app records the line's amount when you mark it Posted. If the line's amount later differs (a returned request was fixed, or someone edited the line in SharePoint), QuickBooks may no longer agree. Check QuickBooks, then either set the line back to Not posted and post it again, or add a note saying why it stands. The banner's **Show them** button lists only those lines. Lines posted before this check existed have no recorded amount and are never flagged.
+- **request folder** under a receipt: see D4.
 
 ### D3. How the account and class boxes work
 
@@ -329,6 +344,7 @@ To be completed from the test-site runs at the checkpoint. These messages are wr
 | "The employee's certification is missing from this request." (approver) | The employee's approval request does not hold the exact certification sentence | Return the request to the employee; they send it again with the certification ticked |
 | "You added row N to this request, so it cannot be returned yet." (approver) | Returning an approved request takes the approval back, and rows you added would then stop counting | Delete the rows you added, then return it |
 | "Confirm the category of row N first: the account depends on a decision." (administrator) | The row is Equipment or Other and nobody has confirmed its category | Use Confirm categories, then Mark processed |
+| "A note can be at most 255 characters." (bookkeeper) | A note is longer than a one-line SharePoint text column holds | Shorten it |
 | "Only administrators and members of the Purchase Bookkeepers group can use the Ledger." | The person is not an administrator and SharePoint did not report them in the group | Check they are in the group exactly named Purchase Bookkeepers, then reload the page |
 | "PR-0042 row 1: choose a class before posting. QuickBooks needs one on every line." (bookkeeper) | The line has no class | Choose a class, then mark it Posted. When several lines were ticked, none was posted |
 | "PR-0042 row 1 is Posted. Set it back to Not posted before changing its account or class." (bookkeeper) | A Posted line is locked | Use the Posted tab, tick it and choose Set back to Not posted |
@@ -349,3 +365,4 @@ To be completed from the test-site runs at the checkpoint. These messages are wr
 | 2026-10-01 | 15 | Added the training quiz line (the link is a placeholder until the Form exists), P-045 |
 | 2026-11-09 | 16 | Part A regenerated (quantity, one receipt per vendor, shipping and tax boxes, Unsend, Record a purchase); Part B gained B2b (recording a purchase) and B5a (an unsent request); P-047 to P-051 |
 | 2026-11-16 | 17 | The Ledger (Part D), the receipt archive and the nightly backup (B3, B9, D4 to D6); Part A regenerated (account numbers in the category list, For bookkeepers: the Ledger); Part C gained five Ledger refusals; P-052 to P-059 |
+| 2026-11-17 | 17 | Ledger polish folded into the same version: notes, the changed-since-posted warning, Apply to selected, Show only and Sort by, the Administrator decides tag, the sidebar count (D1, D2, D2a); Part A regenerated; Part C gained the note-length refusal; P-060 |

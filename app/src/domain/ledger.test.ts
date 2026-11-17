@@ -1,5 +1,20 @@
 import { ledgerRow, line } from '../testing/builders';
-import { effectiveAccount, entryChangeProblem, filterLedger, inLedger, isKnownAccount, isKnownClass, ledgerPaidBy, postProblem, sortLedger } from './ledger';
+import {
+  LEDGER_NOTE_MAX,
+  changedSincePosted,
+  effectiveAccount,
+  entryChangeProblem,
+  filterLedger,
+  focusCounts,
+  inLedger,
+  isKnownAccount,
+  isKnownClass,
+  ledgerPaidBy,
+  needsAdministrator,
+  postProblem,
+  sortLedger,
+  sortLedgerBy
+} from './ledger';
 import { CATEGORIES, CLASS_REQUIRED, LEDGER_ACCOUNTS, LEDGER_CLASSES, accountText, defaultLedgerAccount, findLedgerAccount } from './purchaseRules';
 
 const ACCOUNT = '6182 R&D Materials & Supplies';
@@ -134,5 +149,93 @@ describe('filtering and sorting', () => {
 
   it('lists newest requests first and rows in order', () => {
     expect(sortLedger(rows).map((r) => r.line.id)).toEqual(['c', 'b', 'a']);
+  });
+});
+
+describe('notes (P-060)', () => {
+  it('can be written on a Posted line, which is otherwise locked', () => {
+    const posted = ledgerRow({ entry: { posted: true } });
+    expect(entryChangeProblem(posted, { note: 'Split with the next row' })).toBe('');
+    expect(entryChangeProblem(posted, { account: ACCOUNT })).toContain('Set it back to Not posted');
+    expect(entryChangeProblem(posted, { note: 'x', className: CLASS })).toContain('Set it back to Not posted');
+  });
+
+  it('are refused when longer than a one-line column holds', () => {
+    expect(entryChangeProblem(ledgerRow(), { note: 'x'.repeat(LEDGER_NOTE_MAX) })).toBe('');
+    expect(entryChangeProblem(ledgerRow(), { note: 'x'.repeat(LEDGER_NOTE_MAX + 1) })).toContain('at most 255');
+  });
+
+  it('are found by the search', () => {
+    const rows = [ledgerRow({ line: line({ id: 'a' }), entry: { note: 'vendor credit pending' } }), ledgerRow({ line: line({ id: 'b' }) })];
+    expect(filterLedger(rows, 'all', 'credit pending').map((r) => r.line.id)).toEqual(['a']);
+  });
+});
+
+describe('a posted line that changed since it was posted (P-060)', () => {
+  const posted = (now: number | null, was: number | null) => ledgerRow({ line: line({ amountCents: now }), entry: { posted: true, postedAmountCents: was } });
+
+  it('shows what it was and what it is now', () => {
+    expect(changedSincePosted(posted(12500, 10000))).toEqual({ wasCents: 10000, nowCents: 12500 });
+    expect(changedSincePosted(posted(null, 10000))).toEqual({ wasCents: 10000, nowCents: null });
+  });
+
+  it('says nothing when the amount is the same, when no amount was recorded, or when the line is not posted', () => {
+    expect(changedSincePosted(posted(10000, 10000))).toBeNull();
+    expect(changedSincePosted(posted(10000, null))).toBeNull();
+    expect(changedSincePosted(ledgerRow({ line: line({ amountCents: 5 }), entry: { posted: false, postedAmountCents: 10000 } }))).toBeNull();
+  });
+});
+
+describe('looking inside a tab (P-060)', () => {
+  const rows = [
+    ledgerRow({ line: line({ id: 'needs-class', vendor: 'B Co' }), entry: { account: ACCOUNT } }),
+    ledgerRow({ line: line({ id: 'needs-account', category: 'other', vendor: 'A Co' }), entry: { className: CLASS } }),
+    ledgerRow({
+      line: line({ id: 'equipment', category: 'equipment', categoryConfirmedBy: '', vendor: 'C Co', amountCents: 90000 }),
+      entry: { className: CLASS }
+    }),
+    ledgerRow({ line: line({ id: 'confirmed', category: 'equipment', categoryConfirmedBy: 'Max Wamsley', vendor: 'D Co' }), entry: { className: CLASS } }),
+    ledgerRow({ line: line({ id: 'changed', amountCents: 200 }), entry: { posted: true, postedAmountCents: 100, className: CLASS, account: ACCOUNT } })
+  ];
+  const ids = (focus: Parameters<typeof filterLedger>[3]) => filterLedger(rows, 'all', '', focus).map((r) => r.line.id);
+
+  it('finds the lines that still need a class, or an account', () => {
+    expect(ids('needsClass')).toEqual(['needs-class']);
+    expect(ids('needsAccount')).toEqual(['needs-account']);
+  });
+
+  it('finds the lines that changed since posting, and those the administrator still has to decide', () => {
+    expect(ids('changed')).toEqual(['changed']);
+    expect(ids('review')).toEqual(['needs-account', 'equipment']);
+    expect(needsAdministrator(rows[3])).toBe(false);
+  });
+
+  it('counts each look for the labels, inside the tab and search', () => {
+    const counts = focusCounts(rows, 'notPosted', '');
+    expect(counts).toEqual({ any: 4, needsClass: 1, needsAccount: 1, changed: 0, review: 2 });
+    expect(focusCounts(rows, 'posted', '').changed).toBe(1);
+  });
+});
+
+describe('sorting (P-060)', () => {
+  const rows = [
+    ledgerRow({ requestNumber: 'PR-0002', line: line({ id: 'x', rowNumber: 1, vendor: 'zeta', date: '2026-10-01', amountCents: 100 }) }),
+    ledgerRow({ requestNumber: 'PR-0002', line: line({ id: 'y', rowNumber: 2, vendor: 'Alpha', date: '2026-10-09', amountCents: 900 }) }),
+    ledgerRow({ requestNumber: 'PR-0001', line: line({ id: 'z', rowNumber: 1, vendor: 'alpha', date: '2026-09-15', amountCents: 500 }) })
+  ];
+  const ids = (sort: Parameters<typeof sortLedgerBy>[1]) => sortLedgerBy(rows, sort).map((r) => r.line.id);
+
+  it('puts requests newest first by default, and the other orders by vendor, date and amount', () => {
+    expect(ids('request')).toEqual(['x', 'y', 'z']);
+    expect(ids('vendor')).toEqual(['y', 'z', 'x']); // alpha ties in any letter case, then the default order
+    expect(ids('date')).toEqual(['z', 'x', 'y']);
+    expect(ids('amount')).toEqual(['y', 'z', 'x']);
+  });
+
+  it('gives the same order for the same lines, and leaves the input alone', () => {
+    const before = rows.map((r) => r.line.id);
+    expect(ids('vendor')).toEqual(ids('vendor'));
+    expect(rows.map((r) => r.line.id)).toEqual(before);
+    expect(sortLedger(rows).map((r) => r.line.id)).toEqual(['x', 'y', 'z']);
   });
 });

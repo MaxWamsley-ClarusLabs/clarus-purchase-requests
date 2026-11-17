@@ -172,7 +172,9 @@ describe('list definitions (docs/DATA_MODEL.md)', () => {
       'LedgerClass',
       'LedgerPosted',
       'LedgerPostedBy',
-      'LedgerPostedOn'
+      'LedgerPostedOn',
+      'LedgerPostedAmount',
+      'LedgerNote'
     ]);
     expect(LISTS.submissions.fields.map((f) => f.name)).toEqual([
       'RequestId',

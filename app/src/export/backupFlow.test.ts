@@ -162,12 +162,15 @@ describe('the nightly ledger backup flow (P-059)', () => {
       'Posted',
       'Posted by',
       'Posted on',
+      'Amount when posted',
+      'Note',
       'No-receipt reason'
     ]);
     const columns = new Set(['ID', ...LISTS.lines.fields.map((f) => f.name), 'Title']);
     const used = matches(text, /item\(\)\?\['(\w+)'\]/g);
     expect(used.filter((name) => !columns.has(name))).toEqual([]);
-    for (const name of ['LedgerAccount', 'LedgerClass', 'LedgerPosted', 'LedgerPostedBy', 'LedgerPostedOn']) expect(used).toContain(name);
+    for (const name of ['LedgerAccount', 'LedgerClass', 'LedgerPosted', 'LedgerPostedBy', 'LedgerPostedOn', 'LedgerPostedAmount', 'LedgerNote'])
+      expect(used).toContain(name);
     expect(String(backup.Markdown_rows.inputs?.select)).toContain('| ');
   });
 

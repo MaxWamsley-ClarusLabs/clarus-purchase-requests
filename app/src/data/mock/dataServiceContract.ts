@@ -2339,7 +2339,15 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       const [first] = await bea.listLedger();
       await bea.updateLedgerEntry(first.line.id, { className: CLASS });
       const [posted] = await bea.setPosted([first.line.id], true);
-      expect(posted.entry).toEqual({ account: OTHER_ACCOUNT, className: CLASS, posted: true, postedBy: 'Bea Keeper', postedOn: '2026-11-16 14:05' });
+      expect(posted.entry).toEqual({
+        account: OTHER_ACCOUNT,
+        className: CLASS,
+        posted: true,
+        postedBy: 'Bea Keeper',
+        postedOn: '2026-11-16 14:05',
+        postedAmountCents: 12500,
+        note: ''
+      });
     });
 
     it('is all or nothing: one line that cannot be posted stops the whole batch', async () => {
@@ -2373,7 +2381,7 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       await bea.setPosted([first.line.id], true);
       expect((await refusal(bea.updateLedgerEntry(first.line.id, { className: GRANT_CLASS }))).message).toContain('Set it back to Not posted');
       const [back] = await bea.setPosted([first.line.id], false);
-      expect(back.entry).toEqual({ account: ACCOUNT, className: CLASS, posted: false, postedBy: '', postedOn: '' });
+      expect(back.entry).toEqual({ account: ACCOUNT, className: CLASS, posted: false, postedBy: '', postedOn: '', postedAmountCents: null, note: '' });
       expect((await bea.updateLedgerEntry(first.line.id, { className: GRANT_CLASS })).entry.className).toBe(GRANT_CLASS);
     });
 
@@ -2416,6 +2424,63 @@ export function describeDataServiceRules(label: string, makeHarness: () => Promi
       await h.as(MAX, APPROVED_AT).markProcessed(id);
       const rows = await bea.listLedger();
       expect(rows[0]).toMatchObject({ requestStatus: 'Processed', entry: { posted: true } });
+    });
+
+    it('keeps a note on a line, even a Posted one, and not a longer note than a column holds', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const bea = h.as(BEA, NOW);
+      const [first] = await bea.listLedger();
+      expect((await bea.updateLedgerEntry(first.line.id, { note: 'Split with row 2' })).entry.note).toBe('Split with row 2');
+      await bea.updateLedgerEntry(first.line.id, { className: CLASS });
+      await bea.setPosted([first.line.id], true);
+      // The account and class are locked, but a note is not.
+      expect((await bea.updateLedgerEntry(first.line.id, { note: 'Entered 11/16, check number 1042' })).entry).toMatchObject({
+        posted: true,
+        note: 'Entered 11/16, check number 1042'
+      });
+      expect((await refusal(bea.updateLedgerEntry(first.line.id, { className: GRANT_CLASS }))).message).toContain('Set it back to Not posted');
+      expect((await refusal(bea.updateLedgerEntry(first.line.id, { note: 'x'.repeat(256) }))).message).toContain('at most 255');
+      // Setting the line back keeps the note.
+      expect((await bea.setPosted([first.line.id], false))[0].entry.note).toBe('Entered 11/16, check number 1042');
+    });
+
+    it('records the amount when a line is posted, and clears it when the line is set back', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const bea = h.as(BEA, NOW);
+      const [first] = await bea.listLedger();
+      expect(first.entry.postedAmountCents).toBeNull();
+      await bea.updateLedgerEntry(first.line.id, { className: CLASS });
+      expect((await bea.setPosted([first.line.id], true))[0].entry.postedAmountCents).toBe(first.line.amountCents);
+      expect((await bea.setPosted([first.line.id], false))[0].entry.postedAmountCents).toBeNull();
+    });
+
+    it('sets the same account, class and note on several lines at once, and refuses them all if one is Posted', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const bea = h.as(BEA, NOW);
+      const [first, second] = await bea.listLedger();
+      const both = await bea.updateLedgerEntries([first.line.id, second.line.id], { account: ACCOUNT, className: GRANT_CLASS, note: 'Phase 1 supplies' });
+      expect(both.map((r) => r.entry)).toEqual([
+        expect.objectContaining({ account: ACCOUNT, className: GRANT_CLASS, note: 'Phase 1 supplies' }),
+        expect.objectContaining({ account: ACCOUNT, className: GRANT_CLASS, note: 'Phase 1 supplies' })
+      ]);
+      await bea.setPosted([first.line.id], true);
+      const refused = (await refusal(bea.updateLedgerEntries([first.line.id, second.line.id], { className: CLASS }))).message;
+      expect(refused).toContain(`${first.requestNumber} row 1 is Posted`);
+      // Nothing changed on the other line either.
+      expect((await bea.listLedger())[1].entry.className).toBe(GRANT_CLASS);
+    });
+
+    it('refuses a bulk change that is empty, not from the lists, or not allowed to this person', async () => {
+      const h = await makeHarness();
+      await submittedRows(h);
+      const [first] = await h.as(BEA, NOW).listLedger();
+      expect((await refusal(h.as(BEA, NOW).updateLedgerEntries([], { className: CLASS }))).message).toBe(messages.ledgerNothingSelected);
+      expect((await refusal(h.as(BEA, NOW).updateLedgerEntries([first.line.id], { account: 'Hand typed' }))).message).toBe(messages.ledgerBadAccount);
+      expect((await refusal(h.as(JANE, NOW).updateLedgerEntries([first.line.id], { className: CLASS }))).message).toBe(messages.ledgerNotAllowed);
+      expect((await h.as(BEA, NOW).listLedger())[0].entry.className).toBe('');
     });
   });
 }

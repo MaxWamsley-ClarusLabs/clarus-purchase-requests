@@ -145,6 +145,8 @@ The packaging branch also creates `Accounting/Purchases/Purchase_Receipts/<reque
 
 A separate flow, made by Set-up step 3 as `PurchaseRequests_Ledger_Backup_Flow_Test.zip` or `..._Live.zip` and imported the same way. It runs on a **Recurrence** trigger every day at 02:30 in `Central Standard Time` (Max's time zone), reads the Purchase Requests list (Submitted or Processed) and the Purchase Request Lines list (up to 5,000 items, with pagination), keeps the lines of those requests, and writes a new `Ledger_<yyyy-MM-dd_HHmm>.csv` and `.md` into `Accounting/Purchases/Ledger_Backups/` (Test: `Purchases_Test/Ledger_Backups/`), creating the folder on the first night. The CSV comes from a Create CSV table action, with a byte-order mark so Excel reads it as UTF-8, and text that starts with = + - or @ gets a leading apostrophe (as the app's CSV does). The Markdown file is a table with pipes escaped and line breaks turned into spaces. Failure: a scope runs if the backup scope fails or times out and emails the administrator, saying nothing was changed.
 
+**2026-11-17 (P-060):** the backup's columns gain **Amount when posted** (after Posted on) and **Note** (after Class, text kept as text), so the package is made again from Set-up and imported again before it is turned on. Nothing else about the flow changed.
+
 | Step | Name in the flow | What it does |
 |---|---|---|
 | Start | Every night | Recurrence: daily, 02:30, Central Standard Time |

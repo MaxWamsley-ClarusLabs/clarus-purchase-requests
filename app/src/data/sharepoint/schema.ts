@@ -135,7 +135,10 @@ export const LISTS: Record<ListKey, ListDef> = {
       text('LedgerClass', 'Ledger class'),
       yesNo('LedgerPosted', 'Posted'),
       text('LedgerPostedBy', 'Posted by'),
-      text('LedgerPostedOn', 'Posted on')
+      text('LedgerPostedOn', 'Posted on'),
+      // The amount when it was posted, so a later change shows (P-060), and the bookkeeper's own note on the line.
+      money('LedgerPostedAmount', 'Amount when posted'),
+      text('LedgerNote', 'Ledger note')
     ]
   },
   submissions: {

@@ -1,12 +1,13 @@
 # Updating the Purchase Requests app to version 1.0.3.0 (the Ledger)
 
-For Max. About 60 to 90 minutes, in four parts. Nothing already stored is deleted at any step: the requests live in the SharePoint lists, not in the app, and the Set-up step only **adds** columns (five on the lines list, one on the submissions list). Microsoft screen wording below is Unverified (Microsoft's documentation cannot be read from the build environment); if a screen differs, stop and send a screenshot.
+For Max. About 60 to 90 minutes, in four parts. Nothing already stored is deleted at any step: the requests live in the SharePoint lists, not in the app, and the Set-up step only **adds** columns (seven on the lines list, one on the submissions list). Microsoft screen wording below is Unverified (Microsoft's documentation cannot be read from the build environment); if a screen differs, stop and send a screenshot.
 
 Do all of it on the **Test** flow first (`docs/CHECKPOINT.md` Part 10), then the Live flow.
 
 ## What is in 1.0.3.0
 
 - A **Ledger** page for administrators and a new SharePoint group, **Purchase Bookkeepers**: every bought line with a QuickBooks account, a class and **Posted**, type-ahead dropdowns with the likeliest choices on top, and **Download Excel**.
+- Bookkeeper helpers: a **note** on each line, a warning when a posted line **changed afterwards**, **Apply to selected** (one account and class for many lines), **Show only** and **Sort by**, an **Administrator decides** marker, and a count of lines still to post beside Ledger in the sidebar.
 - The category dropdown shows the QuickBooks account number with the name.
 - The Purchase Requests flow also copies each request's **receipts** into a permanent archive, `Purchase_Receipts`, so receipt links keep working after you file the request folder.
 - A second flow, the **nightly ledger backup**: a new dated CSV and Markdown copy of the ledger every night in `Ledger_Backups`.

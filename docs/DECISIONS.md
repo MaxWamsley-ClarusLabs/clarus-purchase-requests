@@ -561,6 +561,17 @@ Max said that about 95% of purchases are bought by the person who approves them,
 
 ---
 
+## P-061. The bookkeeper TyWamsley is an Owner, not a group member
+
+- **Date:** 2026-11-22
+- **Status:** Decided (Max: "he can be an owner that is fine", after being told an Owner is also an approver).
+- **Decision:** TyWamsley, who has a Clarus account, is added as an Owner of the Forms and Apps site rather than to the Purchase Bookkeepers group. He therefore has the Ledger and every administrator page, and is an approver. The Purchase Bookkeepers group (P-052) remains the way to give Ledger-only access to someone who must not approve.
+- **Consequence:** the Purchase Requests flow package must be made again from Set-up and imported after any change of Owners, so the approval email reaches him (B9). The package made before he was added is not used.
+- **Unverified:** that a second real person sees the Ledger lines; checked at the Test flow.
+- **Where a change goes:** SharePoint site permissions (Max's Microsoft 365 change); `docs/SOP.md` Part D5.
+
+---
+
 ## Status of strategy items
 
 Items in `docs/STRATEGY.md` labelled **Open** remain open until Max answers. See `docs/QUESTIONS_FOR_MAX.md`.

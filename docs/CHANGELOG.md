@@ -241,3 +241,9 @@ Max asked what else would make the app clean and polished for bookkeeping. Claud
 
 - **Not done:** guest access for bookkeepers outside Clarus (not recommended). Nothing else Max approved was left out.
 - **Unverified, to be checked at the Test flow (`docs/CHECKPOINT.md` steps 58 and 59):** the helpers on a real site (checked only with sample data in the preview), and that the two new columns can be written by a bookkeeper (same permission as the other Ledger columns).
+
+## 2026-11-22. Install in progress: the SOP and P-061 (no code changed)
+
+- Max installed 1.0.3.0 on the real site (reported in chat): the package replaced the old one, Set-up showed all three lists Ready, and all requests matched what he had recorded. The Ledger count showed 20 lines not posted. The flow replacement was started and is not finished.
+- Max made TyWamsley an Owner for bookkeeping. `docs/SOP.md` (the Owners today, D5 item 4 and the revision table) and `docs/DECISIONS.md` (P-061) record it, with the consequence that the flow package is made again after adding an Owner. No code changed; no outside system read or written by Claude in this entry. Earlier today Claude read the Folder Map and Filing Change Log once, and created and updated records in Internal Records, at Max's request (the exception to the connector rule is Max's, 2026-11-21).
+

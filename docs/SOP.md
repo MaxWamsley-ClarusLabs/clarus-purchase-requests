@@ -159,7 +159,7 @@ Administrators and members of the Purchase Bookkeepers group see Ledger in the s
 
 ## Part B. Approver and administrator
 
-Both roles are held today by the site Owners (people with SharePoint's "Manage web site" permission); in practice, Max. Steps marked "(checkpoint)" are written or confirmed when the first version is installed on the test site, so they name the real screens.
+Both roles are held today by the site Owners (people with SharePoint's "Manage web site" permission); in practice, Max and, since 2026-11-22, TyWamsley (an Owner who does the bookkeeping). Steps marked "(checkpoint)" are written or confirmed when the first version is installed on the test site, so they name the real screens.
 
 ### B1. When a request is sent for approval
 
@@ -317,7 +317,8 @@ The Ledger works for a person only if SharePoint lets them in, which is a Micros
 1. Create a SharePoint group named exactly **Purchase Bookkeepers** on the Forms and Apps site, and add the bookkeepers to it.
 2. Give the group **Edit** permission on the three lists (Purchase Requests, Purchase Request Lines, Purchase Submissions). Edit lets them read every employee's line and change the Ledger columns. It does not let them approve a request (that needs "Manage web site").
 3. Give the group **Read** access to `Accounting/Purchases/Purchase_Receipts`, so the receipt links open.
-4. A bookkeeper outside the company needs a guest account in your Microsoft 365. That depends on your tenant's external-sharing settings (Unverified) and is not set up. There is no separate username and password for the app: everyone signs in with a Microsoft identity.
+4. **The other way: make the bookkeeper an Owner (used for TyWamsley, 2026-11-22, P-061).** Owners are administrators in the app, so an Owner sees the Ledger and can post lines without being in the group. The trade-off: an Owner is also an approver and sees Approvals, Requests to process, Needs attention, All requests, Set-up and Record a purchase, and can approve and buy requests (only the Owner who approved a request can buy it). Choose it only for a person you trust with spending. After adding an Owner, make a new flow package from Set-up and import it, so the approval email also reaches them (B9). To keep a bookkeeper to the Ledger alone, use the group in steps 1 to 3 instead and do not add them as an Owner.
+5. A bookkeeper outside the company needs a guest account in your Microsoft 365. That depends on your tenant's external-sharing settings (Unverified) and is not set up. There is no separate username and password for the app: everyone signs in with a Microsoft identity.
 
 Unverified until the Test site: that SharePoint tells the app which groups the signed-in person is in, and that Edit on the lists lets a bookkeeper read every employee's items despite "own items only".
 
@@ -366,3 +367,4 @@ To be completed from the test-site runs at the checkpoint. These messages are wr
 | 2026-11-09 | 16 | Part A regenerated (quantity, one receipt per vendor, shipping and tax boxes, Unsend, Record a purchase); Part B gained B2b (recording a purchase) and B5a (an unsent request); P-047 to P-051 |
 | 2026-11-16 | 17 | The Ledger (Part D), the receipt archive and the nightly backup (B3, B9, D4 to D6); Part A regenerated (account numbers in the category list, For bookkeepers: the Ledger); Part C gained five Ledger refusals; P-052 to P-059 |
 | 2026-11-17 | 17 | Ledger polish folded into the same version: notes, the changed-since-posted warning, Apply to selected, Show only and Sort by, the Administrator decides tag, the sidebar count (D1, D2, D2a); Part A regenerated; Part C gained the note-length refusal; P-060 |
+| 2026-11-22 | 17 | D5 gained the Owner route for a bookkeeper (what an Owner can also do, and the new flow package); the Owners today; P-061 |

@@ -585,6 +585,23 @@ Max said that about 95% of purchases are bought by the person who approves them,
 
 ---
 
+## P-063. The Purchasing policy is P4, drafted in Word, with a policy tracker
+
+- **Date:** 2026-11-24
+- **Status:** Decided (Max, in the policy workshop 2026-11-24). The draft is R1 and is not approved or published.
+- **Decision:**
+  1. **The policy is written before the SOP.** It is one official document for all employees, to be posted on the SharePoint policy tab.
+  2. **Number P4.** P3 is the Travel Reimbursement policy (Max's example), which he will draft with the Travel app. P4 was the old purchasing policy's number.
+  3. **Content:** `docs/POLICY.md` (R0, P-044) reshaped into the P3 layout, rules unchanged. Owners' own purchases are stated as the app does them (self-approval; Record a purchase, P-051). App step-by-step goes in the SOP.
+  4. **Style:** the Clarus Labs Master Template and the brand style, with unnumbered headings as in the P3 example. Header: "P4 Purchasing Policy (Draft)".
+  5. **Policy tracker:** an Excel register of all policies. One row now (P4); P3 is added later.
+  6. **Placeholders:** effective date, record retention period; and in the tracker the next review date, where it is posted, and what it supersedes.
+- **Not decided:** the policy's approval and publication (Max), and the SOP, which follows.
+- **Unverified:** the federal basis of the $5,000 grant equipment rule (Max's decision, P-044).
+- **Where a change goes:** `docs/policy/`, and `app/src/domain/purchaseRules.ts` if a number changes.
+
+---
+
 ## Status of strategy items
 
 Items in `docs/STRATEGY.md` labelled **Open** remain open until Max answers. See `docs/QUESTIONS_FOR_MAX.md`.

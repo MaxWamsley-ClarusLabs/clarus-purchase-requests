@@ -1,5 +1,7 @@
 # Purchasing Policy
 
+**Superseded as the working draft (2026-11-24): the Word policy is `docs/policy/P4 Purchasing Policy_DRAFT (R1).docx` (P-063). This file is kept as the R0 record.**
+
 **Status:** DRAFT R0, October 1, 2026. Not yet adopted. Owner: Max Wamsley, CEO. Effective date: [INSERT EFFECTIVE DATE.]
 
 **Scope:** purchases for Clarus Labs that are not travel. Travel follows the travel policy and is submitted in the Travel app.

@@ -262,3 +262,16 @@ Max asked for a Delete button on each draft row of My requests, and for the stat
 
 - **Unverified:** both on the real site (checked only in the preview). Steps 6 and 7 of `docs/UPDATE_1.0.4.0.md` check them.
 
+## 2026-11-24. Policy P4 (Purchasing) and the policy tracker drafted (P-063)
+
+Max asked for an official policy for all employees first, then the SOP, in one common Word template, and an Excel tracker of all policies. Claude read Max's Travel policy example (uploaded), `docs/POLICY.md` (R0), and the Clarus Labs Master Template, Word theme and horizontal logo (uploaded). Claude also searched the Microsoft 365 connector for the Master Template at Max's request (read only; the connector cannot download a `.dotx`, so Max uploaded it) and read the Folder Map earlier the same day. Nothing was written to Microsoft 365 for this task.
+
+| What | Files | Why |
+|---|---|---|
+| **Decision** P-063 | `docs/DECISIONS.md` | Number, content base, style, tracker, placeholders |
+| **Policy draft R1 (Word)** | `docs/policy/P4 Purchasing Policy_DRAFT (R1).docx` and a PDF preview | Built on the Master Template; styles, theme, settings, footer and section properties are identical to the template; only the body, the header document name and the header date differ. Validated, rendered and inspected |
+| **Tracker (Excel)** | `docs/policy/Clarus Labs Policy Tracker.xlsx` | Brand header block, table style, status list and colors, filters, frozen header, live count; one row, P4 |
+| **Notes** | `docs/policy/README.md`, `docs/POLICY.md` (pointer) | Placeholders, unverified items, what to do before publishing |
+
+- **Unverified:** the federal basis of the $5,000 equipment rule; how Word lays out the pages (checked in LibreOffice); the tracker's Clarus theme (not applied).
+

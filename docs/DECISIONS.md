@@ -572,6 +572,19 @@ Max said that about 95% of purchases are bought by the person who approves them,
 
 ---
 
+## P-062. Delete a draft from My requests, and a color for each status
+
+- **Date:** 2026-11-24
+- **Status:** Decided (Max: asked for Delete on the draft rows; for the confirmation, "yes"; for the colors, he accepted both options, and Option B includes Option A, so Option B was built).
+- **Decision:**
+  1. **Delete on My requests:** a red Delete button at the end of every row that is a Draft, with a confirmation dialog ("Delete PR-0017?", Cancel and Delete draft). It uses the existing delete (drafts only, the owner only, moved to the site's recycle bin). It does not open the request. The dialog now says it cannot be restored from the app and that an Owner can restore it from the recycle bin; the same wording replaced "This cannot be undone" inside a draft, which was not accurate.
+  2. **Status colors:** Draft light purple, Awaiting approval amber, Approved blue, Submitted teal, Purchased (the approver bought it) purple, Returned orange, Processed green, in every place the request status is shown. The line-approval and package badges keep their tones.
+- **Not changed:** the receipt rule (a receipt or a reason is asked for only when a purchase already made is submitted). Max asked why; the answer is in the chat. Changing it would be part of the purchasing policy stage.
+- **Version 1.0.4.0.** No new columns, no Set-up step, flows untouched (`docs/UPDATE_1.0.4.0.md`).
+- **Where a change goes:** `domain/statuses.ts` (tones), `ui/theme.ts` (the three new badge colors), `ui/pages/MyRequestsPage.tsx`.
+
+---
+
 ## Status of strategy items
 
 Items in `docs/STRATEGY.md` labelled **Open** remain open until Max answers. See `docs/QUESTIONS_FOR_MAX.md`.

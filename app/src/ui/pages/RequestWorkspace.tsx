@@ -1148,7 +1148,9 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
             </>
           }
         >
-          <p style={{ margin: 0 }}>This draft and its files will be deleted. This cannot be undone.</p>
+          <p style={{ margin: 0 }}>
+            This draft and its files will be deleted. It cannot be restored from this app; an Owner can restore it from the site&apos;s recycle bin.
+          </p>
         </Dialog>
       ) : null}
     </>

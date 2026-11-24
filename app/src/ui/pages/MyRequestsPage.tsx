@@ -4,7 +4,7 @@ import { isEditable, requestStatusDisplay } from '../../domain/statuses';
 import { PurchaseRequest } from '../../domain/types';
 import { useApp } from '../AppContext';
 import { useMountedRef } from '../hooks';
-import { Badge, Card, DateTime, HeaderCard, Tag, openRowProps } from '../components/common';
+import { Badge, Card, DateTime, Dialog, HeaderCard, Tag, openRowProps } from '../components/common';
 import { Icon } from '../components/Icon';
 
 /** Who sent a request back, from the step the return came at (docs/DATA_MODEL.md). */
@@ -16,6 +16,9 @@ export function MyRequestsPage(): React.ReactElement {
   const app = useApp();
   const [requests, setRequests] = React.useState<PurchaseRequest[] | null>(null);
   const [creating, setCreating] = React.useState(false);
+  // The draft whose Delete was chosen, waiting for the confirmation (P-062).
+  const [deleting, setDeleting] = React.useState<PurchaseRequest | null>(null);
+  const [removing, setRemoving] = React.useState(false);
   const mounted = useMountedRef();
 
   React.useEffect(() => {
@@ -35,6 +38,22 @@ export function MyRequestsPage(): React.ReactElement {
     } catch (e) {
       if (mounted.current) setCreating(false);
       app.reportError(e);
+    }
+  };
+
+  const deleteDraft = async (r: PurchaseRequest): Promise<void> => {
+    setRemoving(true);
+    try {
+      await app.service.deleteRequest(r.id);
+      if (!mounted.current) return;
+      setRequests((all) => (all ? all.filter((x) => x.id !== r.id) : all));
+      setDeleting(null);
+      app.toast(`${r.requestNumber} deleted.`);
+    } catch (e) {
+      if (mounted.current) setDeleting(null);
+      app.reportError(e);
+    } finally {
+      if (mounted.current) setRemoving(false);
     }
   };
 
@@ -127,6 +146,7 @@ export function MyRequestsPage(): React.ReactElement {
                   <th className="num">To reimburse</th>
                   <th className="num">Request total</th>
                   <th>Last change</th>
+                  <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -150,6 +170,23 @@ export function MyRequestsPage(): React.ReactElement {
                       <td className="ctx-muted">
                         <DateTime value={r.lastChanged} />
                       </td>
+                      <td className="nowrap">
+                        {r.status === 'Draft' ? (
+                          <button
+                            className="ctx-btn ctx-btn-ghost ctx-btn-small ctx-row-delete"
+                            aria-label={`Delete ${r.requestNumber}`}
+                            onClick={(e) => {
+                              // The row itself opens the request; this button must not.
+                              e.stopPropagation();
+                              setDeleting(r);
+                            }}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          >
+                            <Icon name="trash" size={15} />
+                            Delete
+                          </button>
+                        ) : null}
+                      </td>
                     </tr>
                   );
                 })}
@@ -158,6 +195,27 @@ export function MyRequestsPage(): React.ReactElement {
           </div>
         )}
       </Card>
+      {deleting ? (
+        <Dialog
+          title={`Delete ${deleting.requestNumber}?`}
+          onClose={() => (removing ? undefined : setDeleting(null))}
+          actions={
+            <>
+              <button className="ctx-btn ctx-btn-secondary" onClick={() => setDeleting(null)} disabled={removing}>
+                Cancel
+              </button>
+              <button className="ctx-btn ctx-btn-danger" onClick={() => deleteDraft(deleting)} disabled={removing}>
+                Delete draft
+              </button>
+            </>
+          }
+        >
+          <p style={{ margin: 0 }}>
+            {deleting.businessPurpose.trim() ? `"${deleting.businessPurpose.trim()}" and its files` : 'This draft and its files'} will be deleted. It cannot be
+            restored from this app; an Owner can restore it from the site&apos;s recycle bin.
+          </p>
+        </Dialog>
+      ) : null}
     </>
   );
 }

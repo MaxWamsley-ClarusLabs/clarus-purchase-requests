@@ -38,7 +38,9 @@ export const INSTRUCTIONS: InstructionSection[] = [
       'Click New request. On Request details, enter your department and the business purpose in one line, for example "Lab supplies for the Phase 1 assay". The business purpose is also the name of the request.',
       `The project or grant code is optional. Type it${QUICK_PICKS}. Nothing is filled in for you.`,
       `Choose who buys it. ${BUYER_OPTIONS[0].label} is the usual choice and is chosen for you: you say what to buy, and the approver (the site Owners) approves it, buys it and finishes the request. Choose ${BUYER_OPTIONS[1].label} only when you will buy it and submit your own receipts.`,
-      'Everything saves automatically. You can leave and come back.'
+      'Everything saves automatically. You can leave and come back.',
+      "Started a request you do not need? On My requests, choose Delete at the end of the draft's row and confirm. Only drafts can be deleted, and only by the person who made them. A deleted draft goes to the site's recycle bin, from where an Owner can restore it.",
+      'The colored label on each request shows where it stands: Draft (light purple), Awaiting approval (amber), Approved (blue), Submitted (teal) or Purchased (purple), Returned (orange) and Processed (green).'
     ]
   },
   {

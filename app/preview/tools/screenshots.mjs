@@ -796,6 +796,43 @@ try {
   check(workbook.suggestedFilename() === 'Purchases_Ledger_2026-10-12.xlsx', 'Download Excel saves a file named for the day', workbook.suggestedFilename());
   await p.close();
 
+  // My requests: a Delete button on each draft, and a color for each status (P-062).
+  p = await open('jane', '#/', 1440, 900, 'reset=1');
+  await p.locator('tbody tr').first().waitFor();
+  const deleteButtons = p.getByRole('button', { name: /^Delete PR-/ });
+  const deletable = await deleteButtons.count();
+  const draftRows = await p
+    .locator('tbody tr')
+    .filter({ has: p.locator('.ctx-badge', { hasText: /^Draft$/ }) })
+    .count();
+  check(
+    deletable >= 1 && deletable === draftRows,
+    'Every draft row has a Delete button, and no other row has one',
+    `${deletable} buttons, ${draftRows} drafts`
+  );
+  const colors = await p.$$eval('tbody tr .ctx-badge', (els) => els.map((el) => [el.textContent.trim(), getComputedStyle(el).backgroundColor]));
+  const byLabel = new Map(colors);
+  const distinct = new Set(byLabel.values()).size;
+  check(
+    byLabel.size >= 4 && distinct === byLabel.size,
+    'Each status shown on My requests has its own color',
+    [...byLabel].map(([k, v]) => `${k} ${v}`).join('; ')
+  );
+  await shot(p, '01-my-requests');
+  const firstDelete = deleteButtons.first();
+  const draftNumber = (await firstDelete.getAttribute('aria-label')).replace('Delete ', '');
+  await firstDelete.click();
+  await p.getByRole('heading', { name: `Delete ${draftNumber}?` }).waitFor();
+  check(p.url().endsWith('#/'), 'Delete does not open the request');
+  await shot(p, '48-delete-draft-dialog', false);
+  await p.getByRole('button', { name: 'Cancel' }).click();
+  check((await deleteButtons.count()) === deletable, 'Cancel keeps the draft');
+  await firstDelete.click();
+  await p.getByRole('button', { name: 'Delete draft' }).click();
+  await p.getByText(`${draftNumber} deleted.`).waitFor();
+  check((await deleteButtons.count()) === deletable - 1, 'Delete draft removes the row');
+  await p.close();
+
   // An employee cannot open it, and an administrator can.
   p = await open('jane', '#/ledger');
   check(await p.getByRole('heading', { name: 'My requests' }).first().isVisible(), 'An employee who opens the Ledger address is shown My requests');

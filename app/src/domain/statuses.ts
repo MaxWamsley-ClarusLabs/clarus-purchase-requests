@@ -3,22 +3,25 @@
 import { ApprovalState, LineApprovalStatus } from './purchaseRules';
 import { BuyerId, CurrentUser, PackageStatus, PurchaseRequest, RequestStatus, Submission, SubmissionType } from './types';
 
-export type BadgeTone = 'lavender' | 'purple' | 'amber' | 'green' | 'red';
+export type BadgeTone = 'lavender' | 'purple' | 'amber' | 'green' | 'red' | 'blue' | 'teal' | 'orange';
 
 export const REQUEST_STATUS_DISPLAY: Record<RequestStatus, { label: string; tone: BadgeTone; help: string }> = {
   Draft: { label: 'Draft', tone: 'lavender', help: 'Being prepared. Saved automatically.' },
   'Awaiting approval': { label: 'Awaiting approval', tone: 'amber', help: 'Sent to the approver. Read-only until it is approved or returned.' },
-  Approved: { label: 'Approved', tone: 'green', help: 'Approved. Buy, attach your receipts and submit.' },
-  Submitted: { label: 'Submitted', tone: 'purple', help: 'Sent for processing. Read-only until processed or returned.' },
-  Returned: { label: 'Returned', tone: 'amber', help: 'Sent back with a note. Correct it and send or submit it again.' },
+  Approved: { label: 'Approved', tone: 'blue', help: 'Approved. Buy, attach your receipts and submit.' },
+  Submitted: { label: 'Submitted', tone: 'teal', help: 'Sent for processing. Read-only until processed or returned.' },
+  Returned: { label: 'Returned', tone: 'orange', help: 'Sent back with a note. Correct it and send or submit it again.' },
   Processed: { label: 'Processed', tone: 'green', help: 'Filed and entered. Closed.' }
 };
 
 export const REQUEST_STATUSES = Object.keys(REQUEST_STATUS_DISPLAY) as RequestStatus[];
 
+// Each request status has its own color (P-062): Draft light purple, Awaiting approval amber, Approved blue, Submitted teal,
+// Purchased purple, Returned orange, Processed green. The approval and package badges below keep their own tones.
+
 /** What differs when the approver buys (P-037): the employee does not buy or submit, and Submitted reads as Purchased. */
 const APPROVER_BUYS_DISPLAY: Partial<Record<RequestStatus, { label: string; tone: BadgeTone; help: string }>> = {
-  Approved: { label: 'Approved', tone: 'green', help: 'Approved. The approver buys it, attaches the receipt and finishes the request.' },
+  Approved: { label: 'Approved', tone: 'blue', help: 'Approved. The approver buys it, attaches the receipt and finishes the request.' },
   Submitted: { label: 'Purchased', tone: 'purple', help: 'Bought by the approver and sent for processing. Read-only until processed or returned.' }
 };
 

@@ -68,6 +68,7 @@ All at 1440 pixels wide (a typical laptop) unless noted.
 | `45-ledger-posted.png` | The Posted tab after a line was marked Posted: who and when, and the line locked (P-056) |
 | `46-ledger-changed.png` | The warning for a Posted line whose amount changed after posting: the banner, the red "Changed since posted: was, now" note, and the Show only list (P-060) |
 | `47-ledger-apply-to-selected.png` | Lines ticked, with the Apply to selected bar: an account and a class for every ticked line that is not Posted, and the note boxes (P-060) |
+| `48-delete-draft-dialog.png` | The confirmation when Delete is chosen on a draft row of My requests (P-062). `01-my-requests.png` now shows the Delete buttons and the status colors |
 | `41-recording-a-purchase.png` | The administrator recording a purchase they already made (P-051) |
 | `42-recorded-under-process.png` | The recorded purchase under Requests to process (P-051) |
 | `35-buying-purchases.png` | Max buying: he changed row 1 to the real amount, attached an invoice to each row, and typed the vendor's shipping in its Shipping box, which made a Shipping row that shares the first invoice. "As sent for approval" keeps what Jane asked for |

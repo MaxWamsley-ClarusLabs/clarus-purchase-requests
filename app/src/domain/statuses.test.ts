@@ -20,6 +20,21 @@ describe('request statuses (P-006, P-027)', () => {
     for (const s of REQUEST_STATUSES) expect(REQUEST_STATUS_DISPLAY[s].label.length).toBeGreaterThan(0);
   });
 
+  it('shows every status in its own color (P-062)', () => {
+    const tones = REQUEST_STATUSES.map((s) => REQUEST_STATUS_DISPLAY[s].tone);
+    expect(new Set(tones).size).toBe(tones.length);
+    expect(REQUEST_STATUS_DISPLAY.Approved.tone).toBe('blue');
+    expect(REQUEST_STATUS_DISPLAY.Submitted.tone).toBe('teal');
+    expect(REQUEST_STATUS_DISPLAY.Returned.tone).toBe('orange');
+    // Purchased (the approver bought it) is purple and Approved stays blue when the approver buys.
+    expect(requestStatusDisplay('Submitted', 'approver').tone).toBe('purple');
+    expect(requestStatusDisplay('Approved', 'approver').tone).toBe('blue');
+    expect(
+      new Set([requestStatusDisplay('Approved', 'approver').tone, requestStatusDisplay('Submitted', 'approver').tone, REQUEST_STATUS_DISPLAY.Processed.tone])
+        .size
+    ).toBe(3);
+  });
+
   it('the employee can edit a Draft, Returned or Approved request only', () => {
     expect(REQUEST_STATUSES.filter((status) => isEditable(status))).toEqual(['Draft', 'Approved', 'Returned']);
   });

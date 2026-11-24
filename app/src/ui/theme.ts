@@ -143,6 +143,9 @@ export const THEME_CSS = `
 .ctx-badge.amber { background: #fff7e6; color: var(--c-warning); }
 .ctx-badge.green { background: #e7f6ee; color: var(--c-success); }
 .ctx-badge.red { background: #fdecea; color: var(--c-error); }
+.ctx-badge.blue { background: #e6f0fb; color: #1a5fa8; }
+.ctx-badge.teal { background: #e0f5f3; color: #0f6b66; }
+.ctx-badge.orange { background: #fdeee0; color: #a8500a; }
 .ctx-tag { display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 8px; font-weight: 700; font-size: 0.7rem; white-space: nowrap; }
 .ctx-tag.amber { background: #fff7e6; color: var(--c-warning); border: 1px solid #f3dcae; }
 .ctx-tag.lavender { background: var(--c-lavender); color: var(--c-purple); }
@@ -313,6 +316,8 @@ select.ctx-cell { cursor: pointer; appearance: auto; }
 .ctx-ledger-table td a { overflow-wrap: anywhere; }
 .ctx-ledger-table td { padding-left: 7px; padding-right: 7px; }
 .ctx-ledger-done td { background: #fafcfa; }
+.ctx-row-delete { color: var(--c-error); white-space: nowrap; }
+.ctx-row-delete:hover:not(:disabled) { background: #fdecea; }
 .ctx-ledger-more { margin-top: 10px; display: flex; justify-content: center; }
 .ctx-ledger-note { display: block; width: 100%; margin-top: 5px; padding: 4px 8px; font-size: 0.8rem; border: 1px solid var(--c-border); border-radius: 8px; background: #fff; color: var(--c-text); }
 .ctx-ledger-note:placeholder-shown { border-style: dashed; color: var(--c-muted); }

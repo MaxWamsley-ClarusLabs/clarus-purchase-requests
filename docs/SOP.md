@@ -46,6 +46,8 @@ This app replaces the Word purchase request form and posting it in the Purchasin
 - The project or grant code is optional. Type it or click the quick pick ("NSF SBIR Phase 1 (Award # 2528301)"). Nothing is filled in for you.
 - Choose who buys it. The approver buys it is the usual choice and is chosen for you: you say what to buy, and the approver (the site Owners) approves it, buys it and finishes the request. Choose I will buy it myself only when you will buy it and submit your own receipts.
 - Everything saves automatically. You can leave and come back.
+- Started a request you do not need? On My requests, choose Delete at the end of the draft's row and confirm. Only drafts can be deleted, and only by the person who made them. A deleted draft goes to the site's recycle bin, from where an Owner can restore it.
+- The colored label on each request shows where it stands: Draft (light purple), Awaiting approval (amber), Approved (blue), Submitted (teal) or Purchased (purple), Returned (orange) and Processed (green).
 
 ### When the approver buys it
 
@@ -368,3 +370,5 @@ To be completed from the test-site runs at the checkpoint. These messages are wr
 | 2026-11-16 | 17 | The Ledger (Part D), the receipt archive and the nightly backup (B3, B9, D4 to D6); Part A regenerated (account numbers in the category list, For bookkeepers: the Ledger); Part C gained five Ledger refusals; P-052 to P-059 |
 | 2026-11-17 | 17 | Ledger polish folded into the same version: notes, the changed-since-posted warning, Apply to selected, Show only and Sort by, the Administrator decides tag, the sidebar count (D1, D2, D2a); Part A regenerated; Part C gained the note-length refusal; P-060 |
 | 2026-11-22 | 17 | D5 gained the Owner route for a bookkeeper (what an Owner can also do, and the new flow package); the Owners today; P-061 |
+| 2026-11-24 | 18 | Part A regenerated (Delete on My requests, the status colors); P-062 |
+

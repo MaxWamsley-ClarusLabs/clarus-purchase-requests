@@ -247,3 +247,18 @@ Max asked what else would make the app clean and polished for bookkeeping. Claud
 - Max installed 1.0.3.0 on the real site (reported in chat): the package replaced the old one, Set-up showed all three lists Ready, and all requests matched what he had recorded. The Ledger count showed 20 lines not posted. The flow replacement was started and is not finished.
 - Max made TyWamsley an Owner for bookkeeping. `docs/SOP.md` (the Owners today, D5 item 4 and the revision table) and `docs/DECISIONS.md` (P-061) record it, with the consequence that the flow package is made again after adding an Owner. No code changed; no outside system read or written by Claude in this entry. Earlier today Claude read the Folder Map and Filing Change Log once, and created and updated records in Internal Records, at Max's request (the exception to the connector rule is Max's, 2026-11-21).
 
+## 2026-11-24. Delete on My requests and a color for each status (version 1.0.4.0, P-062)
+
+Max asked for a Delete button on each draft row of My requests, and for the status labels not to all be purple. No outside system read or written.
+
+| What | Files | Why |
+|---|---|---|
+| **Decision** P-062 | `docs/DECISIONS.md` | Records what was decided and the one thing left alone (the receipt rule) |
+| **Delete** | `ui/pages/MyRequestsPage.tsx` (Delete button on draft rows, confirmation, row stays closed), `ui/pages/RequestWorkspace.tsx` (the dialog wording now matches the recycle bin) | The delete already existed inside a draft; the list had no way to reach it |
+| **Colors** | `domain/statuses.ts` (Approved blue, Submitted teal, Returned orange), `ui/theme.ts` (three badge colors), `domain/statuses.test.ts` (every status has its own tone) | Approved and Processed were both green, Submitted and Purchased both purple, Awaiting approval and Returned both amber |
+| **Version and steps** | `config/package-solution.json` (1.0.4.0), `docs/UPDATE_1.0.4.0.md` | No Set-up step, no new columns, flows untouched |
+| **Records** | `app/src/content/instructions.ts`, `docs/SOP.md` (Part A regenerated, revision row), `docs/prototype/README.md` | So the instructions say how to delete a draft and what the colors mean |
+| **Browser checks** | `preview/tools/screenshots.mjs` (a Delete on every draft row and none elsewhere, Cancel keeps it, Delete removes it, each status color differs; screenshot 48) | Proved in a real browser |
+
+- **Unverified:** both on the real site (checked only in the preview). Steps 6 and 7 of `docs/UPDATE_1.0.4.0.md` check them.
+

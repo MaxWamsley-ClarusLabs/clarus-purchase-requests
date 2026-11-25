@@ -8,7 +8,7 @@ import { Icon } from '../../components/Icon';
 import { RecordPurchaseButton } from '../../components/RecordPurchaseButton';
 import { latestByRequest, requestsToProcess } from './adminData';
 import { useAdminLists } from './useAdminLists';
-import { FILING_PLACE_TEXT, LIVE_REQUESTS_PATH_TEXT } from '../../../export/outputDestination';
+import { FILING_LOCATION, FILING_PLACE_TEXT, LIVE_REQUESTS_PATH_TEXT } from '../../../export/outputDestination';
 
 export function RequestsToProcessPage(): React.ReactElement {
   const app = useApp();
@@ -83,7 +83,8 @@ export function RequestsToProcessPage(): React.ReactElement {
         )}
       </Card>
       <div className="ctx-hint">
-        After processing a request: move its folder from Purchases_To_Process into {FILING_PLACE_TEXT}, then open the request here and click Mark processed.
+        After processing a request: move its folder from Purchases_To_Process into {FILING_PLACE_TEXT} &gt; Accounting [year] &gt; {FILING_LOCATION.subfolder}{' '}
+        (the year it was bought), then open the request here and click Mark processed. The request page has both links.
       </div>
     </>
   );

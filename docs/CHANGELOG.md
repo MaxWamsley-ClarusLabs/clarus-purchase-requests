@@ -291,3 +291,20 @@ Max asked for the flow's output to leave the Executive Team site (retired). Afte
 
 - **Unverified, to be checked at the Test flow:** that a missing or unreadable folder answers `Exists` false, and that Edit access is enough to make a request's folders.
 
+## 2026-11-25. Version 1.0.6.0: the filing reminder (P-065)
+
+- **Read (outside systems):** attached `MaxWamsley-ClarusLabs/clarus-travel-expense` read only and cloned branch `claude/serene-clarke-xkv7hy` (shallow, head c99a53d, not ef0dc62; the file `app/src/export/outputLocation.ts`, the flow's email and the report page were read, nothing else was needed) to copy the filing reminder. Read the local copy of the `clarus-purchase-request-processing` skill (its Decisions line of 2026-10-06 and gap rules) to write the replacement text. No Microsoft 365 connector was used for this change; nothing was written outside this repository.
+
+| What | Files | Why |
+|---|---|---|
+| **Decision** P-065 | `docs/DECISIONS.md` | Where requests are filed and where the reminder shows |
+| **The filing place, in one place** | `app/src/export/outputDestination.ts` (`FILING_LOCATION`, `filingFolderLabel`, `filingFolderUrl`, `filingYearOf`, `safeFolderLink`) | Internal Records address and the `Accounting <year> / Purchase Requests` pattern |
+| **The email** | `app/src/export/flowPackage.ts` | A "When processed, move it to:" line; the year is the first four characters of the cleaned folder name (`isInt`), else `Accounting and Receipts` |
+| **The request page** | `app/src/ui/pages/admin/AdminRequestPage.tsx`, `RequestsToProcessPage.tsx` | Folder and filing links in the purple box; Mark processed first shows a box with both links and the copy note; the email preview shows the new line |
+| **Tests** | `export/flowPackage.test.ts`, `flow/example/*.json`, `preview/tools/screenshots.mjs` | Year and link tests; every SharePoint action stays on the app or output site and the Internal Records address is only in the email; link safety; the browser script checks the links and the box (new screenshot `18b-mark-processed-dialog`) |
+| **Version and steps** | `config/package-solution.json` (1.0.6.0), `docs/UPDATE_1.0.6.0.md`, `docs/CHECKPOINT.md` (Part 12) | One package replaces 1.0.5.0 (which was never installed) |
+| **Records** | `docs/SOP.md` (B3, B5, B9a item 6, revision history), `flow/FLOW.md`, `docs/PROCESSING_SKILL_UPDATE.md` (Edit 7, and the backup path fixed), `docs/QUICKBOOKS_HANDOFF.md`, `CLAUDE.md`, `docs/STATUS.md` | The filing place named everywhere the old paths were |
+
+- **Checked:** format, type check, 941 unit tests (934 under Jest in the build), the package checker, `npm run build` (package version 1.0.6.0 confirmed inside the `.sppkg`), 181 browser checks, no browser errors, no em or en dashes.
+- **Unverified, to be checked at the Test flow:** the `isInt`/`substring` year expression, and that the link opens for the person who files.
+

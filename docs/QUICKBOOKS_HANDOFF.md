@@ -42,7 +42,7 @@ Do not build or change the purchase app, its flow, its SharePoint lists or its c
 
 Employees enter purchase requests in a SharePoint app. Most purchases (about 95%) are bought by the approver, Max, who approves, buys, attaches the receipt and chooses Mark purchased. When an employee buys instead, a vendor total of $500 or more goes to Max first, and the employee submits after buying with receipts attached. In both cases a Power Automate flow then creates a request folder and emails Max.
 
-**Where:** Forms and Apps site, `Documents / App Output / Purchases_To_Process / <request folder>` (since app version 1.0.5.0, P-064; the Executive Team site is retired, and earlier folders PR-0006 to PR-0013 stay there). After processing, Max moves the folder into Internal Records > Accounting and Receipts. The request is then marked Processed in the app. Both of those are Max's steps (SOP Part B5).
+**Where:** Forms and Apps site, `Documents / App Output / Purchases_To_Process / <request folder>` (since app version 1.0.5.0, P-064; the Executive Team site is retired, and earlier folders PR-0006 to PR-0013 stay there). After processing, Max moves the folder into Internal Records > Accounting and Receipts > Accounting [year] > Purchase Requests (year of the earliest purchase date, the first four characters of the folder name; the app and the submission email link to it, version 1.0.6.0, P-065). The request is then marked Processed in the app. Both of those are Max's steps (SOP Part B5).
 
 **Folder name:** `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042`. The date is the earliest purchase date. A corrected resubmission adds `_R2`, `_R3`. The request number is `PR-` plus four digits.
 
@@ -145,7 +145,7 @@ If the connector cannot set the account, the honest fallback is option A in sect
 3. Check the connector (section 8) and report what it can and cannot do.
 4. Choose one request folder with Max (or use a synthetic one he gives you). Read its CSV and build a table: one line per row, with the QuickBooks account, memo, amount, payment account and any Warnings or open decisions. Show it to Max. Do not write.
 5. When Max approves, enter one test entry (or hand him the sheet), read it back, and show him.
-6. Repeat per request. After each, tell Max the folder is ready to move to `Purchases/<year>/` and the request is ready to Mark processed in the app. He does both. Do not move the folder yourself unless he tells you to.
+6. Repeat per request. After each, tell Max the folder is ready to move to `Accounting <year> / Purchase Requests` in Internal Records (the app's request page and email link there) and the request is ready to Mark processed in the app. He does both. Do not move the folder yourself unless he tells you to.
 7. At the end, write a one-page summary of how the process works, for the SOP, in plain language, for Max to review.
 
 "Done" for a request means: every row entered once, with the right account, the amount matching the CSV, the request number in the memo, nothing guessed, every Warning shown to Max, and Max told what is left for him.

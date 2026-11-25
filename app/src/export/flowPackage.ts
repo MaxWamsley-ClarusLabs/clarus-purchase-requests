@@ -22,7 +22,7 @@
 // does not pass is not made.
 
 import { buildZip } from './zip';
-import { OUTPUT_DESTINATION, folderText, landingFolders } from './outputDestination';
+import { FILING_LOCATION, OUTPUT_DESTINATION, folderText, landingFolders } from './outputDestination';
 
 export type FlowMode = 'test' | 'live';
 
@@ -388,10 +388,18 @@ function definitionOf(config: CheckedFlowConfig): Record<string, unknown> {
   pkg.Check_report_folder = http(config, 'GET', existsUri({ expression: reportFolderServerPath }), { Check_archive_root: OK });
 
   const summaryHtml = `@{${htmlTextExpression("triggerBody()?['EmailSummary']")}}`;
+  // Where to file it after processing (P-065): the purchase year is the first four characters of the cleaned folder name
+  // (naming.ts). Only a link in the email; the flow never reads or writes there, and the year folder is made by hand.
+  const year = `if(and(greaterOrEquals(length(${safeName}), 4), isInt(substring(${safeName}, 0, 4))), substring(${safeName}, 0, 4), '')`;
+  const filingBase = encodeURI(FILING_LOCATION.baseUrl);
+  const filingSuffix = encodeURI('/' + FILING_LOCATION.yearFolder('YEAR')).split('YEAR');
+  const filingLink = `if(empty(${year}), ${lit(filingBase)}, concat(${lit(filingBase + filingSuffix[0])}, ${year}, ${lit(filingSuffix[1])}))`;
+  const filingText = `if(empty(${year}), 'Accounting and Receipts', concat('Accounting ', ${year}, ' / ${FILING_LOCATION.subfolder}'))`;
   const heading = "@{if(greater(triggerBody()?['SubmissionNumber'], 1), 'Purchase request resubmitted', 'Purchase request submitted')}";
   const notification =
     `<div style="${EMAIL_STYLE}"><h3>${heading}</h3><p>${summaryHtml}</p>` +
     `<p><b>Folder:</b> <a href="@{${folderLink}}">@{${safeName}}</a><br>` +
+    `<b>When processed, move it to:</b> <a href="@{${filingLink}}">@{${filingText}}</a> in Internal Records (create the folder first if it is not there)<br>` +
     `<b>All requests waiting:</b> <a href="${landingLink}">${landing.split('/').pop()}</a><br>` +
     `<b>Open the request in Purchase Requests:</b> <a href="${requestLink}">Purchase Requests</a></p></div>`;
   const reportLabel = "@{coalesce(triggerBody()?['Title'], 'a purchase request')}";

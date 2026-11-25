@@ -1,5 +1,7 @@
 # Updating the Purchase Requests app to version 1.0.5.0 (the flows write to App Output)
 
+> **Superseded 2026-11-25:** version 1.0.6.0 contains all of this and adds the filing reminder. Follow these steps, but upload the 1.0.6.0 package and read `docs/UPDATE_1.0.6.0.md` first.
+
 For Max. About 45 minutes, in four parts. **No list changes and no Set-up "Update the lists" step**: nothing stored changes and the three lists are untouched. The two flow packages **must be made again and imported again**, because the destination is written into them. Do this instead of install step 8 of the earlier plan (the old flow replacement): turn off the old flow once, here.
 
 ## What is in 1.0.5.0 (P-064)

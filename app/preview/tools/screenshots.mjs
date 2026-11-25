@@ -531,7 +531,24 @@ try {
     'The CSV names the QuickBooks account, number and name, on each row'
   );
   await p.getByRole('tab', { name: 'Purchases' }).click();
+  const filingLink = p.getByRole('link', { name: /Internal Records > Accounting and Receipts > Accounting \d{4} > Purchase Requests/ });
+  check((await filingLink.count()) === 1, 'The request page links to the purchase year folder in Internal Records');
+  check(
+    ((await filingLink.getAttribute('href')) ?? '').includes('claruslabsusa-my.sharepoint.com') && (await filingLink.getAttribute('target')) === '_blank',
+    'The filing link opens Internal Records in a new tab'
+  );
   await p.getByRole('button', { name: 'Mark processed' }).click();
+  const processedDialog = p.getByRole('dialog');
+  await processedDialog.getByText('Folder to move:').waitFor();
+  check(
+    (await processedDialog.getByRole('link', { name: /Accounting \d{4} > Purchase Requests/ }).count()) === 1,
+    'Mark processed first reminds Max where to file the folder'
+  );
+  await shot(p, '18b-mark-processed-dialog', false);
+  await processedDialog.getByRole('button', { name: 'Cancel' }).click();
+  check((await header(p).getByText('Purchased', exact).count()) === 1, 'Cancel leaves the request Purchased');
+  await p.getByRole('button', { name: 'Mark processed' }).click();
+  await p.getByRole('dialog').getByRole('button', { name: 'Mark processed', exact: true }).click();
   await p.getByText('PR-0041 marked processed.').waitFor();
   await header(p).getByText('Processed', exact).waitFor();
   check(true, 'Max marked PR-0041 processed: Processed');

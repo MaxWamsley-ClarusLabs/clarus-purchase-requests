@@ -17,6 +17,7 @@ import {
   lit
 } from './flowPackage';
 import { LISTS, PACKAGE_STATUSES, SUBMISSION_TYPE_LABELS } from '../data/sharepoint/schema';
+import { FILING_LOCATION, filingFolderLabel, filingFolderUrl, filingYearOf, safeFolderLink } from './outputDestination';
 import { crc32 } from './zip';
 
 const live: FlowConfig = {
@@ -86,6 +87,14 @@ function groupsOf(json: string, pattern: RegExp): string[] {
 const build = (config: FlowConfig): FlowDefinition => buildFlowDefinition(config) as unknown as FlowDefinition;
 const approvalMailOf = (config: FlowConfig): FlowAction =>
   inside(inside(build(config).actions.If_this_is_an_approval_request).Approval_email).Send_approval_email;
+
+/** Every action that is not an email, as one text: what the flow does to SharePoint, without the words it sends. */
+function withoutEmails(config: FlowConfig): string {
+  return walk(build(config).actions)
+    .filter((f) => !f.action.actions && !f.action.else && operationOf(f) !== 'SendEmailV2')
+    .map((f) => JSON.stringify(f.action))
+    .join('\n');
+}
 
 /** Every text value in a definition, at any depth, keys included (an If's operands sit in arrays). */
 function textsIn(value: unknown, found: string[] = []): string[] {
@@ -473,7 +482,8 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
       const test = JSON.stringify(build(testSite));
       expect(test).toContain('/sites/FormsAndApps/Shared Documents/Purchases_Test/Purchases_To_Process');
       expect(test).not.toContain('App Output');
-      expect(test).not.toContain('Accounting');
+      // Only the email links to Accounting and Receipts in Internal Records (P-065); no SharePoint action does.
+      expect(withoutEmails(testSite)).not.toContain('Accounting');
       expect(test).not.toContain('ExecutiveTeam');
     });
   });
@@ -534,13 +544,16 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
         expect(json).not.toMatch(/travel|\btrips?\b/i);
       }
       // The retired Executive Team site and its Accounting folders are never named (P-064).
-      for (const json of [text, JSON.stringify(build(testSite))]) expect(json).not.toMatch(/ExecutiveTeam|Accounting/);
+      for (const json of [text, JSON.stringify(build(testSite))]) expect(json).not.toMatch(/ExecutiveTeam/);
+      // The email links to Accounting and Receipts in Internal Records (P-065); no SharePoint action names it.
+      for (const config of [live, testSite]) expect(withoutEmails(config)).not.toContain('Accounting');
     });
 
     it('talks only to the configured sites, the flow run page and the schema', () => {
       const hosts = [live.siteUrl, live.destinationSiteUrl, live.appPageUrl].map((url) => new URL(url).host);
       expect(groupsOf(text, /https?:\/\/([^/'"\\\s]+)/g).sort()).toEqual(
-        [...new Set([...hosts, 'make.powerautomate.com', 'schema.management.azure.com'])].sort()
+        // The Internal Records link in the submission email is the only address that is not a configured site (P-065).
+        [...new Set([...hosts, 'claruslabsusa-my.sharepoint.com', 'make.powerautomate.com', 'schema.management.azure.com'])].sort()
       );
     });
 
@@ -559,6 +572,73 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
       for (const f of writers) expect(String(f.action.inputs?.parameters?.dataset)).toBe(live.destinationSiteUrl);
       expect(writers.every((f) => walk(packagingBranch).some((g) => g.action === f.action))).toBe(true);
     });
+  });
+});
+
+describe('filing after processing (P-065)', () => {
+  const filingHost = 'claruslabsusa-my.sharepoint.com';
+
+  it('links to Accounting <year> / Purchase Requests in Internal Records, by the purchase year', () => {
+    expect(filingFolderLabel('2026')).toBe('Internal Records > Accounting and Receipts > Accounting 2026 > Purchase Requests');
+    expect(filingFolderUrl('2026')).toBe(
+      'https://claruslabsusa-my.sharepoint.com/personal/maxwamsley_claruslabsusa_com/Documents/Clarus%20Labs%20-%20Internal%20Records/Accounting%20and%20Receipts/Accounting%202026/Purchase%20Requests'
+    );
+    expect(FILING_LOCATION.yearFolder('2027')).toBe('Accounting 2027/Purchase Requests');
+  });
+
+  it('falls back to Accounting and Receipts when the folder name does not start with a year', () => {
+    expect(filingFolderUrl('')).toMatch(/Accounting%20and%20Receipts$/);
+    expect(filingFolderLabel('')).toBe('Internal Records > Accounting and Receipts');
+    expect(filingYearOf('2026-11-03_Jane-Doe_Lab-supplies_PR-0042')).toBe('2026');
+    expect(filingYearOf('PR-0042')).toBe('');
+    expect(filingYearOf('20x6-11-03_Jane')).toBe('');
+    expect(filingYearOf('')).toBe('');
+  });
+
+  it('puts the filing link in the submission email, the year taken from the cleaned folder name', () => {
+    const text = JSON.stringify(buildFlowDefinition(live));
+    expect(text).toContain('When processed, move it to:');
+    expect(text).toContain("isInt(substring(outputs('Safe_folder_name'), 0, 4))");
+    expect(text).toContain('Accounting%20and%20Receipts/Accounting%20');
+    expect(text).toContain('/Purchase%20Requests');
+    expect(text).toContain("' / Purchase Requests'");
+  });
+
+  it('only links to Internal Records: the one email says so, and no other action mentions it', () => {
+    const found = walk(build(live).actions);
+    const mentioning = found.filter((f) => !f.action.actions && !f.action.else && JSON.stringify(f.action).includes(filingHost));
+    expect(mentioning.map((f) => f.name)).toEqual(['Send_notification']);
+    expect(operationOf(mentioning[0])).toBe('SendEmailV2');
+    // The link sits only inside the email body, never in an address a SharePoint action uses.
+    expect(JSON.stringify(mentioning[0].action.inputs?.parameters ?? {}).split(filingHost).length - 1).toBeGreaterThan(0);
+  });
+
+  it('keeps every SharePoint action on the app site or the output site, never on Internal Records', () => {
+    for (const config of [live, testSite]) {
+      const allowed = new Set([config.siteUrl, config.destinationSiteUrl]);
+      for (const f of walk(build(config).actions)) {
+        const op = operationOf(f);
+        if (!op || op === 'SendEmailV2') continue;
+        const dataset = String(f.action.inputs?.parameters?.dataset);
+        expect(allowed.has(dataset)).toBe(true);
+        expect(dataset).not.toContain(filingHost);
+        if (op === 'HttpRequest') {
+          // A relative REST address on the dataset's own site: it cannot name another site.
+          expect(param(f.action, 'parameters/uri')).toMatch(/^_api\/web\//);
+        }
+      }
+    }
+  });
+
+  it('shows a stored folder link only when it is a plain https address on the Clarus SharePoint site', () => {
+    expect(safeFolderLink('https://claruslabsusa.sharepoint.com/sites/FormsandApps/Shared%20Documents/App%20Output/Purchases_To_Process/x')).toMatch(/^https:/);
+    expect(safeFolderLink('http://claruslabsusa.sharepoint.com/x')).toBeNull();
+    expect(safeFolderLink('https://evil.example.com/x')).toBeNull();
+    expect(safeFolderLink('https://claruslabsusa.sharepoint.com.evil.example.com/x')).toBeNull();
+    expect(safeFolderLink('https://user:pass@claruslabsusa.sharepoint.com/x')).toBeNull();
+    expect(safeFolderLink('javascript:alert(1)')).toBeNull();
+    expect(safeFolderLink('App Output > Purchases_To_Process > 2026-11-03_x')).toBeNull();
+    expect(safeFolderLink('')).toBeNull();
   });
 });
 

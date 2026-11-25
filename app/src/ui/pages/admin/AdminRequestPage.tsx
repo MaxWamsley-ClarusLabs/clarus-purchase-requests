@@ -38,7 +38,7 @@ import { SentRowsCard } from '../../components/SentRowsCard';
 import { VendorTotals } from '../../components/VendorTotals';
 import { changedMessages, vendorRows } from '../../vendorRows';
 import { latestSubmission } from './adminData';
-import { FILING_PLACE_TEXT, LIVE_REQUESTS_PATH_TEXT } from '../../../export/outputDestination';
+import { LIVE_REQUESTS_PATH_TEXT, filingFolderLabel, filingFolderUrl, filingYearOf, safeFolderLink } from '../../../export/outputDestination';
 
 /** Reads the app's own CSV back into rows for the preview. */
 function parseCsv(text: string): string[][] {
@@ -106,7 +106,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
   const [submissions, setSubmissions] = React.useState<Submission[]>([]);
   const [csv, setCsv] = React.useState('');
   const [tab, setTab] = React.useState<Tab>('purchases');
-  const [dialog, setDialog] = React.useState<'return' | 'approve' | null>(null);
+  const [dialog, setDialog] = React.useState<'return' | 'approve' | 'processed' | null>(null);
   const [returnNote, setReturnNote] = React.useState('');
   const [approveNote, setApproveNote] = React.useState('');
   // Categories the approver or administrator has changed on screen and not yet confirmed, by line ID (P-024).
@@ -317,7 +317,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
                   className="ctx-btn ctx-btn-primary"
                   disabled={busy || toReview.length > 0}
                   title={toReview.length > 0 ? `Confirm the category of ${rowsPhrase(toReview)} first` : undefined}
-                  onClick={() => act(() => app.service.markProcessed(request.id), `${request.requestNumber} marked processed.`)}
+                  onClick={() => setDialog('processed')}
                 >
                   <Icon name="check" size={16} />
                   Mark processed
@@ -423,9 +423,10 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
         <div className="ctx-banner purple">
           <Icon name="folder" />
           <div>
-            <strong>Folder:</strong> <span className="ctx-code">{`${TO_PROCESS} > ${latestPackage.folderName}`}</span>
+            <strong>Folder to move:</strong> <FolderLink link={latestPackage.folderLink} name={latestPackage.folderName} />
             <br />
-            When you have processed it, move the folder into <span className="ctx-code">{FILING_PLACE_TEXT}</span> and click Mark processed.
+            <strong>When you have processed it, move it to:</strong> <FilingLink folderName={latestPackage.folderName} /> (create the year folder first if it is
+            not there), then click Mark processed.
           </div>
         </div>
       ) : null}
@@ -662,6 +663,8 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
               <p>
                 <strong>Folder:</strong> {TO_PROCESS} &gt; {latestPackage.folderName} (link)
                 <br />
+                <strong>When processed, move it to:</strong> {filingFolderLabel(filingYearOf(latestPackage.folderName))} (link)
+                <br />
                 <strong>All requests waiting:</strong> {TO_PROCESS} (link)
                 <br />
                 <strong>Open the request in Purchase Requests</strong> (link)
@@ -766,6 +769,42 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
           </div>
         </Dialog>
       ) : null}
+      {dialog === 'processed' ? (
+        <Dialog
+          title={`Mark ${request.requestNumber} processed?`}
+          onClose={() => setDialog(null)}
+          actions={
+            <>
+              <button className="ctx-btn ctx-btn-secondary" onClick={() => setDialog(null)}>
+                Cancel
+              </button>
+              <button
+                className="ctx-btn ctx-btn-primary"
+                onClick={() => {
+                  setDialog(null);
+                  void act(() => app.service.markProcessed(request.id), `${request.requestNumber} marked processed.`);
+                }}
+              >
+                Mark processed
+              </button>
+            </>
+          }
+        >
+          <p style={{ margin: 0 }}>The app does not file the folder. You move it by hand.</p>
+          {latestPackage && latestPackage.packageStatus === 'Packaged' ? (
+            <p style={{ margin: 0 }}>
+              <strong>Folder to move:</strong> <FolderLink link={latestPackage.folderLink} name={latestPackage.folderName} />
+              <br />
+              <strong>Move it to:</strong> <FilingLink folderName={latestPackage.folderName} /> (create the year folder first if it is not there)
+            </p>
+          ) : (
+            <p style={{ margin: 0 }}>This request has no packaged folder to move.</p>
+          )}
+          <p className="ctx-hint" style={{ margin: 0 }}>
+            Moving a folder between Forms and Apps and Internal Records is a copy: check the copy opens and has every file, then delete the original.
+          </p>
+        </Dialog>
+      ) : null}
       {dialog === 'return' ? (
         <Dialog
           title={`Return ${request.requestNumber} to ${returnTo}`}
@@ -823,5 +862,27 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
         />
       ) : null}
     </>
+  );
+}
+
+/** The request folder, linked only when the stored link is a safe SharePoint address (travel D-002); otherwise its path as text. */
+function FolderLink(props: { link: string; name: string }): React.ReactElement {
+  const href = safeFolderLink(props.link);
+  return href ? (
+    <a className="ctx-code" href={href} target="_blank" rel="noopener noreferrer">
+      {props.name}
+    </a>
+  ) : (
+    <span className="ctx-code">{`${TO_PROCESS} > ${props.name}`}</span>
+  );
+}
+
+/** Where to file a processed request: its purchase year's folder in Internal Records (P-065). Only a link; nothing is written there. */
+function FilingLink(props: { folderName: string }): React.ReactElement {
+  const year = filingYearOf(props.folderName);
+  return (
+    <a href={filingFolderUrl(year)} target="_blank" rel="noopener noreferrer">
+      {filingFolderLabel(year)}
+    </a>
   );
 }

@@ -4,11 +4,13 @@ For Max to review and paste. This is a draft: nothing outside this repository wa
 
 ## Why it needs updating
 
-Three things in the skill are out of date after the Ledger (version 1.0.3.0, P-052 to P-060):
+Four things in the skill are out of date after the Ledger (version 1.0.3.0, P-052 to P-060) and the filing change (version 1.0.6.0, P-065):
 
 1. **The CSV has 32 columns, not 31.** The extra column is **QuickBooks account** (P-038). The app's own test checks the count of 32.
 2. **The skill does not know the Ledger.** Bookkeepers now choose the QuickBooks account and class in the app and mark lines Posted. The "Class: CSV has none" gap rule is out of date: the class is chosen in the Ledger, not in the CSV.
 3. **The skill does not know the receipt archive or the nightly backup.** Receipts are copied to `App Output/Purchase_Receipts/<request folder>/` (Documents library of the Forms and Apps site; since app 1.0.5.0) and a dated ledger copy is saved nightly in `App Output/Ledger_Backups/`.
+
+4. **Where the processed folder is filed.** The skill's 2026-10-06 decision says Max moves the folder to `Accounting/Purchases/[year]/`. Since version 1.0.6.0 the app and its email name the place: **Internal Records > Accounting and Receipts > Accounting [year] > Purchase Requests** (Edit 7). Max moves the folder by hand; the app only links to it.
 
 What did **not** change: the request folder (receipt copies, quote copies and the CSV) is still placed in `Purchases_To_Process`, now at `Documents / App Output / Purchases_To_Process` on the Forms and Apps site (the Executive Team site is retired), the CSV is still one row per line, and the skill still prepares an entry sheet for Max; QuickBooks stays read-only. Whether Max keeps using the skill once the bookkeepers work from the Ledger is his decision; the text below keeps both ways working.
 
@@ -26,7 +28,7 @@ Find the section that begins `## Folder contents` and replace its paragraph with
 > - A Posted line that was changed afterwards shows "Changed since posted: was $X, now $Y". Treat it as a flag to check QuickBooks, not an instruction.
 > - **Equipment and Other lines** show "Administrator decides" until Max confirms the account (6175, or 1415 Fixed Assets:Equipment). Do not guess it.
 > - **Receipt archive:** the receipts of each request are also copied to `App Output/Purchase_Receipts/<same folder name>/`. That copy stays put when Max moves the request folder to its year folder, and the Ledger's receipt links point to it. A request packaged before the archive existed has no archive copy.
-> - **Nightly backup:** a dated pair of files, `Ledger_<date>_<time>.csv` and `.md`, is saved every night at 02:30 Central in `Accounting/Purchases/Ledger_Backups/`, with every bought line, its account, class, note, Posted flag, who and when. Nothing is overwritten. To see what the bookkeepers decided, read the newest backup or the Ledger's **Download Excel** file before asking Max.
+> - **Nightly backup:** a dated pair of files, `Ledger_<date>_<time>.csv` and `.md`, is saved every night at 02:30 Central in `Documents / App Output / Ledger_Backups` on the Forms and Apps site, with every bought line, its account, class, note, Posted flag, who and when. Nothing is overwritten. To see what the bookkeepers decided, read the newest backup or the Ledger's **Download Excel** file before asking Max.
 > - The skill still never edits the Ledger, the lists or QuickBooks.
 
 ## Edit 3. Gap rule "Class" (replace)
@@ -58,3 +60,15 @@ Append to the section `## Output`:
 - Whether the skill keeps producing a full entry sheet per PR now that bookkeepers post from the Ledger. The edits above keep it working either way.
 - Whether the skill should read the Ledger backup files. It has been written to use them when present, never to require them.
 - The account for Equipment lines. Max decides per line, as before.
+
+## Edit 7. Where the folder is filed (replace one sentence, add one decision line)
+
+In the Decisions line dated `2026-10-06`, find the sentence that begins `Max moves the folder to` and ends `created if missing) first;` and replace it with:
+
+> Max moves the folder to `Internal Records / Accounting and Receipts / Accounting [year] / Purchase Requests` (year of the earliest purchase date, which is also the first four characters of the folder name; Max creates the year folder if missing) first;
+
+Then add one line under Decisions, dated:
+
+> - 2026-11-25: The app and its submission email link to the request folder and to the filing folder, and Max files the folder by hand (moving between the Forms and Apps site and Internal Records is a copy: he checks the copy, then deletes the original). Claude never moves, renames or deletes the folder or the receipt archive copy, and never writes to the filing folder unless Max tells it to. The receipt archive copy in `App Output / Purchase_Receipts` stays where it is.
+
+The last sentence of the 2026-10-06 line ("PROVISIONAL reading ... the Receipt_Log file link points into the PR folder") is unchanged: Max still decides whether renamed receipts stay in the PR folder.

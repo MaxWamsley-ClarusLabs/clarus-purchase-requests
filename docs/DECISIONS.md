@@ -621,6 +621,24 @@ Max said that about 95% of purchases are bought by the person who approves them,
 
 ---
 
+## P-065. A filing reminder: links to the request folder and to the year folder in Internal Records
+
+- **Date:** 2026-11-25
+- **Status:** Decided (Max, 2026-11-25: question 1 "recommended", question 2 "B", "he has access"; asked to build it and double check). Version 1.0.6.0. Copied from the Travel Expense app's filing reminder (its D-080, commit ef0dc62, read only).
+- **Decision:**
+  1. **Where a processed request is filed, by hand:** Internal Records, `Accounting and Receipts / Accounting <year> / Purchase Requests`. The year is the year of the earliest purchase, the first four characters of the folder name (naming.ts, P-026), so a request bought in 2026 is filed under 2026 even when processed in 2027. If the name does not start with a year, the link goes to `Accounting and Receipts`.
+  2. **Where the reminder appears (option B):** the submission email gets a line "When processed, move it to:" with the filing link beside the folder link; the request page's purple box shows **Folder to move** and **When you have processed it, move it to** as links; and choosing **Mark processed** first opens a box with the same two links and a note that moving between the sites is a copy (check the copy, then delete the original). Choosing Mark processed again in that box confirms; **Cancel** leaves the request Submitted. The app moves nothing.
+  3. **One place:** `FILING_LOCATION` in `app/src/export/outputDestination.ts` (the Internal Records address, the `Purchase Requests` subfolder and the year folder pattern), beside the output folders. The flow, the pages and the tests read it from there.
+  4. **Links are only links.** Internal Records is on a OneDrive. No flow action reads or writes it: a test checks that every SharePoint action in a Live or Test package uses only the app site or the output site with a relative `_api/web/` address, and that the Internal Records address appears in no action but the one email.
+  5. **The request folder shows as a link** only when the stored link is a plain https address on `claruslabsusa.sharepoint.com` (`safeFolderLink`, as in travel); otherwise as its path in text. The stored link is list data an employee could edit (travel D-002).
+  6. **Nothing created by code:** Max creates `Accounting 2026 / Purchase Requests` now, `Accounting 2027 / Purchase Requests` before January 2027, and one more each year (SOP B9a item 6). Whoever files needs access to `Accounting and Receipts` (Max says the person who processes has it).
+  7. **The processing skill and the QuickBooks handoff** carry draft replacement text for Max to paste (`docs/PROCESSING_SKILL_UPDATE.md` Edit 7, `docs/QUICKBOOKS_HANDOFF.md`). Claude did not change the skill.
+- **Not changed:** the files and folder names, the three lists, the Executive Team site (still retired), the receipt archive and the backups.
+- **Unverified (checked at the Test flow, `docs/CHECKPOINT.md` Part 12):** that the flow's `isInt(substring(...))` year expression gives the year in the email, and that the link opens the year folder in Internal Records for the person who files.
+- **Where a change goes:** `FILING_LOCATION` in `app/src/export/outputDestination.ts`; the flow package is then made again from Set-up and imported again.
+
+---
+
 ## Status of strategy items
 
 Items in `docs/STRATEGY.md` labelled **Open** remain open until Max answers. See `docs/QUESTIONS_FOR_MAX.md`.

@@ -183,3 +183,15 @@ Do these on the Test flow first (`docs/UPDATE_1.0.5.0.md` has the steps for the 
 64. **Nothing reaches the Executive Team site.** Look at its Accounting folder: nothing new since the update. Delete the test requests and folders you made, and tell me before deleting anything that is not in `Purchases_Test`.
 
 **What to send me:** anything that differed from what a step says, a screenshot of any red message, and the flow's run history for steps 62 and 63.
+
+## Part 12. After updating the app to version 1.0.6.0: the filing reminder (P-065)
+
+Do these after Part 11 (Test flow first). Steps 65 to 68 check the filing links.
+
+65. **The email.** Submit a small test request (Test flow). In the submission email, find **When processed, move it to:**. The link text must read **Accounting 2026 / Purchase Requests** (the year of the earliest purchase date on the request). Click it: it must open that folder in Internal Records. If it opens **Accounting and Receipts** instead, or the text says only **Accounting and Receipts**, the year expression did not work: tell me, with a screenshot of the email and the flow's run for that email.
+66. **The request page.** Open the request in the app (as the administrator). The purple box must show **Folder to move** (a link to the folder in `Purchases_Test`) and **When you have processed it, move it to** (the same filing link).
+67. **The reminder.** Choose **Mark processed**. A box titled **Mark PR-#### processed?** must show both links and say moving between the sites is a copy. Choose **Cancel**: the request stays **Purchased**. Do not file a test folder in Internal Records; leave it where it is.
+68. **A missing year folder.** If `Accounting 2026 / Purchase Requests` does not exist yet in Internal Records, create it by hand first (SOP B9a item 6). Whoever files must be able to open `Accounting and Receipts` there.
+
+**What to send me:** a screenshot of the email's filing line and of the Mark processed box, and anything that differed.
+

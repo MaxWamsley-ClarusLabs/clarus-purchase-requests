@@ -202,7 +202,7 @@ Use this when you bought something yourself and there is no request to approve.
 
 ### B3. When a request is submitted
 
-1. You receive an email: "Purchase request submitted: <name>, <business purpose> (PR-0042)", or "resubmitted" with the submission number. For a request the approver bought it says "Purchase request bought" (or "bought again") and names the approver as the buyer. It lists the submitter and their account, the department, business purpose and project or grant code, the purchase dates, **To reimburse**, **Paid by Clarus** and **Request total**, the number of receipts and quotes, rows without a receipt, any warnings, the approval (who, when, and any note), any **Bought before approval** flag, and the employee's certification, with links to the folder, `Purchases_To_Process` and the request in the app. It arrives a few minutes after the employee submits.
+1. You receive an email: "Purchase request submitted: <name>, <business purpose> (PR-0042)", or "resubmitted" with the submission number. For a request the approver bought it says "Purchase request bought" (or "bought again") and names the approver as the buyer. It lists the submitter and their account, the department, business purpose and project or grant code, the purchase dates, **To reimburse**, **Paid by Clarus** and **Request total**, the number of receipts and quotes, rows without a receipt, any warnings, the approval (who, when, and any note), any **Bought before approval** flag, and the employee's certification, with links to the folder, to where it is filed when processed (B5), `Purchases_To_Process` and the request in the app. It arrives a few minutes after the employee submits.
 2. The request folder is in `Documents / App Output / Purchases_To_Process` on the Forms and Apps site, named `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042` (earliest purchase date). A resubmission ends in `_R2`, `_R3`.
 3. The folder holds a copy of each receipt (`R01_<original name>`, a second file on the same row `R01-2_...`), a copy of each quote (`Q01_<original name>`), and one CSV file, `PR-0042_Purchases.csv`.
 4. In the app, the request is under **Requests to process**.
@@ -219,8 +219,12 @@ The app and the flows write only in three folders of `Documents / App Output` on
 
 ### B5. Filing and marking processed
 
-1. Move the request folder from `Purchases_To_Process` into `Internal Records > Accounting and Receipts`. The app writes nothing there; you choose the subfolder.
-2. In the app, open the request and choose **Mark processed**. This only changes the request's status; no email is sent.
+1. **Find the two links.** The request page (the purple box at the top), the submission email and the **Mark processed** box each give both: **Folder to move** (the request folder in `Purchases_To_Process`) and **Move it to**, which is `Internal Records > Accounting and Receipts > Accounting <year> > Purchase Requests`. The year is the year of the earliest purchase, the first four characters of the folder name, so a request bought in 2026 is filed under 2026 even if you process it in 2027. If the folder name does not start with a year, **Move it to** opens `Accounting and Receipts` instead.
+2. **The year folder must exist.** You create `Accounting <year>` and `Purchase Requests` inside it by hand (B9a, item 6). The app and the flows never create them or write anything in Internal Records.
+3. **Move the folder.** Forms and Apps and Internal Records are different sites, so moving between them is a copy. Open the copy and check every file is there, then delete the original from `Purchases_To_Process`. The receipt archive copy in `Purchase_Receipts` stays where it is.
+4. In the app, open the request and choose **Mark processed**. A box repeats the two links as a reminder; choose **Mark processed** again to confirm, or **Cancel**. This only changes the request's status; no email is sent, and nothing is moved.
+
+The **Move it to** link opens a folder in Max's OneDrive library (Internal Records), so anyone who files requests needs access to `Accounting and Receipts` there. Without it the link says access denied.
 
 ### B5a. A request an employee unsent (P-050)
 
@@ -266,6 +270,7 @@ The flows write to the Forms and Apps site, in the Documents library (its addres
 3. **Which flow connection needs write access:** the flows run under the **SharePoint connection of the person who imported them** (today, Max's account). That account must keep **Edit** access to `App Output` and the three folders inside it, or packaging and the nightly backup fail. The Office 365 Outlook connection is unchanged. Give **Purchase Bookkeepers** Read on `Purchase_Receipts` so receipt links open (D5).
 4. **If a folder is missing** (or the connection cannot open it): Set-up refuses to make a package and names the folder. A request that was already submitted shows Failed under **Needs attention** with the folder named, and you are emailed. Create the folder or fix the access, then choose **Retry packaging**. A night's backup writes nothing and emails you the same way.
 5. **Older requests:** requests packaged before version 1.0.5.0, including PR-0006 to PR-0013, may have receipt links on the retired Executive Team site. Nothing was changed. To list them: in **Site contents**, open **Purchase Submissions**, and filter the **Receipt archive link** and **Folder link** columns for text containing `ExecutiveTeam`.
+6. **You create the year folders for filing (P-065), by hand, in Internal Records** (Max's OneDrive): `Accounting and Receipts / Accounting 2026 / Purchase Requests` now, then `Accounting 2027 / Purchase Requests` before January 2027, and one more each year. If `Accounting <year>` already exists (for travel reports, `Travel Expense Reports`), only add `Purchase Requests` inside it. The app only links there; if the year folder is missing the link shows a "not found" page and you create it first. The filing place is held in one place in the app (`FILING_LOCATION` in `app/src/export/outputDestination.ts`).
 
 ---
 
@@ -385,3 +390,4 @@ To be completed from the test-site runs at the checkpoint. These messages are wr
 | 2026-11-22 | 17 | D5 gained the Owner route for a bookkeeper (what an Owner can also do, and the new flow package); the Owners today; P-061 |
 | 2026-11-24 | 18 | Part A regenerated (Delete on My requests, the status colors); P-062 |
 | 2026-11-25 | 19 | B9a (where the output goes, P-064); the folder paths in B3, B5, B9 and Part D now name `App Output` on the Forms and Apps site; filing now goes to Internal Records > Accounting and Receipts; Part A regenerated; P-064 |
+| 2026-11-25 | 20 | B5 rewritten and B9a item 6 added (the filing reminder, P-065): the request page, the email and the Mark processed box link to the request folder and to `Accounting <year> / Purchase Requests` in Internal Records; moving between sites is a copy; version 1.0.6.0 |

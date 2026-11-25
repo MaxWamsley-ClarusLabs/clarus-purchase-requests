@@ -72,5 +72,55 @@ export function folderText(mode: OutputMode, folder: 'requests' | 'archive' | 'b
 /** The live request folder with ">" between the names, for a sentence on screen. */
 export const LIVE_REQUESTS_PATH_TEXT = `${OUTPUT_DESTINATION.live.parentFolder} > ${OUTPUT_DESTINATION.live.requestsFolder}`;
 
-/** Where the administrator files a processed request. The app writes nothing there. */
+/** Where the administrator files a processed request, in general words. The app writes nothing there. */
 export const FILING_PLACE_TEXT = 'Internal Records > Accounting and Receipts';
+
+/**
+ * Where the administrator files a processed request by hand (P-065; file-naming rules D32): Internal Records,
+ * Accounting and Receipts / Accounting <year> / Purchase Requests, by the purchase year. The app and the flow
+ * only link to it, in an email and on a screen. Nothing writes there, and the year folders are made by hand.
+ * Internal Records is on Max's OneDrive, so no flow action ever touches it (a test checks).
+ */
+export const FILING_LOCATION = {
+  /** Accounting and Receipts in Internal Records (Max's OneDrive). */
+  baseUrl: 'https://claruslabsusa-my.sharepoint.com/personal/maxwamsley_claruslabsusa_com/Documents/Clarus Labs - Internal Records/Accounting and Receipts',
+  /** The folder inside each year folder that holds the purchase requests. */
+  subfolder: 'Purchase Requests',
+  /** The year folder and its purchase requests folder, inside baseUrl. */
+  yearFolder: (year: string): string => `Accounting ${year}/${FILING_LOCATION.subfolder}`
+};
+
+const YEAR = /^\d{4}$/;
+
+/** "Internal Records > Accounting and Receipts > Accounting 2026 > Purchase Requests". */
+export function filingFolderLabel(year: string): string {
+  const tail = YEAR.test(year) ? FILING_LOCATION.yearFolder(year).split('/') : [];
+  return ['Internal Records', 'Accounting and Receipts', ...tail].join(' > ');
+}
+
+/** The filing folder's web address for a purchase year; Accounting and Receipts if the year is not a year. */
+export function filingFolderUrl(year: string): string {
+  const path = YEAR.test(year) ? `${FILING_LOCATION.baseUrl}/${FILING_LOCATION.yearFolder(year)}` : FILING_LOCATION.baseUrl;
+  return encodeURI(path);
+}
+
+/** The purchase year of a request folder: the first four characters of its name (naming.ts), or '' if they are not a year. */
+export function filingYearOf(folderName: string): string {
+  const year = folderName.slice(0, 4);
+  return YEAR.test(year) ? year : '';
+}
+
+/**
+ * A stored folder link, only if it is a plain https address on the Clarus SharePoint site; otherwise null, and the
+ * screen shows the name as text. The link is list data, which an employee could edit (travel D-002), so it is never
+ * trusted as it stands.
+ */
+export function safeFolderLink(link: string): string | null {
+  try {
+    const url = new URL(link);
+    const host = new URL(OUTPUT_DESTINATION.live.siteUrl as string).hostname;
+    return url.protocol === 'https:' && url.hostname === host && !url.username && !url.password ? url.href : null;
+  } catch {
+    return null;
+  }
+}

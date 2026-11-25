@@ -1,0 +1,183 @@
+# The Purchase Requests flow
+
+**Changed 2026-11-25 (version 1.0.5.0, P-064): the flows write to the Forms and Apps site, not the Executive Team site.** The Executive Team site is retired and gets nothing. A Live package now sends request folders to `Documents / App Output / Purchases_To_Process` on `https://claruslabsusa.sharepoint.com/sites/FormsandApps`, the receipt archive to `App Output / Purchase_Receipts` and the nightly backup to `App Output / Ledger_Backups` (Test: the same three names under `Purchases_Test`). **The flows no longer create any of these folders:** Max creates and restricts them, and each flow checks its folder and stops with a clear message if it is missing (the Purchase Requests flow marks the submission Failed and emails the administrator, naming the folder; the backup writes nothing and emails the administrator). The flow still makes each request's own `PR-####` folder and its folder in the archive. The names live in one place, `app/src/export/outputDestination.ts`. The folder naming and the files are unchanged. The sections below that name `Accounting` or the ExecutiveTeam site describe the earlier design and are kept for the record. The flow connection that needs Edit access to `App Output` is the SharePoint connection of the person who imports the flows. Both packages must be made again from Set-up and imported again. Not yet run on a real site: see "Points to confirm for the 1.0.5.0 change" at the end.
+
+**Changed 2026-11-25 (version 1.0.6.0, P-065): the submission email links to where the request is filed.** The notification email gets a line "When processed, move it to:" with a link to `Accounting <year> / Purchase Requests` in Internal Records (Max's OneDrive), the year being the first four characters of the cleaned folder name (`isInt(substring(...))`), or `Accounting and Receipts` if they are not a year. It is only a link in the email body: no SharePoint action reads or writes Internal Records, and a test checks that every action uses only the app site or the output site. The address is `FILING_LOCATION` in `app/src/export/outputDestination.ts`. Not yet run on a real site: confirm at the Test flow that the year appears in the email.
+
+**Changed 2026-11-16 (the Ledger build, P-058 and P-059).** Two changes, described below and in the last two sections: (1) this flow also copies each request's receipts into a permanent archive, `Purchase_Receipts`, and records its address in a new Receipt archive link column; (2) there is now a **second, separate flow**, the nightly ledger backup (`backupFlow.ts`, `flow/example/backup_definition.json`). Nothing in either has run on a real site: every point in "Points to confirm for the Ledger build" at the end is **Unverified** until the Test flow.
+
+**Status:** Built 2026-10-01, and revised the same day after two reviews: the generator now refuses settings it cannot use safely, and the approval branch's failure handling tells the administrator even when marking the item Failed fails or times out, and reads the error text the travel flow's way (see "The error text on a failure"). Not yet imported anywhere. The design is strategy section 8 and P-018; the code that writes the flow is `app/src/export/flowPackage.ts`. An example of the generated definition, with made-up IDs, is `flow/example/definition.json` (`npm run flow-example` rewrites it; a test fails if it is out of date). The packaging branch is the travel flow's packaging steps, unchanged apart from names and wording; the travel flow was imported and run on a real test site on 2026-09-28 (travel `flow/FLOW.md`). The If action that chooses between the two branches, and the approval branch itself, are new and have not run anywhere.
+
+**Changed 2026-10-01 (approver-buys build, P-037 to P-042): the flow itself is unchanged.** `flowPackage.ts` and the example definition did not change, and the package checker still passes on the example. What changed is what the app writes into the submission items the flow reads: when the approver buys (the default), every request is sent as an approval request whatever the amount, and the summary says so; the approver's package, made by Mark purchased, carries the subject `Purchase request bought: ...` (or `bought again`) and the summary names the approver as the buyer. The CSV in the package has 31 columns. The flow copies the files and sends the subject and the escaped summary as it always did. Item links are in the CSV and not in either email. Nothing the flow does depends on who made the submission item, so a package made by the approver is handled exactly as one made by the employee.
+
+One flow does both jobs (P-018). The app writes every approval request and every submission as an item in the Purchase Submissions list, first as Uploading and then as Ready. The flow starts on Ready, claims the item, and looks at its Type. An approval request only emails the approvers. A processing package is packaged exactly as in the travel flow.
+
+## How Max gets it
+
+The app's Set-up page, step 2 (travel D-047), reads the site's details and downloads `PurchaseRequests_Flow_Test.zip` or `PurchaseRequests_Flow_Live.zip`. Max imports it in Power Automate: My flows, Import, Import Package (Legacy); picks his own SharePoint and Office 365 Outlook connections; imports; turns the flow on. The package holds no password, key or connection: the connections are Max's, chosen at import.
+
+| Package | Request folders go to | Use |
+|---|---|---|
+| Test | The test site's Documents library, `Purchases_Test/Purchases_To_Process` (the three Test folders must exist) | The test-site checkpoint (`docs/CHECKPOINT.md`) and later testing. Nothing touches `App Output` |
+| Live | Forms and Apps, Documents, `App Output/Purchases_To_Process` (and `App Output/Purchase_Receipts`, `App Output/Ledger_Backups`) | Pilot and production. The Set-up page first checks, read-only, that all three folders exist |
+
+**Who checks that the folders exist.** Both. The Set-up page checks the three folders, read-only, when it makes a package (`getFlowSettings` in `app/src/data/sharepoint/SharePointDataService.ts`), and makes no package if one is missing, naming it. The flow checks them again on every run (`Check_landing_folder`, `Check_archive_root`), because a folder can be removed or restricted after the package was made. Neither creates a folder.
+
+The destination and the approvers' addresses are fixed in the package. Nothing stored in a list can change where files go or who is emailed (P-008, P-018).
+
+**What the generator refuses.** `flowPackage.ts` checks everything it writes into the flow (`checkFlowConfig`) and makes no package if anything fails; the Set-up page then shows the reason. Tests: "the generator refuses settings it cannot use safely" in `flowPackage.test.ts`.
+
+- **Email addresses.** The administrator's address and every approver address must each be one plain address: ASCII letters, digits and `. _ % + ' -` before the `@`, a domain with a dot, at most 254 characters. That rules out spaces, commas, semicolons, braces (so no `@{`), angle brackets, double quotes, backticks, backslashes and a leading `@`, so an address can never be read as an expression or as a second address. Blank or padded entries are refused, not tidied: Set-up filters the Owners' addresses first. At most 20 approver addresses; with none, the administrator's address is used, so there is always at least one recipient.
+- **Web addresses.** The site address, the destination site address and the page address must be https, with no user name or password and no braces, quotes, backticks, backslashes, angle brackets, spaces or control characters. The two site addresses must have no `?` or `#`. The page address is cut to its origin and path (the Set-up page already passes only those, and the generator cuts it again): browsers leave braces in a query string as they are, so a Set-up page opened with an address like `...aspx?x=@{triggerBody()...}` could otherwise put an expression into the app links of the five emails (the approval and submission emails link to the request; the three failure emails link to Needs attention).
+- **The list ID** must be a GUID, as SharePoint gives it.
+- **The destination.** A Live package must have exactly the fixed destination in `outputDestination.ts`: the Forms and Apps site `https://claruslabsusa.sharepoint.com/sites/FormsandApps`, `Shared Documents`, and the folders `App Output` and `App Output/Purchases_To_Process`. A Test package must send folders to the same site as the list, in `Shared Documents`, in exactly `Purchases_Test` and `Purchases_Test/Purchases_To_Process`. Anything else, an empty folder list included, and the Executive Team site in particular, is refused.
+
+The approvers are the site Owners' addresses as they are when the package is made. If Set-up cannot read the Owners, or none of them has an address it can use, it uses the administrator's own address. After downloading, the Set-up page says which addresses the approval email will go to, and whether they are the site Owners or the administrator's own address because the Owners could not be read. On a team site connected to a Microsoft 365 group, the Owners group may hold the Microsoft 365 group as a single entry rather than the people in it; Set-up reads only people, so the package would then go to the administrator's address (Unverified: Claude's knowledge of SharePoint; the checkpoint uses a communication site, which has no such group). To add an approver, add them as an Owner, make a new package on Set-up and import it again. Whether Import Package (Legacy) then offers to update the flow already there is Unverified (the package marks the flow as "Existing, New, Update", copied from the sample packages; not tried). If it only creates a new flow, turn the old one off so that nobody is emailed twice.
+
+## What the flow does
+
+| Step | Name in the flow | What it does |
+|---|---|---|
+| Start | When a submission is ready | Checks the Purchase Submissions list (P-007) about every 5 minutes. Runs only for items whose Package status is Ready, one at a time |
+| 1 | Claim the submission | Sets Package status to Processing, so the same item is never handled twice |
+| 2 | If this is an approval request | Reads the item's Type (a choice column, read through its Value). Approval request: the approval branch, steps A1 and A2. Anything else, an empty Type included: the packaging branch, steps P1 to P5 |
+| A1 | Send approval email | Emails every approver in one message, from Max's account: the subject and summary the app wrote, and a link that opens the request in the app |
+| A2 | Mark approval sent | Sets Package status to Packaged, with the time and no error. The app shows "Approver emailed" |
+| A, on failure | On approval failure | If A1 or A2 fails or times out: sets Package status to Failed with the error, and emails the administrator a link to the flow run and to Needs attention. The email is sent even if setting Failed itself fails or times out |
+| P1 | Cleaned folder name, Safe folder name | Takes the folder name the app wrote and replaces `" * : < > ? / \ \| # % ~ & { } '`, `..`, tabs and line breaks with `-`; trims it; limits it to 120 characters; uses `Submission-<ID>` if nothing is left |
+| P2 | Get attachments | Lists the files attached to the submission (the receipt copies, the quote copies and the CSV file) |
+| P3 | Check folder 1 and 2, create if missing | On the first run only, creates `Purchases` then `Purchases_To_Process` (Test: `Purchases_Test`, then `Purchases_To_Process`). Never creates year folders (travel D-009) |
+| P4 | Check report folder | Looks for a folder with the same name in `Purchases_To_Process` |
+| P3a | Check the archive folder, create if missing | On the first run only, creates `Purchase_Receipts` beside `Purchases_To_Process` (Test: `Purchases_Test/Purchase_Receipts`). One level, never year folders (P-058) |
+| P5a | If the report folder is new and there are files | Creates the request folder; checks the request's folder in `Purchase_Receipts` and creates it if it is not there (a folder left by an earlier attempt is reused); copies each attachment into the request folder, one at a time, under its own name; keeps only the receipt copies (names starting with R: the quotes start with Q and the CSV with PR-) and copies each into the archive folder; sets Package status to Packaged with the folder link, the **archive link** and time; emails the administrator the submission email |
+| P5b | Otherwise | Copies nothing, sets Package status to Failed with the reason ("a folder with this name already exists" or "no files"), and emails the administrator |
+| P, on failure | On failure | If any packaging step fails: sets Package status to Failed with the error, and emails the administrator a link to the flow run and to Needs attention |
+
+The packaging branch keeps the travel flow's action names, including the three that say "report" (`Check_report_folder`, `If_the_report_folder_is_new`, `Create_report_folder`). They mean the request folder. They are unchanged on purpose: the same actions ran on a real site, and a test checks that the list of names is the travel list.
+
+The actions, by nesting level:
+
+```
+When_a_submission_is_ready              trigger: Package status is Ready, every 5 minutes, one run at a time
+Claim_the_submission
+If_this_is_an_approval_request          Type is Approval request?
+  Yes
+    Approval_email                      scope
+      Send_approval_email
+      Mark_approval_sent
+    On_approval_failure                 scope, runs if Approval_email fails or times out
+      Failed_approval_steps
+      Mark_approval_failed
+      Send_approval_failure_email
+  No
+    Package                             scope
+      Cleaned_folder_name, Safe_folder_name, Get_attachments
+      Check_folder_1, If_folder_1_is_missing (Create_folder_1)
+      Check_folder_2, If_folder_2_is_missing (Create_folder_2)
+      Check_report_folder
+      If_the_report_folder_is_new
+        Yes: Create_report_folder, Copy_files (Get_attachment_content, Create_file), Mark_packaged, Send_notification
+        No:  Mark_not_packaged, Send_not_packaged_email
+    On_failure                          scope, runs if Package fails or times out
+      Failed_steps, Mark_failed, Send_failure_email
+```
+
+Every action name is unique across the whole definition, and every "run after" names an action in the same container; tests check both. The deepest actions, Get attachment content and Create file, are five levels down (travel: four).
+
+**Emails (travel D-046 and D-067; P-018).** The subject and the summary are written by the app (`email.ts`) and stored as plain text in the submission item. The flow escapes the summary (`&`, `<`, `>`, `"`) and turns line breaks into HTML line breaks before sending, so nothing an employee could type or edit is ever sent as HTML. Only the subject is used as it is, because a subject is plain text. Recipients are never read from the item.
+
+- **Approval email (A1).** To every approver, in one message. Subject: `Purchase approval needed: <name>, <purpose> (PR-0042)`, or `Purchase approval needed again: ... (PR-0042, round 2)`. Body: the heading "Purchase approval needed" (with "again" when the item's Submission number is more than 1), the summary, and the line "Open the request in Purchase Requests to approve it, confirm the categories, or return it with a note:" with a link to the request in the app.
+- **Submission email (P5a).** To the administrator (today, Max). Subject: `Purchase request submitted: ...` or `Purchase request resubmitted: ...`, or, for a request the approver bought, `Purchase request bought: ...` or `Purchase request bought again: ...`, as the app wrote it. Body: a heading ("Purchase request submitted" or "resubmitted", also for a request the approver bought, whose subject says "bought"), the summary, and three links: the new request folder, "All requests waiting" (`Purchases_To_Process`) and "Open the request in Purchase Requests".
+- **Failure emails (to the administrator).** `Purchase request not packaged: <label>` (P5b; the reason, and a link to Needs attention), `Purchase request packaging failed: <label>` (P, on failure; "Packaging failed:" and the error, a link to the flow run and a link to Needs attention) and `Purchase approval email failed: <label>` (A, on failure; "Sending the approval email, or recording that it was sent, failed:" and the error, with the same two links). The approval failure email does not say the email was not sent, because A2 can fail after A1 sent it. The label is the submission's Title, for example `PR-0042 approval 1`, or "a purchase request" if it is empty.
+
+**The error text on a failure.** Each failure scope lists the steps that failed (Filter array over `result()`) and stores the first one's error in the item's Error message, which the app shows under Needs attention. Both branches read it the same way, the travel flow's way: the step's `error.message`, or a fixed sentence ("Packaging stopped. See the flow run." in the packaging branch; "Sending the approval email, or recording that it was sent, failed. See the flow run." in the approval branch), and the approval failure email quotes the same text, escaped. Neither reads into the step's outputs (for example `outputs.body.message`): an output body can be plain text, and selecting a property of text makes the expression itself fail, even with `?[...]`, so the scope would stop before it marked the item Failed or emailed anyone, and the item would stay Processing. A first version of the approval branch did read into the outputs; it was changed back after review on 2026-10-01. That the error message is in `error.message` for these connectors, and the behaviour of property selection on text, are Unverified (Claude's knowledge of the `result()` output and of the expression language; the failure scopes have not run). In the approval branch, the email to the administrator runs after Mark approval failed has succeeded, failed or timed out; the packaging branch keeps the travel flow's "succeeded or failed", unchanged on purpose.
+
+**Never overwritten, moved or deleted.** The flow only creates folders and files, and only in the packaging branch. It stops if the request folder already exists. After a failure part-way, Max deletes the partial folder, then chooses Retry packaging in the app (SOP Part B, Needs attention and failed packages). The approval branch creates no folder and no file: it sends one email and updates the submission item. If the email was sent but the status update then failed, the item shows Failed, and Retry approval email sends the email again, so the approvers can get it twice.
+
+**An item an employee has created or edited (accepted risk, P-033).** Employees can create and edit their own items in the Purchase Submissions list directly in SharePoint, outside the app (travel D-002). So an employee can make the flow send an approval email to every Owner, from the administrator's mailbox (the flow sends with the administrator's Outlook connection), with a subject and a summary of their choosing, once for each item they set to Ready. What limits it: the recipients and the links in the email are fixed in the package; the summary is escaped, so the text cannot contain markup; the subject is plain text; and nothing is created in the destination for an approval request. The item records who created it. Recorded as an accepted risk, P-033 in `docs/DECISIONS.md`, to look at again at the security review. An item whose Type is empty or not "Approval request" is packaged as in travel, and stops with an error if it has no files.
+
+## Actions used
+
+All standard connectors (strategy section 9): SharePoint and Office 365 Outlook, both on Max's account.
+
+| Action | Used for | Format source | Evidence |
+|---|---|---|---|
+| SharePoint: When an item is created or modified (GetOnUpdatedItems) | Start | Connector reference; sample packages use the older format of the same trigger | Verified in travel (ran, 2026-09-28) |
+| SharePoint: Update item (PatchItem) | Claim; status, link, time, error; the approval's status | Sample packages | Verified in travel (ran) |
+| SharePoint: Get attachments (GetItemAttachments) | List the files | Connector reference | Verified in travel (ran) |
+| SharePoint: Get attachment content (GetAttachmentContent) | Read each file | Connector reference | Verified in travel (ran) |
+| SharePoint: Send an HTTP request to SharePoint (HttpRequest) | Check whether a folder exists; create folders | Sample packages | Verified in travel (ran) |
+| SharePoint: Create file (CreateFile) | Copy each file into the request folder | Connector reference, plus Claude's knowledge of the "body" parameter name | Verified in travel (ran) |
+| Office 365 Outlook: Send an email (V2) (SendEmailV2) | The emails to the administrator (submission and failures) and the approval email to the approvers | Sample packages | Verified in travel for one recipient. **Unverified** for several recipients joined by `;` in the To line (Claude's knowledge of the connector; its documentation was not opened) |
+| Control and data operations: Condition (If), Scope, Apply to each (Foreach), Compose | The branch, the scopes, the file loop, the folder name | Standard Power Automate and Logic Apps structure | Verified in travel for the packaging structure (ran). **Unverified** for the new If that holds the two scopes |
+| Data operation: Filter array (Query), with the `result()` function | The list of failed steps, in the two failure scopes, and the error text taken from it | Standard Logic Apps structure | **Unverified**: neither failure scope has run on a real site, in travel or here, so where the error message is found is Unverified too |
+
+Sources: pnp/powerautomate-samples on GitHub (commit c704efd, 2026-01-19) and Microsoft's connector reference in microsoft/skills-for-copilot-studio (commit fd9653d, 2026-09-09), both read on 2026-09-24 for the travel flow. Microsoft's own documentation is blocked in this environment, so every platform claim in this file that is not marked Verified is Unverified.
+
+## Points to confirm at the checkpoint
+
+**Confirmed for the packaging branch (travel flow, a real test site, Max, 2026-09-28; travel `flow/FLOW.md`).** The same actions are in this flow's packaging branch, so the six points are listed as confirmed. They were not re-tested for this package. What ran in travel: a submitted report was packaged (notification email, report folder holding the receipt copy and the CSV), and a resubmission made its `_R2` folder. What did not run on a real site: the failure paths (On failure, and the stop when the folder already exists).
+
+1. The package imports with Import Package (Legacy), and the import screen accepts the real list ID without asking again.
+2. Create file takes the file content as `body` (the connector reference calls it "file").
+3. Get attachments returns `Id` and `DisplayName` for each file, as the reference says.
+4. SharePoint answers "does this folder exist" with Exists = false for a missing folder, rather than an error.
+5. Update item sets the Package status choice through `item/PackageStatus/Value`, and does not need the Title column.
+6. The trigger's 5-minute check is allowed on Max's licence.
+
+**New, and Unverified until the test-site checkpoint.** Nothing here has run. Each point says what Max sees when it holds.
+
+1. **The package with the nested If imports and turns on.** The new structure is one If action that holds both scopes, so the deepest action is five levels down, one more than in travel. The limit on nesting is believed to be 8 levels (Unverified: Claude's knowledge of the Power Automate limits; the page was not opened). Seen when: the import finishes without an error and the flow turns on.
+2. **`SubmissionType` is read as `?['Value']` and the branch is taken for an approval request.** `PackageStatus` is read the same way in the trigger, and that works in travel; this is a second choice column read the same way. Seen when: the run history shows "If this is an approval request" with the answer Yes for an approval request, and No (the packaging branch runs) for a submission.
+3. **The approval email arrives for each Owner address.** One message with all addresses in the To line, joined by `;` (Unverified for the connector, see Actions used). Seen when: every Owner receives "Purchase approval needed: ..." a few minutes after the request is sent for approval, with the escaped summary and a link that opens the request, and the app then shows "Approver emailed".
+4. **A nested failure scope inside the branch reports a failure.** When the approval email cannot be sent, or its status cannot be recorded, the scope On approval failure should run: Mark approval failed sets Package status to Failed with the error text (the app lists it under Needs attention as "Approval email failed", and the request page offers Retry approval email), and Send approval failure email tells the administrator. The failure scope for packaging, On failure, has never run on a real site either. **Not tested at the checkpoint**: the only ways to make it run on purpose are to break a connection that other flows share or to edit data by hand, which this file and travel D-068 rule out (`docs/CHECKPOINT.md` step 34). It stays Unverified until a real failure. Seen when: a failed approval shows Failed with the error in the app, the run history shows the failure scope ran, and, if the Outlook connection can still send, "Purchase approval email failed: ..." arrives.
+5. **The approver addresses are the site Owners read when the package was made.** Set-up reads them (`getFlowSettings`) and writes them into the package; they are not read again, so someone who stops being an Owner keeps getting the email until a new package is made and imported. Unverified that an administrator can read the Owners group (strategy section 17); if not, Set-up falls back to the administrator's own address, and its green box then says "your own address, because the site Owners could not be read". Seen when: the green box says "the site Owners" and lists their addresses, the Send approval email step in the imported flow lists the same addresses in its To field, and each of them receives the email. With only one Owner, the Owners' address and the fallback are the same address, so only the green box's wording tells them apart.
+
+If any fails, the fix goes into `flowPackage.ts` and a new package is made from the Set-up page; the flow is never edited by hand, so this file and the code stay true.
+
+## Known gaps (recorded 2026-10-01, not changed)
+
+- `Claim_the_submission` (the first step after the trigger) runs outside the `Package` and `On_failure` scopes, and outside the approval branch's scope. A failure there ends the run without the failure email. Power Automate may still notify the flow's owner (Unverified).
+- `Create_file` takes each file's name from the attachment's `DisplayName` as stored, without cleaning it. The app sets those names; a direct edit in SharePoint could change one. SharePoint limits the characters allowed in an attachment name (Unverified).
+- Both are question 33 in `docs/QUESTIONS_FOR_MAX.md` and P-042 (e) and (f). Neither is changed while the install checkpoint runs, so that it tests the flow as delivered.
+
+## The receipt archive (P-058)
+
+The packaging branch also creates `App Output/Purchase_Receipts/<request folder name>/` (Test: `Purchases_Test/Purchase_Receipts/...`) and copies each **receipt** into it: one level, one folder per request, never a year folder. This is so the Ledger's receipt links keep working when the administrator files the request folder under its year. New actions: `Check_archive_root` (since P-064 only a check: the archive's root is made by Max, and a missing root stops the packaging), `Check_archive_folder`, `If_archive_folder_is_missing`, `Create_archive_folder` (inside the packaged branch, reusing a folder left by an earlier attempt), `Filter_receipts` (names starting with R), and `Archive_receipts` (`Get_receipt_content`, `Create_archive_file`, one at a time). `Mark_packaged` now also writes `ArchiveLink`, built from the fixed archive path and the cleaned folder name, never from list data. The deepest actions are still five levels down. The flow still only creates new folders and files: nothing is overwritten, moved or deleted, and a Live package can write only under `Accounting/Purchases`.
+
+## The ledger backup flow (P-059)
+
+A separate flow, made by Set-up step 3 as `PurchaseRequests_Ledger_Backup_Flow_Test.zip` or `..._Live.zip` and imported the same way. It runs on a **Recurrence** trigger every day at 02:30 in `Central Standard Time` (Max's time zone), reads the Purchase Requests list (Submitted or Processed) and the Purchase Request Lines list (up to 5,000 items, with pagination), keeps the lines of those requests, and writes a new `Ledger_<yyyy-MM-dd_HHmm>.csv` and `.md` into `App Output/Ledger_Backups/` (Test: `Purchases_Test/Ledger_Backups/`). Since P-064 the folder is only checked (`Check_backup_folder`, `If_the_backup_folder_exists`): Max creates it, and if it is missing the flow writes nothing and emails the administrator. The CSV comes from a Create CSV table action, with a byte-order mark so Excel reads it as UTF-8, and text that starts with = + - or @ gets a leading apostrophe (as the app's CSV does). The Markdown file is a table with pipes escaped and line breaks turned into spaces. Failure: a scope runs if the backup scope fails or times out and emails the administrator, saying nothing was changed.
+
+**2026-11-17 (P-060):** the backup's columns gain **Amount when posted** (after Posted on) and **Note** (after Class, text kept as text), so the package is made again from Set-up and imported again before it is turned on. Nothing else about the flow changed.
+
+| Step | Name in the flow | What it does |
+|---|---|---|
+| Start | Every night | Recurrence: daily, 02:30, Central Standard Time |
+| 1 | Get bought requests, Bought request ids | The requests with status Submitted or Processed, and their IDs |
+| 2 | Get all lines, Ledger lines | Every line, then only those whose request is in the list |
+| 3 | Stamp | The date and minute in Central time, for the file names |
+| 4 | Lines csv, Markdown rows | The CSV text and the table rows |
+| 5 | Check backup folder, create if missing | `Ledger_Backups`, first night only |
+| 6 | Create csv file, Create markdown file | Two new files. If a name already existed the step would fail (it cannot: the stamp is to the minute); nothing is ever overwritten |
+| On failure | On backup failure | Emails the administrator a link to the flow run and to the Ledger |
+
+Writes: one folder (once) and two new files a night, on the destination site only. Tests: `backupFlow.test.ts`; the package passes `flow/tools/check_package.py`; the example is `flow/example/backup_definition.json` (`npm run flow-example`).
+
+## Points to confirm for the Ledger build (all Unverified until the Test flow)
+
+1. **The archive.** The connector's Create folder accepts `Purchases_Test/Purchase_Receipts` and `.../Purchase_Receipts/<request folder>` as two separate single-level folders (as the existing two landing folders are made); Filter array's `startsWith(item()?['DisplayName'], 'R')` keeps the receipt copies; a receipt's content can be read a second time. Seen when: after a Test submission, `Purchase_Receipts/<request folder>/` holds the `R01_...` files and not the quotes or the CSV, and the submission shows a Receipt archive link that opens it.
+2. **Nesting.** The deepest action stays five levels down (one inside the new If in the packaged branch is no deeper than `Create_file`). The limit is believed to be 8 (Unverified). Seen when: the import finishes and the flow turns on.
+3. **The backup flow imports and turns on**, and its trigger shows "Every day at 2:30 AM (Central)". Seen when: the flow lists the schedule; use Run (or wait a night) to see the first files.
+4. **Reading the lists.** Get items with `$filter` on the RequestStatus choice column returns the bought requests, and the pagination setting returns more than 100 items. The Lines list has no indexed column to filter on (SharePoint's 5,000-item list view limit applies to a filtered read; the read here is unfiltered, which has its own limit, Unverified) and holds a few hundred lines a year. Seen when: the CSV has a row for every line of every Submitted or Processed request.
+5. **Create CSV table** and the Select that builds the Markdown rows accept these expressions, and a choice column is read through `?['Value']` (as the PackageStatus choice already is). Seen when: the CSV opens in Excel with the headers in order and the Markdown file shows a table.
+6. **The time zone name** `Central Standard Time` is accepted by the Recurrence trigger. Seen when: the schedule shows 2:30 AM Central.
+
+## Points to confirm for the 1.0.5.0 change (P-064)
+
+Not yet run on a real site. Checked at the Test flow, in this order:
+
+1. **A missing folder is reported.** With one of the three Test folders removed, submit a request: it should show Failed under Needs attention with the message naming the folder, and an email should arrive. Put the folder back and choose Retry packaging: it should package. Unverified: that `GetFolderByServerRelativeUrl(...)/Exists` answers false (not an error) for a folder that is missing or that the connection cannot open; if it answers with an error instead, the failure path (the Failed message from the step) is used, and the text is the connector's.
+2. **The flow connection can write.** With `App Output` restricted, the flow creates a `PR-####` folder, the files and the archive folder. Unverified: that Edit is enough to create folders with `addUsingPath`.
+3. **The backup folder check.** Remove `Ledger_Backups` from the Test folders and Run the backup: no file is written and an email names the folder. Put it back and Run again: two new files.
+4. **Nothing reaches the Executive Team site.** Its Accounting folder shows no new items after the Live flow has run. The older folders (PR-0006 to PR-0013) are untouched.

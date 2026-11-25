@@ -1,5 +1,7 @@
 # Clarus Purchase Request App: Strategy
 
+**Changed 2026-11-25 (P-064): where the flows write.** The Executive Team site is retired. Every place below that names `Accounting/Purchases/...` or the ExecutiveTeam site (sections 7, 8, 9 and the flow tables) is the earlier design. Now: Documents / App Output on the Forms and Apps site, in `Purchases_To_Process`, `Purchase_Receipts` and `Ledger_Backups`, which Max creates and restricts; the flows only check them and make each request's own folder. The names are held in `app/src/export/outputDestination.ts`. Processed requests are filed by Max in Internal Records > Accounting and Receipts. See `docs/DECISIONS.md` P-064 and `flow/FLOW.md`.
+
 **Status:** First draft, written 2026-09-30 during Max Wamsley's overnight build, and updated on 2026-10-01 for the approver-buys build (P-037 to P-042) after Max's answers of that day. Everything Max decided in his build prompt is marked **Decided**. Everything Claude chose where the prompt was silent is marked **Provisional (Claude, awaiting Max)** and is listed in `docs/QUESTIONS_FOR_MAX.md`. Nothing has been installed or changed in Microsoft 365.
 
 **Purpose of this document:** record what carries over from the Travel Expense App, what changes for purchases, the workflow, the output package, the flow design, and the order in which the app is built and finished. `docs/DECISIONS.md` is the formal log (P-001 onward); this document summarises it.

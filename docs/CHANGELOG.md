@@ -275,3 +275,19 @@ Max asked for an official policy for all employees first, then the SOP, in one c
 
 - **Unverified:** the federal basis of the $5,000 equipment rule; how Word lays out the pages (checked in LibreOffice); the tracker's Clarus theme (not applied).
 
+## 2026-11-25. The flows write to App Output on the Forms and Apps site (version 1.0.5.0, P-064)
+
+Max asked for the flow's output to leave the Executive Team site (retired). After the workshop questions, the policy app's answers (2026-11-25) and Max's answers (Test mode: option A), Claude changed the code. **No outside system was read or written**; nothing in the lists or on any site was changed.
+
+| What | Files | Why |
+|---|---|---|
+| **Decision** P-064 | `docs/DECISIONS.md` | Replaces the fixed Live destination (P-008) and the places of P-058 and P-059 |
+| **One place for the destination** | `app/src/export/outputDestination.ts` (new), `export/flowPackage.ts`, `export/backupFlow.ts` | Site, library and folder names in one place; the flow checks `Check_landing_folder`, `Check_archive_root`, `Check_report_folder` and never creates the parent, archive or backup folders; a missing one marks the submission Failed with a message naming it; the backup checks its folder and emails the administrator if it is missing; the generator refuses any other destination, the Executive Team site included |
+| **Set-up** | `data/sharepoint/SharePointDataService.ts` (`getFlowSettings` checks the three folders, read only, for Test and Live), `domain/messages.ts` (`flowFolderMissing`), `ui/pages/admin/SetupPage.tsx` | No package until the folders exist |
+| **Screen text** | `ui/pages/admin/AdminRequestPage.tsx`, `RequestsToProcessPage.tsx`, `ui/pages/RequestWorkspace.tsx`, `content/instructions.ts`, `data/mock/sampleData.ts` | Paths read from the config; filing goes to Internal Records > Accounting and Receipts |
+| **Tests** | `export/flowPackage.test.ts`, `export/backupFlow.test.ts`, `data/sharepoint/SharePointDataService.test.ts`, `data/mock/MockDataService.test.ts`, `testing/FakeSharePoint.ts`, `flow/example/*.json` | The flow only checks folders and makes only the request's own; a missing folder stops it; nothing names the Executive Team site |
+| **Version and steps** | `config/package-solution.json` (1.0.5.0), `docs/UPDATE_1.0.5.0.md`, `docs/CHECKPOINT.md` (Part 11, steps 38 to 40) | New package; the flow packages must be made again |
+| **Records** | `CLAUDE.md`, `docs/SOP.md` (B9a, B3, B5, Part D; Part A regenerated), `flow/FLOW.md`, `docs/STRATEGY.md`, `docs/QUICKBOOKS_HANDOFF.md`, `docs/PROCESSING_SKILL_UPDATE.md`, `docs/LEDGER_QUICK_START.md`, `docs/STATUS.md` | The project rules and every document that named Accounting/Purchases |
+
+- **Unverified, to be checked at the Test flow:** that a missing or unreadable folder answers `Exists` false, and that Edit access is enough to make a request's folders.
+

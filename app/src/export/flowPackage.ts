@@ -13,7 +13,7 @@
 // which ran on a real site; the unverified points (the branch and the approval
 // email) are listed in flow/FLOW.md and checked at the test-site checkpoint.
 //
-// Safety (strategy section 7): the destination folder and the approvers'
+// Safety (strategy section 7, P-064): the destination folders (outputDestination.ts) and the approvers'
 // addresses are fixed here, never taken from list data; the folder name written
 // by the app is cleaned again; nothing is overwritten, moved or deleted; the
 // email text stored in the list is escaped before it is sent (travel D-067).
@@ -22,6 +22,7 @@
 // does not pass is not made.
 
 import { buildZip } from './zip';
+import { OUTPUT_DESTINATION, folderText, landingFolders } from './outputDestination';
 
 export type FlowMode = 'test' | 'live';
 
@@ -49,30 +50,27 @@ export interface FlowConfig {
   appPageUrl: string;
 }
 
-/** The fixed live destination (strategy section 7). */
+/**
+ * The fixed live destination (P-064). The names live in outputDestination.ts, the one place; the Executive Team site is
+ * retired and is not written to. The folders must already exist: nothing here creates them.
+ */
 export const LIVE_DESTINATION = {
-  siteUrl: 'https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam',
-  libraryUrlName: 'Shared Documents',
-  /** Must already exist. The flow does not check it: the Set-up page does, read only, when it makes a live package. */
-  existingParent: '01_Company Documents/Accounting',
-  folders: ['01_Company Documents/Accounting/Purchases', '01_Company Documents/Accounting/Purchases/Purchases_To_Process']
+  siteUrl: OUTPUT_DESTINATION.live.siteUrl as string,
+  libraryUrlName: OUTPUT_DESTINATION.live.libraryUrlName,
+  folders: landingFolders('live')
 } as const;
 
-/** The test destination: the test site's own library, outside Accounting (strategy section 10). */
-export const TEST_FOLDERS = ['Purchases_Test', 'Purchases_Test/Purchases_To_Process'];
+/** The test destination: the test site's own library (strategy section 10). Also checked, never created. */
+export const TEST_FOLDERS = landingFolders('test');
 
 /** The test destination's library: the test site's own Documents library, as the Set-up page reads it. */
-export const TEST_LIBRARY_URL_NAME = 'Shared Documents';
+export const TEST_LIBRARY_URL_NAME = OUTPUT_DESTINATION.test.libraryUrlName;
 
-/**
- * The permanent receipt archive (P-058): a folder beside Purchases_To_Process, one folder per request inside it. The flow
- * copies each request's receipts here as well, so the Ledger's receipt links keep working when the administrator files the
- * request folder under its year. One level, never a year folder.
- */
-export const ARCHIVE_FOLDER_NAME = 'Purchase_Receipts';
+/** The permanent receipt archive's folder name (P-058): a folder beside the request folders, one folder per request inside it. */
+export const ARCHIVE_FOLDER_NAME = OUTPUT_DESTINATION.live.archiveFolder;
 
-/** Where the nightly ledger backup is written (P-059): a folder beside Purchases_To_Process, a new dated file each night. */
-export const BACKUP_FOLDER_NAME = 'Ledger_Backups';
+/** Where the nightly ledger backup is written (P-059): a folder beside the request folders, a new dated file each night. */
+export const BACKUP_FOLDER_NAME = OUTPUT_DESTINATION.live.backupFolder;
 
 /** The most addresses the approval email can go to. More are refused, so the To line stays a sane length. */
 export const MAX_APPROVERS = 20;
@@ -180,7 +178,7 @@ export function checkMode(mode: unknown): void {
 
 /**
  * The sites, the library and the folders a package may write to. A live package can only ever write to the fixed
- * Accounting folders; a test package only to this site's own library (P-008). Shared by every flow package.
+ * destination in outputDestination.ts; a test package only to this site's own library (P-008, P-064). Shared by every flow package.
  */
 export function checkDestination(config: Pick<FlowConfig, 'mode' | 'siteUrl' | 'destinationSiteUrl' | 'libraryUrlName' | 'folders'>): void {
   checkSiteUrl(config.siteUrl, 'the site address');
@@ -191,9 +189,13 @@ export function checkDestination(config: Pick<FlowConfig, 'mode' | 'siteUrl' | '
       config.libraryUrlName !== LIVE_DESTINATION.libraryUrlName ||
       !sameFolders(config.folders, LIVE_DESTINATION.folders)
     )
-      throw notMade('a Live package can only send folders to Accounting > Purchases > Purchases_To_Process on the ExecutiveTeam site.');
+      throw notMade(`a Live package can only send folders to ${folderText('live', 'requests').replace(/ \/ /g, ' > ')} on the Forms and Apps site.`);
   } else if (config.destinationSiteUrl !== config.siteUrl || config.libraryUrlName !== TEST_LIBRARY_URL_NAME || !sameFolders(config.folders, TEST_FOLDERS)) {
-    throw notMade("a Test package can only send folders to this site's own Documents library, in Purchases_Test > Purchases_To_Process.");
+    throw notMade(
+      `a Test package can only send folders to this site's own Documents library, in ${folderText('test', 'requests')
+        .replace(/^Documents \/ /, '')
+        .replace(/ \/ /g, ' > ')}.`
+    );
   }
 }
 
@@ -378,32 +380,12 @@ function definitionOf(config: CheckedFlowConfig): Record<string, unknown> {
       authentication: "@parameters('$authentication')"
     }
   };
-  // The landing folders are created on the first run only (never year folders, D-009).
-  let previous = 'Get_attachments';
-  config.folders.forEach((folder, i) => {
-    const serverPath = { text: `${destPath}/${folder}` };
-    const check = `Check_folder_${i + 1}`;
-    const cond = `If_folder_${i + 1}_is_missing`;
-    pkg[check] = http(config, 'GET', existsUri(serverPath), { [previous]: OK });
-    pkg[cond] = {
-      runAfter: { [check]: OK },
-      type: 'If',
-      expression: { and: [{ equals: [exists(check), false] }] },
-      actions: { [`Create_folder_${i + 1}`]: http(config, 'POST', createUri(serverPath), {}) },
-      else: { actions: {} }
-    };
-    previous = cond;
-  });
-  // The receipt archive's own folder is created on the first run only, like the two above (P-058).
-  pkg.Check_archive_root = http(config, 'GET', existsUri({ text: archiveRootServerPath }), { [previous]: OK });
-  pkg.If_archive_root_is_missing = {
-    runAfter: { Check_archive_root: OK },
-    type: 'If',
-    expression: { and: [{ equals: [exists('Check_archive_root'), false] }] },
-    actions: { Create_archive_root: http(config, 'POST', createUri({ text: archiveRootServerPath }), {}) },
-    else: { actions: {} }
-  };
-  pkg.Check_report_folder = http(config, 'GET', existsUri({ expression: reportFolderServerPath }), { If_archive_root_is_missing: OK });
+  // The folders Max creates are only checked, never created (P-064): the request folders' parent, and the receipt
+  // archive. If one is missing the request is not packaged and the administrator is told which one (stopReason).
+  // Only this request's own folders are made, in the packaged branch below.
+  pkg.Check_landing_folder = http(config, 'GET', existsUri({ text: landingServerPath }), { Get_attachments: OK });
+  pkg.Check_archive_root = http(config, 'GET', existsUri({ text: archiveRootServerPath }), { Check_landing_folder: OK });
+  pkg.Check_report_folder = http(config, 'GET', existsUri({ expression: reportFolderServerPath }), { Check_archive_root: OK });
 
   const summaryHtml = `@{${htmlTextExpression("triggerBody()?['EmailSummary']")}}`;
   const heading = "@{if(greater(triggerBody()?['SubmissionNumber'], 1), 'Purchase request resubmitted', 'Purchase request submitted')}";
@@ -515,14 +497,25 @@ function definitionOf(config: CheckedFlowConfig): Record<string, unknown> {
     Send_notification: email({ Mark_packaged: OK }, config.adminEmail, "@{triggerBody()?['EmailSubject']}", notification)
   };
 
-  const stopReason =
-    "@{if(equals(body('Check_report_folder')?['d']?['Exists'], true), " +
+  // What went wrong when a request is not packaged: a folder Max creates is missing (or the flow's account cannot open it),
+  // the request's folder is already there, or there is nothing to copy.
+  const requestsText = folderText(config.mode, 'requests');
+  const archiveText = folderText(config.mode, 'archive');
+  const missing = (text: string) =>
     lit(
-      'A folder with this name already exists in Purchases_To_Process, so nothing was copied or overwritten. Delete that folder, then choose Retry packaging.'
+      `The folder ${text} was not found, or the flow's account cannot open it, so nothing was copied. The flow never creates it. ` +
+        'Ask Max to create it or give the account Edit access, then choose Retry packaging.'
+    );
+  const stopReason =
+    `@{if(not(equals(body('Check_landing_folder')?['d']?['Exists'], true)), ${missing(requestsText)}, ` +
+    `if(not(equals(body('Check_archive_root')?['d']?['Exists'], true)), ${missing(archiveText)}, ` +
+    "if(equals(body('Check_report_folder')?['d']?['Exists'], true), " +
+    lit(
+      `A folder with this name already exists in ${config.folders[config.folders.length - 1].split('/').pop()}, so nothing was copied or overwritten. Delete that folder, then choose Retry packaging.`
     ) +
     ', ' +
     lit('The submission has no files to copy. Ask the employee to submit again.') +
-    ')}';
+    ')))}';
   const notPackaged: Record<string, unknown> = {
     Mark_not_packaged: patchSubmission({}, config, { 'PackageStatus/Value': 'Failed', ErrorMessage: stopReason }),
     Send_not_packaged_email: email(
@@ -536,7 +529,14 @@ function definitionOf(config: CheckedFlowConfig): Record<string, unknown> {
   pkg.If_the_report_folder_is_new = {
     runAfter: { Check_report_folder: OK },
     type: 'If',
-    expression: { and: [{ equals: [exists('Check_report_folder'), false] }, { greater: ["@length(body('Get_attachments'))", 0] }] },
+    expression: {
+      and: [
+        { equals: [exists('Check_landing_folder'), true] },
+        { equals: [exists('Check_archive_root'), true] },
+        { equals: [exists('Check_report_folder'), false] },
+        { greater: ["@length(body('Get_attachments'))", 0] }
+      ]
+    },
     actions: packaged,
     else: { actions: notPackaged }
   };

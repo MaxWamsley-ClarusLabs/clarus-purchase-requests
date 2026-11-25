@@ -101,7 +101,12 @@ export class FakeSharePoint {
   refuseItemLevelPermissions = false;
   /** Document libraries and folders that exist, by server-relative address, on any site. */
   readonly libraries = new Set<string>(['/sites/FormsAndApps/Shared Documents']);
-  readonly folders = new Set<string>();
+  /** The folders Max creates for the flows to write into (P-064): the test site has them, so a Test package can be made. */
+  readonly folders = new Set<string>([
+    '/sites/FormsAndApps/Shared Documents/Purchases_Test/Purchases_To_Process',
+    '/sites/FormsAndApps/Shared Documents/Purchases_Test/Purchase_Receipts',
+    '/sites/FormsAndApps/Shared Documents/Purchases_Test/Ledger_Backups'
+  ]);
   /** The site's Owners group: the people the approval email goes to (P-018). */
   owners: FakeOwner[] = [];
   /** Answer a read of the Owners group with this status, for example 403 for a person who may not see it. */

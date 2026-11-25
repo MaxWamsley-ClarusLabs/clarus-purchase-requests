@@ -41,7 +41,7 @@ Account and class are locked on a Posted line. Open the **Posted** tab, tick it,
 
 ## Safety net
 
-A copy of the whole ledger (CSV and Markdown) is saved every night at 02:30 Central time in `Accounting/Purchases/Ledger_Backups`. Nothing in it is overwritten.
+A copy of the whole ledger (CSV and Markdown) is saved every night at 02:30 Central time in `Documents / App Output / Ledger_Backups` on the Forms and Apps site. Nothing in it is overwritten.
 
 ## If something looks wrong
 

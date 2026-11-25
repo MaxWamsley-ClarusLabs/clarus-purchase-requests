@@ -243,7 +243,7 @@
                       "authentication": "@parameters('$authentication')"
                     }
                   },
-                  "Check_folder_1": {
+                  "Check_landing_folder": {
                     "runAfter": {
                       "Get_attachments": [
                         "Succeeded"
@@ -257,129 +257,19 @@
                         "operationId": "HttpRequest"
                       },
                       "parameters": {
-                        "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                        "dataset": "https://claruslabsusa.sharepoint.com/sites/FormsandApps",
                         "parameters/method": "GET",
-                        "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases')/Exists",
+                        "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('/sites/FormsandApps/Shared Documents/App Output/Purchases_To_Process')/Exists",
                         "parameters/headers": {
                           "Accept": "application/json;odata=verbose"
                         }
                       },
                       "authentication": "@parameters('$authentication')"
-                    }
-                  },
-                  "If_folder_1_is_missing": {
-                    "runAfter": {
-                      "Check_folder_1": [
-                        "Succeeded"
-                      ]
-                    },
-                    "type": "If",
-                    "expression": {
-                      "and": [
-                        {
-                          "equals": [
-                            "@body('Check_folder_1')?['d']?['Exists']",
-                            false
-                          ]
-                        }
-                      ]
-                    },
-                    "actions": {
-                      "Create_folder_1": {
-                        "runAfter": {},
-                        "type": "OpenApiConnection",
-                        "inputs": {
-                          "host": {
-                            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
-                            "connectionName": "shared_sharepointonline",
-                            "operationId": "HttpRequest"
-                          },
-                          "parameters": {
-                            "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
-                            "parameters/method": "POST",
-                            "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases')",
-                            "parameters/headers": {
-                              "Accept": "application/json;odata=verbose"
-                            }
-                          },
-                          "authentication": "@parameters('$authentication')"
-                        }
-                      }
-                    },
-                    "else": {
-                      "actions": {}
-                    }
-                  },
-                  "Check_folder_2": {
-                    "runAfter": {
-                      "If_folder_1_is_missing": [
-                        "Succeeded"
-                      ]
-                    },
-                    "type": "OpenApiConnection",
-                    "inputs": {
-                      "host": {
-                        "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
-                        "connectionName": "shared_sharepointonline",
-                        "operationId": "HttpRequest"
-                      },
-                      "parameters": {
-                        "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
-                        "parameters/method": "GET",
-                        "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchases_To_Process')/Exists",
-                        "parameters/headers": {
-                          "Accept": "application/json;odata=verbose"
-                        }
-                      },
-                      "authentication": "@parameters('$authentication')"
-                    }
-                  },
-                  "If_folder_2_is_missing": {
-                    "runAfter": {
-                      "Check_folder_2": [
-                        "Succeeded"
-                      ]
-                    },
-                    "type": "If",
-                    "expression": {
-                      "and": [
-                        {
-                          "equals": [
-                            "@body('Check_folder_2')?['d']?['Exists']",
-                            false
-                          ]
-                        }
-                      ]
-                    },
-                    "actions": {
-                      "Create_folder_2": {
-                        "runAfter": {},
-                        "type": "OpenApiConnection",
-                        "inputs": {
-                          "host": {
-                            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
-                            "connectionName": "shared_sharepointonline",
-                            "operationId": "HttpRequest"
-                          },
-                          "parameters": {
-                            "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
-                            "parameters/method": "POST",
-                            "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchases_To_Process')",
-                            "parameters/headers": {
-                              "Accept": "application/json;odata=verbose"
-                            }
-                          },
-                          "authentication": "@parameters('$authentication')"
-                        }
-                      }
-                    },
-                    "else": {
-                      "actions": {}
                     }
                   },
                   "Check_archive_root": {
                     "runAfter": {
-                      "If_folder_2_is_missing": [
+                      "Check_landing_folder": [
                         "Succeeded"
                       ]
                     },
@@ -391,9 +281,9 @@
                         "operationId": "HttpRequest"
                       },
                       "parameters": {
-                        "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                        "dataset": "https://claruslabsusa.sharepoint.com/sites/FormsandApps",
                         "parameters/method": "GET",
-                        "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts')/Exists",
+                        "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('/sites/FormsandApps/Shared Documents/App Output/Purchase_Receipts')/Exists",
                         "parameters/headers": {
                           "Accept": "application/json;odata=verbose"
                         }
@@ -401,55 +291,12 @@
                       "authentication": "@parameters('$authentication')"
                     }
                   },
-                  "If_archive_root_is_missing": {
+                  "Check_report_folder": {
                     "runAfter": {
                       "Check_archive_root": [
                         "Succeeded"
                       ]
                     },
-                    "type": "If",
-                    "expression": {
-                      "and": [
-                        {
-                          "equals": [
-                            "@body('Check_archive_root')?['d']?['Exists']",
-                            false
-                          ]
-                        }
-                      ]
-                    },
-                    "actions": {
-                      "Create_archive_root": {
-                        "runAfter": {},
-                        "type": "OpenApiConnection",
-                        "inputs": {
-                          "host": {
-                            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
-                            "connectionName": "shared_sharepointonline",
-                            "operationId": "HttpRequest"
-                          },
-                          "parameters": {
-                            "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
-                            "parameters/method": "POST",
-                            "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts')",
-                            "parameters/headers": {
-                              "Accept": "application/json;odata=verbose"
-                            }
-                          },
-                          "authentication": "@parameters('$authentication')"
-                        }
-                      }
-                    },
-                    "else": {
-                      "actions": {}
-                    }
-                  },
-                  "Check_report_folder": {
-                    "runAfter": {
-                      "If_archive_root_is_missing": [
-                        "Succeeded"
-                      ]
-                    },
                     "type": "OpenApiConnection",
                     "inputs": {
                       "host": {
@@ -458,9 +305,9 @@
                         "operationId": "HttpRequest"
                       },
                       "parameters": {
-                        "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                        "dataset": "https://claruslabsusa.sharepoint.com/sites/FormsandApps",
                         "parameters/method": "GET",
-                        "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('@{concat('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchases_To_Process/', outputs('Safe_folder_name'))}')/Exists",
+                        "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('@{concat('/sites/FormsandApps/Shared Documents/App Output/Purchases_To_Process/', outputs('Safe_folder_name'))}')/Exists",
                         "parameters/headers": {
                           "Accept": "application/json;odata=verbose"
                         }
@@ -477,6 +324,18 @@
                     "type": "If",
                     "expression": {
                       "and": [
+                        {
+                          "equals": [
+                            "@body('Check_landing_folder')?['d']?['Exists']",
+                            true
+                          ]
+                        },
+                        {
+                          "equals": [
+                            "@body('Check_archive_root')?['d']?['Exists']",
+                            true
+                          ]
+                        },
                         {
                           "equals": [
                             "@body('Check_report_folder')?['d']?['Exists']",
@@ -502,9 +361,9 @@
                             "operationId": "HttpRequest"
                           },
                           "parameters": {
-                            "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                            "dataset": "https://claruslabsusa.sharepoint.com/sites/FormsandApps",
                             "parameters/method": "POST",
-                            "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='@{concat('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchases_To_Process/', outputs('Safe_folder_name'))}')",
+                            "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='@{concat('/sites/FormsandApps/Shared Documents/App Output/Purchases_To_Process/', outputs('Safe_folder_name'))}')",
                             "parameters/headers": {
                               "Accept": "application/json;odata=verbose"
                             }
@@ -526,9 +385,9 @@
                             "operationId": "HttpRequest"
                           },
                           "parameters": {
-                            "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                            "dataset": "https://claruslabsusa.sharepoint.com/sites/FormsandApps",
                             "parameters/method": "GET",
-                            "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('@{concat('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts/', outputs('Safe_folder_name'))}')/Exists",
+                            "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('@{concat('/sites/FormsandApps/Shared Documents/App Output/Purchase_Receipts/', outputs('Safe_folder_name'))}')/Exists",
                             "parameters/headers": {
                               "Accept": "application/json;odata=verbose"
                             }
@@ -564,9 +423,9 @@
                                 "operationId": "HttpRequest"
                               },
                               "parameters": {
-                                "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                                "dataset": "https://claruslabsusa.sharepoint.com/sites/FormsandApps",
                                 "parameters/method": "POST",
-                                "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='@{concat('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts/', outputs('Safe_folder_name'))}')",
+                                "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='@{concat('/sites/FormsandApps/Shared Documents/App Output/Purchase_Receipts/', outputs('Safe_folder_name'))}')",
                                 "parameters/headers": {
                                   "Accept": "application/json;odata=verbose"
                                 }
@@ -625,8 +484,8 @@
                                 "operationId": "CreateFile"
                               },
                               "parameters": {
-                                "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
-                                "folderPath": "@{concat('/Shared Documents/01_Company Documents/Accounting/Purchases/Purchases_To_Process/', outputs('Safe_folder_name'))}",
+                                "dataset": "https://claruslabsusa.sharepoint.com/sites/FormsandApps",
+                                "folderPath": "@{concat('/Shared Documents/App Output/Purchases_To_Process/', outputs('Safe_folder_name'))}",
                                 "name": "@items('Copy_files')?['DisplayName']",
                                 "body": "@body('Get_attachment_content')"
                               },
@@ -698,8 +557,8 @@
                                 "operationId": "CreateFile"
                               },
                               "parameters": {
-                                "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
-                                "folderPath": "@{concat('/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts/', outputs('Safe_folder_name'))}",
+                                "dataset": "https://claruslabsusa.sharepoint.com/sites/FormsandApps",
+                                "folderPath": "@{concat('/Shared Documents/App Output/Purchase_Receipts/', outputs('Safe_folder_name'))}",
                                 "name": "@items('Archive_receipts')?['DisplayName']",
                                 "body": "@body('Get_receipt_content')"
                               },
@@ -731,8 +590,8 @@
                             "table": "00000000-0000-0000-0000-000000000003",
                             "id": "@triggerBody()?['ID']",
                             "item/PackageStatus/Value": "Packaged",
-                            "item/FolderLink": "@{concat('https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Purchases/Purchases_To_Process/', encodeUriComponent(outputs('Safe_folder_name')))}",
-                            "item/ArchiveLink": "@{concat('https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Purchases/Purchase_Receipts/', encodeUriComponent(outputs('Safe_folder_name')))}",
+                            "item/FolderLink": "@{concat('https://claruslabsusa.sharepoint.com/sites/FormsandApps/Shared%20Documents/App%20Output/Purchases_To_Process/', encodeUriComponent(outputs('Safe_folder_name')))}",
+                            "item/ArchiveLink": "@{concat('https://claruslabsusa.sharepoint.com/sites/FormsandApps/Shared%20Documents/App%20Output/Purchase_Receipts/', encodeUriComponent(outputs('Safe_folder_name')))}",
                             "item/PackagedAt": "@{utcNow()}",
                             "item/ErrorMessage": ""
                           },
@@ -755,7 +614,7 @@
                           "parameters": {
                             "emailMessage/To": "administrator@example.com",
                             "emailMessage/Subject": "@{triggerBody()?['EmailSubject']}",
-                            "emailMessage/Body": "<div style=\"font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;\"><h3>@{if(greater(triggerBody()?['SubmissionNumber'], 1), 'Purchase request resubmitted', 'Purchase request submitted')}</h3><p>@{replace(replace(replace(replace(replace(replace(coalesce(triggerBody()?['EmailSummary'], ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '\"', '&quot;'), decodeUriComponent('%0D'), ''), decodeUriComponent('%0A'), '<br>')}</p><p><b>Folder:</b> <a href=\"@{concat('https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Purchases/Purchases_To_Process/', encodeUriComponent(outputs('Safe_folder_name')))}\">@{outputs('Safe_folder_name')}</a><br><b>All requests waiting:</b> <a href=\"https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Purchases/Purchases_To_Process\">Purchases_To_Process</a><br><b>Open the request in Purchase Requests:</b> <a href=\"https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx#/admin/request/@{triggerBody()?['RequestId']}\">Purchase Requests</a></p></div>",
+                            "emailMessage/Body": "<div style=\"font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;\"><h3>@{if(greater(triggerBody()?['SubmissionNumber'], 1), 'Purchase request resubmitted', 'Purchase request submitted')}</h3><p>@{replace(replace(replace(replace(replace(replace(coalesce(triggerBody()?['EmailSummary'], ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '\"', '&quot;'), decodeUriComponent('%0D'), ''), decodeUriComponent('%0A'), '<br>')}</p><p><b>Folder:</b> <a href=\"@{concat('https://claruslabsusa.sharepoint.com/sites/FormsandApps/Shared%20Documents/App%20Output/Purchases_To_Process/', encodeUriComponent(outputs('Safe_folder_name')))}\">@{outputs('Safe_folder_name')}</a><br><b>All requests waiting:</b> <a href=\"https://claruslabsusa.sharepoint.com/sites/FormsandApps/Shared%20Documents/App%20Output/Purchases_To_Process\">Purchases_To_Process</a><br><b>Open the request in Purchase Requests:</b> <a href=\"https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx#/admin/request/@{triggerBody()?['RequestId']}\">Purchase Requests</a></p></div>",
                             "emailMessage/Importance": "Normal"
                           },
                           "authentication": "@parameters('$authentication')"
@@ -778,7 +637,7 @@
                               "table": "00000000-0000-0000-0000-000000000003",
                               "id": "@triggerBody()?['ID']",
                               "item/PackageStatus/Value": "Failed",
-                              "item/ErrorMessage": "@{if(equals(body('Check_report_folder')?['d']?['Exists'], true), 'A folder with this name already exists in Purchases_To_Process, so nothing was copied or overwritten. Delete that folder, then choose Retry packaging.', 'The submission has no files to copy. Ask the employee to submit again.')}"
+                              "item/ErrorMessage": "@{if(not(equals(body('Check_landing_folder')?['d']?['Exists'], true)), 'The folder Documents / App Output / Purchases_To_Process was not found, or the flow''s account cannot open it, so nothing was copied. The flow never creates it. Ask Max to create it or give the account Edit access, then choose Retry packaging.', if(not(equals(body('Check_archive_root')?['d']?['Exists'], true)), 'The folder Documents / App Output / Purchase_Receipts was not found, or the flow''s account cannot open it, so nothing was copied. The flow never creates it. Ask Max to create it or give the account Edit access, then choose Retry packaging.', if(equals(body('Check_report_folder')?['d']?['Exists'], true), 'A folder with this name already exists in Purchases_To_Process, so nothing was copied or overwritten. Delete that folder, then choose Retry packaging.', 'The submission has no files to copy. Ask the employee to submit again.')))}"
                             },
                             "authentication": "@parameters('$authentication')"
                           }
@@ -799,7 +658,7 @@
                             "parameters": {
                               "emailMessage/To": "administrator@example.com",
                               "emailMessage/Subject": "Purchase request not packaged: @{coalesce(triggerBody()?['Title'], 'a purchase request')}",
-                              "emailMessage/Body": "<div style=\"font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;\"><p>@{if(equals(body('Check_report_folder')?['d']?['Exists'], true), 'A folder with this name already exists in Purchases_To_Process, so nothing was copied or overwritten. Delete that folder, then choose Retry packaging.', 'The submission has no files to copy. Ask the employee to submit again.')}</p><p><a href=\"https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx#/admin/attention\">Open Needs attention</a></p></div>",
+                              "emailMessage/Body": "<div style=\"font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;\"><p>@{if(not(equals(body('Check_landing_folder')?['d']?['Exists'], true)), 'The folder Documents / App Output / Purchases_To_Process was not found, or the flow''s account cannot open it, so nothing was copied. The flow never creates it. Ask Max to create it or give the account Edit access, then choose Retry packaging.', if(not(equals(body('Check_archive_root')?['d']?['Exists'], true)), 'The folder Documents / App Output / Purchase_Receipts was not found, or the flow''s account cannot open it, so nothing was copied. The flow never creates it. Ask Max to create it or give the account Edit access, then choose Retry packaging.', if(equals(body('Check_report_folder')?['d']?['Exists'], true), 'A folder with this name already exists in Purchases_To_Process, so nothing was copied or overwritten. Delete that folder, then choose Retry packaging.', 'The submission has no files to copy. Ask the employee to submit again.')))}</p><p><a href=\"https://contoso.sharepoint.com/sites/FormsAndApps/SitePages/Purchase-Requests.aspx#/admin/attention\">Open Needs attention</a></p></div>",
                               "emailMessage/Importance": "Normal"
                             },
                             "authentication": "@parameters('$authentication')"

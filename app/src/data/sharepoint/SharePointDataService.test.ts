@@ -808,21 +808,38 @@ describe('Flow package settings (travel D-047, P-018)', () => {
     expect(config.adminEmail).toBe(MAX.email);
   });
 
-  it('checks, without changing anything, that the Accounting folder exists for a live package', async () => {
+  it('checks, without changing anything, that the folders Max creates exist, for a live package (P-064)', async () => {
     const site = await setUpSite();
     const admin = serviceFor(site, FAKE_MAX);
     await expect(admin.getFlowSettings('live', PAGE)).rejects.toThrow('could not be found');
-    site.libraries.add('/sites/ExecutiveTeam/Shared Documents');
-    await expect(admin.getFlowSettings('live', PAGE)).rejects.toThrow('01_Company Documents/Accounting');
-    site.folders.add('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting');
+    site.libraries.add('/sites/FormsandApps/Shared Documents');
+    const library = '/sites/FormsandApps/Shared Documents';
+    // Each folder is asked for in turn, and the message names the one that is missing.
+    await expect(admin.getFlowSettings('live', PAGE)).rejects.toThrow('The folder Documents / App Output / Purchases_To_Process was not found');
+    site.folders.add(`${library}/App Output/Purchases_To_Process`);
+    await expect(admin.getFlowSettings('live', PAGE)).rejects.toThrow('The folder Documents / App Output / Purchase_Receipts was not found');
+    site.folders.add(`${library}/App Output/Purchase_Receipts`);
+    await expect(admin.getFlowSettings('live', PAGE)).rejects.toThrow('The folder Documents / App Output / Ledger_Backups was not found');
+    site.folders.add(`${library}/App Output/Ledger_Backups`);
     const before = site.log.length;
     const config = await admin.getFlowSettings('live', PAGE);
     expect(config.mode).toBe('live');
     expect(config.siteUrl).toBe(site.webUrl);
-    expect(config.destinationSiteUrl).toBe('https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam');
+    expect(config.destinationSiteUrl).toBe('https://claruslabsusa.sharepoint.com/sites/FormsandApps');
     expect(config.libraryUrlName).toBe('Shared Documents');
-    expect(config.folders).toEqual(['01_Company Documents/Accounting/Purchases', '01_Company Documents/Accounting/Purchases/Purchases_To_Process']);
+    expect(config.folders).toEqual(['App Output', 'App Output/Purchases_To_Process']);
+    // Read only: nothing is created and nothing is set.
     expect(site.log.slice(before).every((r) => r.method === 'GET')).toBe(true);
+  });
+
+  it('also refuses a test package until the test folders exist, and names the one that is missing (P-064)', async () => {
+    const site = await setUpSite();
+    const admin = serviceFor(site, FAKE_MAX);
+    expect((await admin.getFlowSettings('test', PAGE)).folders).toEqual(['Purchases_Test', 'Purchases_Test/Purchases_To_Process']);
+    site.folders.delete('/sites/FormsAndApps/Shared Documents/Purchases_Test/Ledger_Backups');
+    await expect(admin.getFlowSettings('test', PAGE)).rejects.toThrow('The folder Documents / Purchases_Test / Ledger_Backups was not found');
+    site.folders.clear();
+    await expect(admin.getFlowSettings('test', PAGE)).rejects.toThrow(messages.flowFolderMissing('Documents / Purchases_Test / Purchases_To_Process'));
   });
 
   it('needs the lists first, and is for administrators only', async () => {

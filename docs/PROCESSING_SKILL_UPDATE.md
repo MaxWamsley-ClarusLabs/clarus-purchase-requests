@@ -8,9 +8,9 @@ Three things in the skill are out of date after the Ledger (version 1.0.3.0, P-0
 
 1. **The CSV has 32 columns, not 31.** The extra column is **QuickBooks account** (P-038). The app's own test checks the count of 32.
 2. **The skill does not know the Ledger.** Bookkeepers now choose the QuickBooks account and class in the app and mark lines Posted. The "Class: CSV has none" gap rule is out of date: the class is chosen in the Ledger, not in the CSV.
-3. **The skill does not know the receipt archive or the nightly backup.** Receipts are copied to `Accounting/Purchases/Purchase_Receipts/<request folder>/` and a dated ledger copy is saved nightly in `Accounting/Purchases/Ledger_Backups/`.
+3. **The skill does not know the receipt archive or the nightly backup.** Receipts are copied to `App Output/Purchase_Receipts/<request folder>/` (Documents library of the Forms and Apps site; since app 1.0.5.0) and a dated ledger copy is saved nightly in `App Output/Ledger_Backups/`.
 
-What did **not** change: the request folder (receipt copies, quote copies and the CSV) is still placed in `Purchases_To_Process`, the CSV is still one row per line, and the skill still prepares an entry sheet for Max; QuickBooks stays read-only. Whether Max keeps using the skill once the bookkeepers work from the Ledger is his decision; the text below keeps both ways working.
+What did **not** change: the request folder (receipt copies, quote copies and the CSV) is still placed in `Purchases_To_Process`, now at `Documents / App Output / Purchases_To_Process` on the Forms and Apps site (the Executive Team site is retired), the CSV is still one row per line, and the skill still prepares an entry sheet for Max; QuickBooks stays read-only. Whether Max keeps using the skill once the bookkeepers work from the Ledger is his decision; the text below keeps both ways working.
 
 ## Edit 1. Folder contents (replace the whole section)
 
@@ -25,7 +25,7 @@ Find the section that begins `## Folder contents` and replace its paragraph with
 > - **A class is required on every line** (QuickBooks needs one), so a line cannot be Posted without an account and a class. The app does not choose the class.
 > - A Posted line that was changed afterwards shows "Changed since posted: was $X, now $Y". Treat it as a flag to check QuickBooks, not an instruction.
 > - **Equipment and Other lines** show "Administrator decides" until Max confirms the account (6175, or 1415 Fixed Assets:Equipment). Do not guess it.
-> - **Receipt archive:** the receipts of each request are also copied to `Accounting/Purchases/Purchase_Receipts/<same folder name>/`. That copy stays put when Max moves the request folder to its year folder, and the Ledger's receipt links point to it. A request packaged before the archive existed has no archive copy.
+> - **Receipt archive:** the receipts of each request are also copied to `App Output/Purchase_Receipts/<same folder name>/`. That copy stays put when Max moves the request folder to its year folder, and the Ledger's receipt links point to it. A request packaged before the archive existed has no archive copy.
 > - **Nightly backup:** a dated pair of files, `Ledger_<date>_<time>.csv` and `.md`, is saved every night at 02:30 Central in `Accounting/Purchases/Ledger_Backups/`, with every bought line, its account, class, note, Posted flag, who and when. Nothing is overwritten. To see what the bookkeepers decided, read the newest backup or the Ledger's **Download Excel** file before asking Max.
 > - The skill still never edits the Ledger, the lists or QuickBooks.
 

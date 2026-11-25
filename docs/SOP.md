@@ -148,7 +148,7 @@ Administrators and members of the Purchase Bookkeepers group see Ledger in the s
 - Show only narrows a tab to the lines that Need a class, Need an account, Changed since posted, or where the Administrator decides (Equipment and Other lines whose account has not been confirmed). Sort by changes the order: request, vendor, purchase date or amount. The number beside Ledger in the sidebar is how many lines are still not posted.
 - If a Posted line was changed afterwards (a request was returned and fixed, say), the Ledger shows a red note "Changed since posted: was $X, now $Y" and a warning at the top. Check QuickBooks, then either set the line back to Not posted and post it again, or add a note.
 - Click a receipt to open the copy kept in the receipt archive. A request bought before the archive existed links to its request folder instead, which stops working when the folder is filed under its year.
-- Download Excel saves the lines you are looking at (the tab and the search) as an Excel file, with a clickable link to each receipt. A copy of the whole ledger is also saved every night in Accounting, Purchases, Ledger_Backups.
+- Download Excel saves the lines you are looking at (the tab and the search) as an Excel file, with a clickable link to each receipt. A copy of the whole ledger is also saved every night in App Output, Ledger_Backups.
 
 ### What this app does not cover
 
@@ -197,19 +197,19 @@ Use this when you bought something yourself and there is no request to approve.
 2. Fill in **Request details** (business purpose and department), then **Next: Purchases**.
 3. Add a row for each purchase (**Add a purchase**): date, vendor, what and why, category, quantity and total. Attach the receipt or invoice with **+ Receipt**, or drop it into the box. One receipt per vendor covers all of that vendor's rows. Type any shipping or tax in the vendor's **Shipping** and **Tax** boxes in **Vendor totals**.
 4. Choose **Next: Review**, then **Record purchase**, then **Record purchase** in the dialog. There is no approval, no item link, no quote and no certification.
-5. The request becomes **Purchased**, marked as recorded by you, and the folder and CSV are made in `Accounting/Purchases/Purchases_To_Process` as for any purchase. It shows under **Requests to process**; continue at B4.
+5. The request becomes **Purchased**, marked as recorded by you, and the folder and CSV are made in `Documents / App Output / Purchases_To_Process` on the Forms and Apps site as for any purchase. It shows under **Requests to process**; continue at B4.
 6. It is locked once recorded. If something is wrong, return it from its page and fix it, then mark it purchased again.
 
 ### B3. When a request is submitted
 
 1. You receive an email: "Purchase request submitted: <name>, <business purpose> (PR-0042)", or "resubmitted" with the submission number. For a request the approver bought it says "Purchase request bought" (or "bought again") and names the approver as the buyer. It lists the submitter and their account, the department, business purpose and project or grant code, the purchase dates, **To reimburse**, **Paid by Clarus** and **Request total**, the number of receipts and quotes, rows without a receipt, any warnings, the approval (who, when, and any note), any **Bought before approval** flag, and the employee's certification, with links to the folder, `Purchases_To_Process` and the request in the app. It arrives a few minutes after the employee submits.
-2. The request folder is in `Accounting/Purchases/Purchases_To_Process/`, named `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042` (earliest purchase date). A resubmission ends in `_R2`, `_R3`.
+2. The request folder is in `Documents / App Output / Purchases_To_Process` on the Forms and Apps site, named `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042` (earliest purchase date). A resubmission ends in `_R2`, `_R3`.
 3. The folder holds a copy of each receipt (`R01_<original name>`, a second file on the same row `R01-2_...`), a copy of each quote (`Q01_<original name>`), and one CSV file, `PR-0042_Purchases.csv`.
 4. In the app, the request is under **Requests to process**.
 
-4a. The flow also copies each receipt (not the quotes or the CSV) into `Accounting/Purchases/Purchase_Receipts/<same folder name>/`. That archive stays where it is when you file the request folder, so the Ledger's receipt links keep working (P-058).
+4a. The flow also copies each receipt (not the quotes or the CSV) into `Documents / App Output / Purchase_Receipts / <same folder name>`. That archive stays where it is when you file the request folder, so the Ledger's receipt links keep working (P-058).
 
-The app and the flows never change, move or delete anything else in the Accounting folder. They only create new folders and files, in three places: `Purchases_To_Process` (the request folders), `Purchase_Receipts` (the receipt archive) and `Ledger_Backups` (the nightly backup, Part D).
+The app and the flows write only in three folders of `Documents / App Output` on the Forms and Apps site: `Purchases_To_Process` (the request folders), `Purchase_Receipts` (the receipt archive) and `Ledger_Backups` (the nightly backup, Part D). You create and restrict those folders (B9a). The flows never create them or set permissions, and never overwrite, move or delete anything. They make only each request's own folder and its folder in the archive. The Executive Team site is retired and gets nothing.
 
 ### B4. Processing
 
@@ -219,7 +219,7 @@ The app and the flows never change, move or delete anything else in the Accounti
 
 ### B5. Filing and marking processed
 
-1. Move the request folder from `Purchases_To_Process` into `Accounting/Purchases/<year>/`, using the year of the earliest purchase date. Create the year folder the first time it is needed, for example in January.
+1. Move the request folder from `Purchases_To_Process` into `Internal Records > Accounting and Receipts`. The app writes nothing there; you choose the subfolder.
 2. In the app, open the request and choose **Mark processed**. This only changes the request's status; no email is sent.
 
 ### B5a. A request an employee unsent (P-050)
@@ -253,6 +253,19 @@ Done once per site: the test site first, the production site at the pilot. Exact
 5. After installing a new version of the app, open Set-up again and choose Check again; update the lists if asked.
 6. Under "3. Ledger backup flow", choose Download backup flow package (it uses the same Test or Live choice) and import it the same way. Turn it on. It runs every night at 2:30 a.m. Central time.
 7. In SharePoint, create the group **Purchase Bookkeepers** and give it Edit permission on the three lists (Part D, D5). Add the bookkeepers to it.
+
+### B9a. Where the output goes (P-064)
+
+The flows write to the Forms and Apps site, in the Documents library (its address is `Shared Documents`), in the folder `App Output`. The Executive Team site is retired and is never written to. The destination is held in one place in the app (`app/src/export/outputDestination.ts`).
+
+1. **You create these three folders** (Test uses `Purchases_Test` instead of `App Output`, with the same three names inside):
+   - `Documents / App Output / Purchases_To_Process`: each request's `PR-####` folder is made here.
+   - `Documents / App Output / Purchase_Receipts`: the permanent receipt archive.
+   - `Documents / App Output / Ledger_Backups`: the nightly ledger backup.
+2. **You restrict `App Output`** (stop inheriting permissions, then choose who may open it). The app and the flows never create these folders or set permissions.
+3. **Which flow connection needs write access:** the flows run under the **SharePoint connection of the person who imported them** (today, Max's account). That account must keep **Edit** access to `App Output` and the three folders inside it, or packaging and the nightly backup fail. The Office 365 Outlook connection is unchanged. Give **Purchase Bookkeepers** Read on `Purchase_Receipts` so receipt links open (D5).
+4. **If a folder is missing** (or the connection cannot open it): Set-up refuses to make a package and names the folder. A request that was already submitted shows Failed under **Needs attention** with the folder named, and you are emailed. Create the folder or fix the access, then choose **Retry packaging**. A night's backup writes nothing and emails you the same way.
+5. **Older requests:** requests packaged before version 1.0.5.0, including PR-0006 to PR-0013, may have receipt links on the retired Executive Team site. Nothing was changed. To list them: in **Site contents**, open **Purchase Submissions**, and filter the **Receipt archive link** and **Folder link** columns for text containing `ExecutiveTeam`.
 
 ---
 
@@ -309,7 +322,7 @@ The list is shown in **layers**, so the choice you most likely want is at the to
 
 ### D4. Receipts and the Excel download
 
-- A receipt link opens the copy in `Accounting/Purchases/Purchase_Receipts/<request folder name>/`. Filing the request folder under its year does not move this copy, so the link keeps working. A request packaged before the archive existed links to its request folder, which stops working once it is filed (the Ledger marks these "request folder").
+- A receipt link opens the copy in `Documents / App Output / Purchase_Receipts / <request folder name>`. Filing the request folder elsewhere does not move this copy, so the link keeps working. Requests packaged before version 1.0.5.0 may link to the retired Executive Team site, and those links no longer open (B9a). A request packaged before the archive existed links to its request folder, which stops working once it is filed (the Ledger marks these "request folder").
 - **Download Excel** saves the lines you are looking at (the tab and the search) as an Excel file: Posted first, then who and when, the request, the purchase, the QuickBooks account and class, the total, who paid, a clickable receipt link and the rest of what the bookkeeper needs. Text is saved as text, so nothing in it can run when the file is opened.
 
 ### D5. Setting up bookkeepers (administrator, once)
@@ -318,7 +331,7 @@ The Ledger works for a person only if SharePoint lets them in, which is a Micros
 
 1. Create a SharePoint group named exactly **Purchase Bookkeepers** on the Forms and Apps site, and add the bookkeepers to it.
 2. Give the group **Edit** permission on the three lists (Purchase Requests, Purchase Request Lines, Purchase Submissions). Edit lets them read every employee's line and change the Ledger columns. It does not let them approve a request (that needs "Manage web site").
-3. Give the group **Read** access to `Accounting/Purchases/Purchase_Receipts`, so the receipt links open.
+3. Give the group **Read** access to `Documents / App Output / Purchase_Receipts`, so the receipt links open (the folder is restricted, B9a).
 4. **The other way: make the bookkeeper an Owner (used for TyWamsley, 2026-11-22, P-061).** Owners are administrators in the app, so an Owner sees the Ledger and can post lines without being in the group. The trade-off: an Owner is also an approver and sees Approvals, Requests to process, Needs attention, All requests, Set-up and Record a purchase, and can approve and buy requests (only the Owner who approved a request can buy it). Choose it only for a person you trust with spending. After adding an Owner, make a new flow package from Set-up and import it, so the approval email also reaches them (B9). To keep a bookkeeper to the Ledger alone, use the group in steps 1 to 3 instead and do not add them as an Owner.
 5. A bookkeeper outside the company needs a guest account in your Microsoft 365. That depends on your tenant's external-sharing settings (Unverified) and is not set up. There is no separate username and password for the app: everyone signs in with a Microsoft identity.
 
@@ -326,7 +339,7 @@ Unverified until the Test site: that SharePoint tells the app which groups the s
 
 ### D6. The nightly backup
 
-A second flow saves a copy of the ledger every night at 02:30 Central time, in `Accounting/Purchases/Ledger_Backups/`: a CSV and a Markdown file named `Ledger_<date>_<time>`. Each holds every purchase line of every request that has been bought, with the account, class, Posted, who and when. **Each night is a new pair of files: nothing is overwritten, moved or deleted**; delete old ones yourself when you wish. If a night fails, you are emailed and nothing is changed.
+A second flow saves a copy of the ledger every night at 02:30 Central time, in `Documents / App Output / Ledger_Backups`: a CSV and a Markdown file named `Ledger_<date>_<time>`. Each holds every purchase line of every request that has been bought, with the account, class, Posted, who and when. **Each night is a new pair of files: nothing is overwritten, moved or deleted**; delete old ones yourself when you wish. If a night fails, you are emailed and nothing is changed. If the folder is missing, no file is written and the email names it.
 
 If a list were ever damaged or lines lost, the newest backup is the record of the account, class and Posted status. The Markdown file can be read by an AI (for example to help re-enter the status); the CSV opens in Excel. The Ledger in the app is the live record; the files are the copy.
 
@@ -371,4 +384,4 @@ To be completed from the test-site runs at the checkpoint. These messages are wr
 | 2026-11-17 | 17 | Ledger polish folded into the same version: notes, the changed-since-posted warning, Apply to selected, Show only and Sort by, the Administrator decides tag, the sidebar count (D1, D2, D2a); Part A regenerated; Part C gained the note-length refusal; P-060 |
 | 2026-11-22 | 17 | D5 gained the Owner route for a bookkeeper (what an Owner can also do, and the new flow package); the Owners today; P-061 |
 | 2026-11-24 | 18 | Part A regenerated (Delete on My requests, the status colors); P-062 |
-
+| 2026-11-25 | 19 | B9a (where the output goes, P-064); the folder paths in B3, B5, B9 and Part D now name `App Output` on the Forms and Apps site; filing now goes to Internal Records > Accounting and Receipts; Part A regenerated; P-064 |

@@ -26,6 +26,7 @@ import { computeTotals } from '../../domain/totals';
 import { AttachedFile, CurrentUser, FileKind, PurchaseLine, PurchaseRequest, Submission } from '../../domain/types';
 import { BackupFlowConfig } from '../../export/backupFlow';
 import { FlowConfig, FlowMode, LIVE_DESTINATION, MAX_APPROVERS, TEST_FOLDERS, TEST_LIBRARY_URL_NAME, isSafeEmailAddress } from '../../export/flowPackage';
+import { folderText, outputFolders } from '../../export/outputDestination';
 import { PreparedSubmission, prepareApprovalRequest, prepareSubmission } from '../../export/submission';
 import { fingerprintFile, uniqueName } from '../files';
 import { ApproveOptions, CategoryChoice, LineChanges, PurchaseDataService, RequestChanges, RequestWithLines } from '../PurchaseDataService';
@@ -222,10 +223,18 @@ export class SharePointDataService implements PurchaseDataService {
       if (e instanceof SharePointRequestError && (e.status === 404 || e.status === 403)) throw new Error(messages.flowLibraryMissing(library));
       throw e;
     }
-    if (mode === 'live') {
-      const parent = `${library}/${LIVE_DESTINATION.existingParent}`;
-      const found = await destination.getJson<{ value: boolean }>(`web/GetFolderByServerRelativeUrl('${odataString(parent)}')/Exists`);
-      if (!found.value) throw new Error(messages.flowLibraryMissing(parent));
+    // The folders Max creates must already be there, and nothing is created now (P-064). Without them the flows would stop,
+    // so no package is made. A folder the signed-in person cannot open reads the same as one that is not there.
+    const wanted = outputFolders(mode);
+    for (const key of ['requests', 'archive', 'backup'] as const) {
+      const path = `${library}/${wanted[key]}`;
+      let found = false;
+      try {
+        found = (await destination.getJson<{ value: boolean }>(`web/GetFolderByServerRelativeUrl('${odataString(path)}')/Exists`)).value;
+      } catch (e) {
+        if (!(e instanceof SharePointRequestError && (e.status === 404 || e.status === 403))) throw e;
+      }
+      if (!found) throw new Error(messages.flowFolderMissing(folderText(mode, key)));
     }
     // The approval email goes to the Owners, read now and fixed in the package (P-018). An address the
     // package could not carry safely is left out, and so is any beyond what the package allows.

@@ -1,12 +1,13 @@
 // The nightly ledger backup flow and its import package (P-059). A second, separate flow: every night it reads the
 // Purchase Requests and Purchase Request Lines lists and writes a new dated pair of files, a CSV and a Markdown file,
-// into Accounting > Purchases > Ledger_Backups. The files hold every purchase line of every request that has been
+// into the Ledger_Backups folder of the App Output place (outputDestination.ts). The files hold every purchase line of every request that has been
 // bought, with the account, class and Posted status the bookkeepers have set, so the bookkeeping survives if a list is
 // ever damaged. Each night is a new pair: nothing is overwritten, moved or deleted (Max, 2026-11-15).
 //
 // Like the Purchase Requests flow it is made by the Set-up page with this site's addresses written in, to the same
-// rules: the destination is fixed here (a Live package can only write to the Accounting folders, a Test package only to
-// the test site's own library), and no list text ever chooses where a file goes. List text only ever appears inside the
+// rules: the destination is fixed (a Live package can only write to the App Output folders on the Forms and Apps site, a
+// Test package only to the test site's own library), the folder is checked and never created, and no list text ever
+// chooses where a file goes. List text only ever appears inside the
 // files, as text.
 
 import {
@@ -29,6 +30,7 @@ import {
   sitePath,
   spHost
 } from './flowPackage';
+import { folderText } from './outputDestination';
 
 export { BACKUP_FOLDER_NAME };
 
@@ -134,7 +136,6 @@ function definitionOf(config: BackupFlowConfig): Record<string, unknown> {
   const backupFolder = `${parent}/${BACKUP_FOLDER_NAME}`;
   const backupServerPath = `${destPath}/${backupFolder}`;
   const existsUri = `_api/web/GetFolderByServerRelativeUrl('${backupServerPath.replace(/'/g, "''")}')/Exists`;
-  const createUri = `_api/web/folders/addUsingPath(decodedurl='${backupServerPath.replace(/'/g, "''")}')`;
   const appUrl = attr(config.appPageUrl);
   const runLink =
     "concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])";
@@ -153,6 +154,7 @@ function definitionOf(config: BackupFlowConfig): Record<string, unknown> {
   const mdRow = `concat('| ', ${COLUMNS.map((c) => mdSafe(c.value)).join(", ' | ', ")}, ' |')`;
   const stamp = "outputs('Stamp')";
   const folderPath = `/${config.libraryUrlName}/${backupFolder}/`;
+  const backupText = folderText(config.mode, 'backup');
 
   const backup: Record<string, unknown> = {
     // The requests that have been bought are the ones whose lines belong in the ledger (Submitted, or Processed after it).
@@ -191,49 +193,62 @@ function definitionOf(config: BackupFlowConfig): Record<string, unknown> {
       type: 'Select',
       inputs: { from: "@body('Ledger_lines')", select: `@${mdRow}` }
     },
-    // The folder is made on the first night only. Nothing already in it is touched.
+    // The folder is made by Max, never by this flow (P-064): it is checked, and if it is missing no file is written and the
+    // administrator is told which folder to create. Nothing already in it is touched.
     Check_backup_folder: http(config, 'GET', existsUri, { Markdown_rows: OK }),
-    If_the_backup_folder_is_missing: {
+    If_the_backup_folder_exists: {
       runAfter: { Check_backup_folder: OK },
       type: 'If',
-      expression: { and: [{ equals: ["@body('Check_backup_folder')?['d']?['Exists']", false] }] },
-      actions: { Create_backup_folder: http(config, 'POST', createUri, {}) },
-      else: { actions: {} }
-    },
-    Create_csv_file: {
-      runAfter: { If_the_backup_folder_is_missing: OK },
-      type: 'OpenApiConnection',
-      inputs: {
-        host: spHost('CreateFile'),
-        parameters: {
-          dataset: config.destinationSiteUrl,
-          folderPath,
-          name: `@{concat('Ledger_', ${stamp}, '.csv')}`,
-          // A byte-order mark first, so Excel reads the file as UTF-8.
-          body: "@concat(decodeUriComponent('%EF%BB%BF'), body('Lines_csv'))"
+      expression: { and: [{ equals: ["@body('Check_backup_folder')?['d']?['Exists']", true] }] },
+      actions: {
+        Create_csv_file: {
+          runAfter: {},
+          type: 'OpenApiConnection',
+          inputs: {
+            host: spHost('CreateFile'),
+            parameters: {
+              dataset: config.destinationSiteUrl,
+              folderPath,
+              name: `@{concat('Ledger_', ${stamp}, '.csv')}`,
+              // A byte-order mark first, so Excel reads the file as UTF-8.
+              body: "@concat(decodeUriComponent('%EF%BB%BF'), body('Lines_csv'))"
+            },
+            authentication: "@parameters('$authentication')"
+          },
+          runtimeConfiguration: { contentTransfer: { transferMode: 'Chunked' } }
         },
-        authentication: "@parameters('$authentication')"
+        Create_markdown_file: {
+          runAfter: { Create_csv_file: OK },
+          type: 'OpenApiConnection',
+          inputs: {
+            host: spHost('CreateFile'),
+            parameters: {
+              dataset: config.destinationSiteUrl,
+              folderPath,
+              name: `@{concat('Ledger_', ${stamp}, '.md')}`,
+              body:
+                `@concat('# Purchases ledger backup', ${NEWLINE}, ${NEWLINE}, 'Taken ', ${stamp}, ' (Central time). ` +
+                `Every purchase line of every request that has been bought, with the QuickBooks account, class and Posted status set in the Ledger. ` +
+                `A copy for safekeeping: the Ledger in Purchase Requests is the live record.', ${NEWLINE}, ${NEWLINE}, ${lit(headerRow)}, ${NEWLINE}, ${lit(dividerRow)}, ${NEWLINE}, ` +
+                `join(body('Markdown_rows'), ${NEWLINE}), ${NEWLINE})`
+            },
+            authentication: "@parameters('$authentication')"
+          },
+          runtimeConfiguration: { contentTransfer: { transferMode: 'Chunked' } }
+        }
       },
-      runtimeConfiguration: { contentTransfer: { transferMode: 'Chunked' } }
-    },
-    Create_markdown_file: {
-      runAfter: { Create_csv_file: OK },
-      type: 'OpenApiConnection',
-      inputs: {
-        host: spHost('CreateFile'),
-        parameters: {
-          dataset: config.destinationSiteUrl,
-          folderPath,
-          name: `@{concat('Ledger_', ${stamp}, '.md')}`,
-          body:
-            `@concat('# Purchases ledger backup', ${NEWLINE}, ${NEWLINE}, 'Taken ', ${stamp}, ' (Central time). ` +
-            `Every purchase line of every request that has been bought, with the QuickBooks account, class and Posted status set in the Ledger. ` +
-            `A copy for safekeeping: the Ledger in Purchase Requests is the live record.', ${NEWLINE}, ${NEWLINE}, ${lit(headerRow)}, ${NEWLINE}, ${lit(dividerRow)}, ${NEWLINE}, ` +
-            `join(body('Markdown_rows'), ${NEWLINE}), ${NEWLINE})`
-        },
-        authentication: "@parameters('$authentication')"
-      },
-      runtimeConfiguration: { contentTransfer: { transferMode: 'Chunked' } }
+      else: {
+        actions: {
+          Send_backup_folder_missing_email: email(
+            {},
+            config.adminEmail,
+            'Purchase Requests ledger backup not made: folder missing',
+            `<div style="${EMAIL_STYLE}"><p>The folder ${attr(backupText)} was not found, or the flow's account cannot open it, so no backup was made. ` +
+              `The flow never creates this folder. Ask Max to create it, or to give the flow's account Edit access to it. Nothing in the Ledger or the lists was changed.</p>` +
+              `<p><a href="@{${runLink}}">Open the flow run</a></p></div>`
+          )
+        }
+      }
     }
   };
 
@@ -278,8 +293,7 @@ export function buildBackupFlowPackage(config: BackupFlowConfig, newId: () => st
   const checked = checkBackupFlowConfig(config);
   const parts: PackageParts = {
     displayName: BACKUP_FLOW_NAMES[config.mode],
-    description:
-      'Every night, saves a new dated CSV and Markdown copy of the purchases ledger (every purchase line of every request that has been bought, with its QuickBooks account, class and Posted status) in Accounting > Purchases > Ledger_Backups. Never overwrites anything. Generated by the Purchase Requests Set-up page.',
+    description: `Every night, saves a new dated CSV and Markdown copy of the purchases ledger (every purchase line of every request that has been bought, with its QuickBooks account, class and Posted status) in ${folderText(config.mode, 'backup').replace(/ \/ /g, ' > ')}. Never overwrites anything and never creates the folder. Generated by the Purchase Requests Set-up page.`,
     definition: definitionOf(checked),
     fileName: `PurchaseRequests_Ledger_Backup_Flow_${config.mode === 'test' ? 'Test' : 'Live'}.zip`
   };

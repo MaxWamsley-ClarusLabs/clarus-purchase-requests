@@ -1,4 +1,6 @@
 import {
+  ARCHIVE_FOLDER_NAME,
+  BACKUP_FOLDER_NAME,
   FLOW_NAMES,
   FlowConfig,
   LIVE_DESTINATION,
@@ -331,15 +333,8 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
         'Cleaned_folder_name',
         'Safe_folder_name',
         'Get_attachments',
-        'Check_folder_1',
-        'If_folder_1_is_missing',
-        'Create_folder_1',
-        'Check_folder_2',
-        'If_folder_2_is_missing',
-        'Create_folder_2',
+        'Check_landing_folder',
         'Check_archive_root',
-        'If_archive_root_is_missing',
-        'Create_archive_root',
         'Check_report_folder',
         'If_the_report_folder_is_new',
         'Create_report_folder',
@@ -372,16 +367,42 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
     });
 
     it('uses a fixed destination inside Purchases_To_Process, never a value from the list', () => {
-      expect(text).toContain("/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchases_To_Process/'");
-      expect(text).toContain("'/Shared Documents/01_Company Documents/Accounting/Purchases/Purchases_To_Process/'");
+      expect(text).toContain("/sites/FormsandApps/Shared Documents/App Output/Purchases_To_Process/'");
+      expect(text).toContain("'/Shared Documents/App Output/Purchases_To_Process/'");
       // The only list value in any path is the cleaned folder name.
       expect(text).not.toMatch(/folderPath":"@\{concat\([^)]*triggerBody/);
       expect(text).toContain("outputs('Safe_folder_name')");
     });
 
-    it('creates Purchases and Purchases_To_Process only if missing, and never year folders', () => {
-      expect(Object.keys(pkg).filter((k) => k.startsWith('If_folder_'))).toEqual(['If_folder_1_is_missing', 'If_folder_2_is_missing']);
-      expect(text).not.toMatch(/Purchases\/20\d\d/);
+    it('only checks the folders Max creates, never creates them, and never makes year folders (P-064)', () => {
+      expect(Object.keys(pkg).filter((k) => /^(If_folder_|Create_folder_|If_archive_root|Create_archive_root)/.test(k))).toEqual([]);
+      expect(Object.keys(pkg).filter((k) => k.startsWith('Check_'))).toEqual(['Check_landing_folder', 'Check_archive_root', 'Check_report_folder']);
+      // The only folders the flow makes are this request's own: its folder and its folder in the receipt archive.
+      expect(groupsOf(text, /addUsingPath\(decodedurl='(@\{concat\('[^']*)/g)).toEqual([
+        "@{concat('/sites/FormsandApps/Shared Documents/App Output/Purchases_To_Process/",
+        "@{concat('/sites/FormsandApps/Shared Documents/App Output/Purchase_Receipts/"
+      ]);
+      expect(text).not.toMatch(/addUsingPath\(decodedurl='\/sites/);
+      expect(text).not.toMatch(/Purchases_To_Process\/20\d\d/);
+    });
+
+    it('stops with a clear message, and creates nothing, when a folder Max creates is missing (P-064)', () => {
+      const newFolder = pkg.If_the_report_folder_is_new;
+      expect(newFolder.expression).toEqual({
+        and: [
+          { equals: ["@body('Check_landing_folder')?['d']?['Exists']", true] },
+          { equals: ["@body('Check_archive_root')?['d']?['Exists']", true] },
+          { equals: ["@body('Check_report_folder')?['d']?['Exists']", false] },
+          { greater: ["@length(body('Get_attachments'))", 0] }
+        ]
+      });
+      const reason = param(otherwise(newFolder).Mark_not_packaged, 'item/ErrorMessage');
+      expect(reason).toContain('The folder Documents / App Output / Purchases_To_Process was not found');
+      expect(reason).toContain('The folder Documents / App Output / Purchase_Receipts was not found');
+      expect(reason).toContain('The flow never creates it. Ask Max to create it or give the account Edit access, then choose Retry packaging.');
+      // Nothing is made when the check fails: every write is inside the branch that needs all the folders.
+      expect(otherwise(newFolder).Mark_not_packaged.type).toBe('OpenApiConnection');
+      expect(Object.keys(otherwise(newFolder))).toEqual(['Mark_not_packaged', 'Send_not_packaged_email']);
     });
 
     it('never overwrites: stops if the request folder exists, and marks the submission Failed', () => {
@@ -393,19 +414,18 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
     it('copies the receipts, and only the receipts, into a permanent archive beside Purchases_To_Process (P-058)', () => {
       const archived = inside(pkg.If_the_report_folder_is_new);
       // The archive is a sibling of Purchases_To_Process, one level, one folder per request: never a year folder.
-      expect(text).toContain("/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts/'");
+      expect(text).toContain("/sites/FormsandApps/Shared Documents/App Output/Purchase_Receipts/'");
       expect(param(inside(archived.If_archive_folder_is_missing as FlowAction).Create_archive_folder, 'parameters/uri')).toContain('Purchase_Receipts/');
       expect(text).not.toMatch(/Purchase_Receipts\/20\d\d/);
       // Only the files whose copies are named for receipts (R...) are archived; quotes (Q...) and the CSV (PR-...) are not.
       expect(archived.Filter_receipts.inputs?.where).toBe("@startsWith(item()?['DisplayName'], 'R')");
       const copy = inside(archived.Archive_receipts as FlowAction);
       expect(String(copy.Create_archive_file.inputs?.parameters?.folderPath)).toBe(
-        "@{concat('/Shared Documents/01_Company Documents/Accounting/Purchases/Purchase_Receipts/', outputs('Safe_folder_name'))}"
+        "@{concat('/Shared Documents/App Output/Purchase_Receipts/', outputs('Safe_folder_name'))}"
       );
       expect(param(copy.Create_archive_file, 'dataset')).toBe(live.destinationSiteUrl);
-      // The archive's root is made on the first run only, and a folder left by an earlier attempt is reused, never recreated.
-      expect(Object.keys(pkg).filter((k) => k.startsWith('If_archive_root'))).toEqual(['If_archive_root_is_missing']);
-      expect(Object.keys(inside(pkg.If_archive_root_is_missing))).toEqual(['Create_archive_root']);
+      // The archive's root is checked, never made (P-064), and a folder left by an earlier attempt is reused, never recreated.
+      expect(Object.keys(pkg).filter((k) => k.startsWith('If_archive_root'))).toEqual([]);
       expect(Object.keys(inside(archived.If_archive_folder_is_missing as FlowAction))).toEqual(['Create_archive_folder']);
       // Nothing is archived until the request folder's copies are made, and the status waits for the archive.
       expect(archived.Filter_receipts.runAfter).toEqual({ Copy_files: ['Succeeded'] });
@@ -415,7 +435,7 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
     it('records where the receipts were archived, from the fixed archive path and the cleaned folder name', () => {
       const mark = inside(pkg.If_the_report_folder_is_new).Mark_packaged;
       expect(param(mark, 'item/ArchiveLink')).toBe(
-        "@{concat('https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Purchases/Purchase_Receipts/', encodeUriComponent(outputs('Safe_folder_name')))}"
+        "@{concat('https://claruslabsusa.sharepoint.com/sites/FormsandApps/Shared%20Documents/App%20Output/Purchase_Receipts/', encodeUriComponent(outputs('Safe_folder_name')))}"
       );
       expect(param(mark, 'item/FolderLink')).toContain('Purchases_To_Process/');
     });
@@ -434,7 +454,7 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
       expect(param(notification, 'emailMessage/Subject')).toBe("@{triggerBody()?['EmailSubject']}");
       expect(body).toContain("<h3>@{if(greater(triggerBody()?['SubmissionNumber'], 1), 'Purchase request resubmitted', 'Purchase request submitted')}</h3>");
       expect(body).toContain(`<p>@{${htmlTextExpression("triggerBody()?['EmailSummary']")}}</p>`);
-      expect(body).toContain('<b>All requests waiting:</b> <a href="https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam/');
+      expect(body).toContain('<b>All requests waiting:</b> <a href="https://claruslabsusa.sharepoint.com/sites/FormsandApps/');
       expect(body).toContain('>Purchases_To_Process</a>');
       expect(body).toContain(
         `<b>Open the request in Purchase Requests:</b> <a href="${live.appPageUrl}#/admin/request/@{triggerBody()?['RequestId']}">Purchase Requests</a>`
@@ -449,9 +469,10 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
       expect(param(failed, 'emailMessage/Body')).toContain(`<a href="${live.appPageUrl}#/admin/attention">Open Needs attention</a>`);
     });
 
-    it('can send test runs to the test site instead of Accounting', () => {
+    it('can send test runs to the test folders instead of App Output', () => {
       const test = JSON.stringify(build(testSite));
       expect(test).toContain('/sites/FormsAndApps/Shared Documents/Purchases_Test/Purchases_To_Process');
+      expect(test).not.toContain('App Output');
       expect(test).not.toContain('Accounting');
       expect(test).not.toContain('ExecutiveTeam');
     });
@@ -460,7 +481,7 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
   describe('the whole definition', () => {
     it('gives every action its own name, at any depth', () => {
       const names = all.map((f) => f.name);
-      expect(names).toHaveLength(43);
+      expect(names).toHaveLength(36);
       expect(names.filter((name, i) => names.indexOf(name) !== i)).toEqual([]);
     });
 
@@ -512,8 +533,8 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
         expect(json).not.toMatch(/Receipts_To_Process|Tax Docs|Payroll/);
         expect(json).not.toMatch(/travel|\btrips?\b/i);
       }
-      // The only folders under Accounting are the Purchases ones.
-      expect(text).not.toMatch(/Accounting\/(?!Purchases)/);
+      // The retired Executive Team site and its Accounting folders are never named (P-064).
+      for (const json of [text, JSON.stringify(build(testSite))]) expect(json).not.toMatch(/ExecutiveTeam|Accounting/);
     });
 
     it('talks only to the configured sites, the flow run page and the schema', () => {
@@ -526,12 +547,8 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
     it('creates files and folders only on the destination site, and only in the packaging branch', () => {
       const writers = all.filter((f) => ['CreateFile', 'HttpRequest'].includes(operationOf(f) ?? ''));
       expect(writers.map((f) => f.name)).toEqual([
-        'Check_folder_1',
-        'Create_folder_1',
-        'Check_folder_2',
-        'Create_folder_2',
+        'Check_landing_folder',
         'Check_archive_root',
-        'Create_archive_root',
         'Check_report_folder',
         'Create_report_folder',
         'Check_archive_folder',
@@ -547,12 +564,15 @@ describe('the Purchase Requests flow (strategy section 8, P-018)', () => {
 
 describe('the fixed destinations (P-008)', () => {
   it('has the live destination folders exactly', () => {
-    expect(LIVE_DESTINATION.siteUrl).toBe('https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam');
+    expect(LIVE_DESTINATION.siteUrl).toBe('https://claruslabsusa.sharepoint.com/sites/FormsandApps');
     expect(LIVE_DESTINATION.libraryUrlName).toBe('Shared Documents');
-    expect(LIVE_DESTINATION.folders).toEqual(['01_Company Documents/Accounting/Purchases', '01_Company Documents/Accounting/Purchases/Purchases_To_Process']);
-    // Set-up checks that this folder exists, read only, when it makes a live package; the flow neither checks nor creates it.
-    expect(LIVE_DESTINATION.existingParent).toBe('01_Company Documents/Accounting');
-    expect(JSON.stringify(build(live))).not.toContain("Accounting')/Exists");
+    expect(LIVE_DESTINATION.folders).toEqual(['App Output', 'App Output/Purchases_To_Process']);
+    expect(ARCHIVE_FOLDER_NAME).toBe('Purchase_Receipts');
+    expect(BACKUP_FOLDER_NAME).toBe('Ledger_Backups');
+    // The package checks these folders and never creates them; Set-up also checks them, read only, before it makes a package.
+    expect(JSON.stringify(build(live))).toContain(
+      "GetFolderByServerRelativeUrl('/sites/FormsandApps/Shared Documents/App Output/Purchases_To_Process')/Exists"
+    );
   });
 
   it('has the test destination folders exactly, in the test site itself', () => {
@@ -787,20 +807,24 @@ describe('the generator refuses settings it cannot use safely (strategy section 
   });
 
   describe('destinations (P-008)', () => {
-    it('refuses a live package that would write anywhere but the fixed Accounting folders', () => {
+    it('refuses a live package that would write anywhere but the fixed App Output folders', () => {
       const elsewhere: Partial<FlowConfig>[] = [
         { destinationSiteUrl: 'https://claruslabsusa.sharepoint.com/sites/Other' },
         { destinationSiteUrl: `${LIVE_DESTINATION.siteUrl}/` },
         { destinationSiteUrl: live.siteUrl },
         { libraryUrlName: 'Documents' },
         { folders: [] },
-        { folders: ['01_Company Documents/Accounting/Receipts_To_Process'] },
+        { folders: ['App Output/Receipts_To_Process'] },
+        { folders: ['01_Company Documents/Accounting/Purchases', '01_Company Documents/Accounting/Purchases/Purchases_To_Process'] },
+        { destinationSiteUrl: 'https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam' },
         { folders: [...LIVE_DESTINATION.folders].reverse() },
-        { folders: [...LIVE_DESTINATION.folders, '01_Company Documents/Accounting/Purchases/Purchases_To_Process/2026'] },
+        { folders: [...LIVE_DESTINATION.folders, 'App Output/Purchases_To_Process/2026'] },
         { folders: [...TEST_FOLDERS] }
       ];
       for (const change of elsewhere) {
-        expect(() => buildFlowDefinition({ ...live, ...change })).toThrow(`${refused}: a Live package can only send folders to Accounting`);
+        expect(() => buildFlowDefinition({ ...live, ...change })).toThrow(
+          `${refused}: a Live package can only send folders to Documents > App Output > Purchases_To_Process on the Forms and Apps site.`
+        );
       }
     });
 
@@ -811,7 +835,7 @@ describe('the generator refuses settings it cannot use safely (strategy section 
         { folders: ['Purchases_Test'] },
         { destinationSiteUrl: LIVE_DESTINATION.siteUrl },
         { destinationSiteUrl: 'https://contoso.sharepoint.com/sites/Other' },
-        { libraryUrlName: LIVE_DESTINATION.libraryUrlName + '/01_Company Documents/Accounting' },
+        { libraryUrlName: LIVE_DESTINATION.libraryUrlName + '/App Output' },
         { libraryUrlName: 'Documents' }
       ];
       for (const change of elsewhere) {

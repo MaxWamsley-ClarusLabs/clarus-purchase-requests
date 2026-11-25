@@ -239,9 +239,9 @@
                   "operationId": "HttpRequest"
                 },
                 "parameters": {
-                  "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
+                  "dataset": "https://claruslabsusa.sharepoint.com/sites/FormsandApps",
                   "parameters/method": "GET",
-                  "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Ledger_Backups')/Exists",
+                  "parameters/uri": "_api/web/GetFolderByServerRelativeUrl('/sites/FormsandApps/Shared Documents/App Output/Ledger_Backups')/Exists",
                   "parameters/headers": {
                     "Accept": "application/json;odata=verbose"
                   }
@@ -249,7 +249,7 @@
                 "authentication": "@parameters('$authentication')"
               }
             },
-            "If_the_backup_folder_is_missing": {
+            "If_the_backup_folder_exists": {
               "runAfter": {
                 "Check_backup_folder": [
                   "Succeeded"
@@ -261,88 +261,83 @@
                   {
                     "equals": [
                       "@body('Check_backup_folder')?['d']?['Exists']",
-                      false
+                      true
                     ]
                   }
                 ]
               },
               "actions": {
-                "Create_backup_folder": {
+                "Create_csv_file": {
                   "runAfter": {},
                   "type": "OpenApiConnection",
                   "inputs": {
                     "host": {
                       "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
                       "connectionName": "shared_sharepointonline",
-                      "operationId": "HttpRequest"
+                      "operationId": "CreateFile"
                     },
                     "parameters": {
-                      "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
-                      "parameters/method": "POST",
-                      "parameters/uri": "_api/web/folders/addUsingPath(decodedurl='/sites/ExecutiveTeam/Shared Documents/01_Company Documents/Accounting/Purchases/Ledger_Backups')",
-                      "parameters/headers": {
-                        "Accept": "application/json;odata=verbose"
-                      }
+                      "dataset": "https://claruslabsusa.sharepoint.com/sites/FormsandApps",
+                      "folderPath": "/Shared Documents/App Output/Ledger_Backups/",
+                      "name": "@{concat('Ledger_', outputs('Stamp'), '.csv')}",
+                      "body": "@concat(decodeUriComponent('%EF%BB%BF'), body('Lines_csv'))"
                     },
                     "authentication": "@parameters('$authentication')"
+                  },
+                  "runtimeConfiguration": {
+                    "contentTransfer": {
+                      "transferMode": "Chunked"
+                    }
+                  }
+                },
+                "Create_markdown_file": {
+                  "runAfter": {
+                    "Create_csv_file": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                      "connectionName": "shared_sharepointonline",
+                      "operationId": "CreateFile"
+                    },
+                    "parameters": {
+                      "dataset": "https://claruslabsusa.sharepoint.com/sites/FormsandApps",
+                      "folderPath": "/Shared Documents/App Output/Ledger_Backups/",
+                      "name": "@{concat('Ledger_', outputs('Stamp'), '.md')}",
+                      "body": "@concat('# Purchases ledger backup', decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Taken ', outputs('Stamp'), ' (Central time). Every purchase line of every request that has been bought, with the QuickBooks account, class and Posted status set in the Ledger. A copy for safekeeping: the Ledger in Purchase Requests is the live record.', decodeUriComponent('%0A'), decodeUriComponent('%0A'), '| Line | Request ID | Row | Date | Vendor | What was bought and why | Category | Other category | Quantity | Amount | Who paid | QuickBooks account | Class | Posted | Posted by | Posted on | Amount when posted | Note | No-receipt reason |', decodeUriComponent('%0A'), '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |', decodeUriComponent('%0A'), join(body('Markdown_rows'), decodeUriComponent('%0A')), decodeUriComponent('%0A'))"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  },
+                  "runtimeConfiguration": {
+                    "contentTransfer": {
+                      "transferMode": "Chunked"
+                    }
                   }
                 }
               },
               "else": {
-                "actions": {}
-              }
-            },
-            "Create_csv_file": {
-              "runAfter": {
-                "If_the_backup_folder_is_missing": [
-                  "Succeeded"
-                ]
-              },
-              "type": "OpenApiConnection",
-              "inputs": {
-                "host": {
-                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
-                  "connectionName": "shared_sharepointonline",
-                  "operationId": "CreateFile"
-                },
-                "parameters": {
-                  "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
-                  "folderPath": "/Shared Documents/01_Company Documents/Accounting/Purchases/Ledger_Backups/",
-                  "name": "@{concat('Ledger_', outputs('Stamp'), '.csv')}",
-                  "body": "@concat(decodeUriComponent('%EF%BB%BF'), body('Lines_csv'))"
-                },
-                "authentication": "@parameters('$authentication')"
-              },
-              "runtimeConfiguration": {
-                "contentTransfer": {
-                  "transferMode": "Chunked"
-                }
-              }
-            },
-            "Create_markdown_file": {
-              "runAfter": {
-                "Create_csv_file": [
-                  "Succeeded"
-                ]
-              },
-              "type": "OpenApiConnection",
-              "inputs": {
-                "host": {
-                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
-                  "connectionName": "shared_sharepointonline",
-                  "operationId": "CreateFile"
-                },
-                "parameters": {
-                  "dataset": "https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam",
-                  "folderPath": "/Shared Documents/01_Company Documents/Accounting/Purchases/Ledger_Backups/",
-                  "name": "@{concat('Ledger_', outputs('Stamp'), '.md')}",
-                  "body": "@concat('# Purchases ledger backup', decodeUriComponent('%0A'), decodeUriComponent('%0A'), 'Taken ', outputs('Stamp'), ' (Central time). Every purchase line of every request that has been bought, with the QuickBooks account, class and Posted status set in the Ledger. A copy for safekeeping: the Ledger in Purchase Requests is the live record.', decodeUriComponent('%0A'), decodeUriComponent('%0A'), '| Line | Request ID | Row | Date | Vendor | What was bought and why | Category | Other category | Quantity | Amount | Who paid | QuickBooks account | Class | Posted | Posted by | Posted on | Amount when posted | Note | No-receipt reason |', decodeUriComponent('%0A'), '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |', decodeUriComponent('%0A'), join(body('Markdown_rows'), decodeUriComponent('%0A')), decodeUriComponent('%0A'))"
-                },
-                "authentication": "@parameters('$authentication')"
-              },
-              "runtimeConfiguration": {
-                "contentTransfer": {
-                  "transferMode": "Chunked"
+                "actions": {
+                  "Send_backup_folder_missing_email": {
+                    "runAfter": {},
+                    "type": "OpenApiConnection",
+                    "inputs": {
+                      "host": {
+                        "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                        "connectionName": "shared_office365",
+                        "operationId": "SendEmailV2"
+                      },
+                      "parameters": {
+                        "emailMessage/To": "administrator@example.com",
+                        "emailMessage/Subject": "Purchase Requests ledger backup not made: folder missing",
+                        "emailMessage/Body": "<div style=\"font-family: Segoe UI, Arial, sans-serif; font-size: 14px; color: #24142F;\"><p>The folder Documents / App Output / Ledger_Backups was not found, or the flow's account cannot open it, so no backup was made. The flow never creates this folder. Ask Max to create it, or to give the flow's account Edit access to it. Nothing in the Ledger or the lists was changed.</p><p><a href=\"@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}\">Open the flow run</a></p></div>",
+                        "emailMessage/Importance": "Normal"
+                      },
+                      "authentication": "@parameters('$authentication')"
+                    }
+                  }
                 }
               }
             }

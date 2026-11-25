@@ -440,7 +440,7 @@ describe('the sample data (P-031)', () => {
     expect(byId(3).packageFileNames.sort()).toEqual(['PR-0037_Purchases.csv', 'R01_blue-fern-web-invoice.pdf']);
     expect(byId(3)).toMatchObject({
       folderName: '2026-09-18_Jane-Doe_Website-hosting-and-marketing_PR-0037',
-      folderLink: 'Accounting > Purchases > Purchases_To_Process > 2026-09-18_Jane-Doe_Website-hosting-and-marketing_PR-0037',
+      folderLink: 'App Output > Purchases_To_Process > 2026-09-18_Jane-Doe_Website-hosting-and-marketing_PR-0037',
       receiptCount: 1,
       quoteCount: 0,
       rowsWithoutReceipt: 0,
@@ -903,7 +903,7 @@ describe('the simulated flow', () => {
     expect(seen).toEqual(['Uploading', 'Ready', 'Processing', 'Packaged']);
     expect(store.submissions.find((s) => s.id === 12)).toMatchObject({
       packagedAt: '2026-10-16 09:30',
-      folderLink: 'Accounting > Purchases > Purchases_To_Process > 2026-09-28_Jane-Doe_Sensor-kit-for-the-Phase-1-prototype_PR-0038'
+      folderLink: 'App Output > Purchases_To_Process > 2026-09-28_Jane-Doe_Sensor-kit-for-the-Phase-1-prototype_PR-0038'
     });
   });
 
@@ -932,7 +932,7 @@ describe('the simulated flow', () => {
     for (const i of [0, 1, 2]) {
       expect(by(100 + i * 2)).toMatchObject({ packageStatus: 'Packaged', folderLink: '' });
       expect(by(100 + i * 2).packagedAt).toMatch(/^\d{4}-\d\d-\d\d \d\d:\d\d$/);
-      expect(by(101 + i * 2)).toMatchObject({ packageStatus: 'Packaged', folderLink: `Accounting > Purchases > Purchases_To_Process > folder-${i}` });
+      expect(by(101 + i * 2)).toMatchObject({ packageStatus: 'Packaged', folderLink: `App Output > Purchases_To_Process > folder-${i}` });
     }
     // Packaged stays as it was, and a Failed one stays failed, so Needs attention still has something to show.
     expect(by(106)).toMatchObject({ packageStatus: 'Packaged', packagedAt: '', folderLink: '' });
@@ -1039,8 +1039,8 @@ describe('set-up and settings in the preview', () => {
     expect(live).toMatchObject({
       mode: 'live',
       siteUrl: 'https://contoso.sharepoint.com/sites/FormsAndApps',
-      destinationSiteUrl: 'https://claruslabsusa.sharepoint.com/sites/ExecutiveTeam',
-      folders: ['01_Company Documents/Accounting/Purchases', '01_Company Documents/Accounting/Purchases/Purchases_To_Process'],
+      destinationSiteUrl: 'https://claruslabsusa.sharepoint.com/sites/FormsandApps',
+      folders: ['App Output', 'App Output/Purchases_To_Process'],
       approverEmails: ['max.wamsley@example.com']
     });
     await expect(asJane(store).getFlowSettings('test', page)).rejects.toBeInstanceOf(NotAllowedError);

@@ -7,6 +7,9 @@ import { BadgeTone } from '../../../domain/statuses';
 import { BackupFlowConfig, buildBackupFlowPackage } from '../../../export/backupFlow';
 import { FlowConfig, FlowMode, buildFlowPackage } from '../../../export/flowPackage';
 import { downloadFile } from '../../download';
+import { LIVE_REQUESTS_PATH_TEXT as LIVE_PATH, OUTPUT_DESTINATION } from '../../../export/outputDestination';
+
+const TEST_PATH = `${OUTPUT_DESTINATION.test.parentFolder} > ${OUTPUT_DESTINATION.test.requestsFolder}`;
 
 /** How one list looks on the Set-up page. */
 function listState(list: ListCheck): { label: string; tone: BadgeTone; details: string[] } {
@@ -196,13 +199,15 @@ export function SetupPage(props: { onReady?: (status: SetupStatus) => void }): R
             <label className="ctx-choice">
               <input type="radio" name="flow-mode" checked={mode === 'test'} onChange={() => setMode('test')} />
               <span>
-                <strong>Test.</strong> Folders go to this site&apos;s Documents library, in Purchases_Test &gt; Purchases_To_Process. Use this on the test site.
+                <strong>Test.</strong> Folders go to this site&apos;s Documents library, in {TEST_PATH}. Use this on the test site. The folders must exist
+                first.
               </span>
             </label>
             <label className="ctx-choice">
               <input type="radio" name="flow-mode" checked={mode === 'live'} onChange={() => setMode('live')} />
               <span>
-                <strong>Live.</strong> Folders go to Accounting &gt; Purchases &gt; Purchases_To_Process on the ExecutiveTeam site.
+                <strong>Live.</strong> Folders go to {LIVE_PATH} on the Forms and Apps site. The folders must exist first: the app and the flow never create
+                them.
               </span>
             </label>
           </div>

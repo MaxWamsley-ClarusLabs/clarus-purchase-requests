@@ -34,6 +34,7 @@ const ids = () => `00000000-0000-0000-0000-${String(++counter).padStart(12, '0')
 
 interface Action {
   type: string;
+  expression?: unknown;
   runAfter: Record<string, string[]>;
   inputs?: {
     host?: { operationId?: string };
@@ -93,9 +94,7 @@ describe('the nightly ledger backup flow (P-059)', () => {
       'Lines_csv',
       'Markdown_rows',
       'Check_backup_folder',
-      'If_the_backup_folder_is_missing',
-      'Create_csv_file',
-      'Create_markdown_file'
+      'If_the_backup_folder_exists'
     ]);
     expect(backup.Get_bought_requests.inputs?.parameters).toMatchObject({
       dataset: live.siteUrl,
@@ -111,21 +110,21 @@ describe('the nightly ledger backup flow (P-059)', () => {
 
   it('writes only new files, named for the minute, in a Ledger_Backups folder beside Purchases_To_Process: never overwrites, moves or deletes', () => {
     expect(BACKUP_FOLDER_NAME).toBe('Ledger_Backups');
-    const folder = '/Shared Documents/01_Company Documents/Accounting/Purchases/Ledger_Backups/';
-    expect(backup.Create_csv_file.inputs?.parameters?.folderPath).toBe(folder);
-    expect(backup.Create_markdown_file.inputs?.parameters?.folderPath).toBe(folder);
-    expect(backup.Create_csv_file.inputs?.parameters?.name).toBe("@{concat('Ledger_', outputs('Stamp'), '.csv')}");
-    expect(backup.Create_markdown_file.inputs?.parameters?.name).toBe("@{concat('Ledger_', outputs('Stamp'), '.md')}");
+    const folder = '/Shared Documents/App Output/Ledger_Backups/';
+    const files = (backup.If_the_backup_folder_exists.actions ?? {}) as Record<string, Action>;
+    expect(files.Create_csv_file.inputs?.parameters?.folderPath).toBe(folder);
+    expect(files.Create_markdown_file.inputs?.parameters?.folderPath).toBe(folder);
+    expect(files.Create_csv_file.inputs?.parameters?.name).toBe("@{concat('Ledger_', outputs('Stamp'), '.csv')}");
+    expect(files.Create_markdown_file.inputs?.parameters?.name).toBe("@{concat('Ledger_', outputs('Stamp'), '.md')}");
     expect(text).not.toMatch(/overwrite|nameConflictBehavior|DeleteItem|DeleteFile|MoveFile|UpdateFile|recycle|PatchItem|PostItem/i);
-    // The only things written are the folder, once, and two new files.
+    // The only things written are two new files. The folder is only checked: the flow never creates it (P-064).
     expect(all.filter((f) => ['CreateFile', 'HttpRequest'].includes(operationOf(f.action) ?? '')).map((f) => f.name)).toEqual([
       'Check_backup_folder',
-      'Create_backup_folder',
       'Create_csv_file',
       'Create_markdown_file'
     ]);
-    expect(Object.keys(backup.If_the_backup_folder_is_missing.actions as Record<string, Action>)).toEqual(['Create_backup_folder']);
-    for (const name of ['Check_backup_folder', 'Create_backup_folder', 'Create_csv_file', 'Create_markdown_file']) {
+    expect(text).not.toMatch(/addUsingPath|Create_backup_folder/);
+    for (const name of ['Check_backup_folder', 'Create_csv_file', 'Create_markdown_file']) {
       const found = all.find((f) => f.name === name)!;
       expect(String(found.action.inputs?.parameters?.dataset)).toBe(live.destinationSiteUrl);
     }
@@ -139,7 +138,7 @@ describe('the nightly ledger backup flow (P-059)', () => {
       .flatMap((f) => [f.action.inputs?.parameters?.folderPath, f.action.inputs?.parameters?.['parameters/uri'], f.action.inputs?.parameters?.name])
       .filter(Boolean)
       .map(String);
-    expect(paths.length).toBe(6);
+    expect(paths.length).toBe(5);
     for (const p of paths) expect(p).not.toMatch(/item\(\)|body\(|triggerBody|variables\(/);
   });
 
@@ -186,6 +185,17 @@ describe('the nightly ledger backup flow (P-059)', () => {
     const row = String(backup.Markdown_rows.inputs?.select);
     expect(row).toContain("replace(coalesce(item()?['Vendor'], ''), '|', '\\|')");
     expect(row).toContain("decodeUriComponent('%0A'), ' ')");
+  });
+
+  it('writes nothing and tells the administrator which folder to create when the backup folder is missing (P-064)', () => {
+    const check = backup.If_the_backup_folder_exists;
+    expect(check.expression).toEqual({ and: [{ equals: ["@body('Check_backup_folder')?['d']?['Exists']", true] }] });
+    expect(Object.keys(check.else?.actions ?? {})).toEqual(['Send_backup_folder_missing_email']);
+    const mail = (check.else?.actions ?? {}).Send_backup_folder_missing_email;
+    expect(mail.inputs?.parameters?.['emailMessage/To']).toBe('admin@example.com');
+    const body = String(mail.inputs?.parameters?.['emailMessage/Body']);
+    expect(body).toContain('The folder Documents / App Output / Ledger_Backups was not found');
+    expect(body).toContain('The flow never creates this folder.');
   });
 
   it("emails the administrator if a night's backup fails, and says nothing was changed", () => {
@@ -235,10 +245,11 @@ describe('the nightly ledger backup flow (P-059)', () => {
   it("sends a test run to the test site's own library, and mentions nothing outside the Purchases folders", () => {
     const test = JSON.stringify(build(testSite));
     expect(test).toContain('/Shared Documents/Purchases_Test/Ledger_Backups/');
+    expect(test).not.toContain('App Output');
     expect(test).not.toContain('Accounting');
     expect(test).not.toContain('ExecutiveTeam');
     expect(text).not.toMatch(/Receipts_To_Process|Tax Docs|Payroll|travel/i);
-    expect(text).not.toMatch(/Accounting\/(?!Purchases)/);
+    expect(text).not.toMatch(/ExecutiveTeam|Accounting/);
   });
 
   it('talks only to the configured sites, the flow run page and the schema', () => {

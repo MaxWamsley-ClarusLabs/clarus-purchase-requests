@@ -1,5 +1,7 @@
 # Updating the Purchase Requests app to version 1.0.3.0 (the Ledger)
 
+*Note 2026-11-25: version 1.0.5.0 moves where the flows write (P-064): the Live folders are now in `App Output` on the Forms and Apps site, which you create first, and the flows no longer create folders. Where Part 2, Part 3 and Part 4 below name `Accounting/Purchases` or say a folder is created on the first run, follow `docs/UPDATE_1.0.5.0.md` instead.*
+
 For Max. About 60 to 90 minutes, in four parts. Nothing already stored is deleted at any step: the requests live in the SharePoint lists, not in the app, and the Set-up step only **adds** columns (seven on the lines list, one on the submissions list). Microsoft screen wording below is Unverified (Microsoft's documentation cannot be read from the build environment); if a screen differs, stop and send a screenshot.
 
 Do all of it on the **Test** flow first (`docs/CHECKPOINT.md` Part 10), then the Live flow.

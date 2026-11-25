@@ -4,6 +4,7 @@
 // domain/purchaseRules.ts, so a change of policy changes this text and the SOP
 // check then asks for "npm run sop".
 
+import { OUTPUT_DESTINATION } from '../export/outputDestination';
 import {
   APPROVAL_THRESHOLD_TEXT,
   BUYER_OPTIONS,
@@ -147,7 +148,7 @@ export const INSTRUCTIONS: InstructionSection[] = [
       'Show only narrows a tab to the lines that Need a class, Need an account, Changed since posted, or where the Administrator decides (Equipment and Other lines whose account has not been confirmed). Sort by changes the order: request, vendor, purchase date or amount. The number beside Ledger in the sidebar is how many lines are still not posted.',
       'If a Posted line was changed afterwards (a request was returned and fixed, say), the Ledger shows a red note "Changed since posted: was $X, now $Y" and a warning at the top. Check QuickBooks, then either set the line back to Not posted and post it again, or add a note.',
       'Click a receipt to open the copy kept in the receipt archive. A request bought before the archive existed links to its request folder instead, which stops working when the folder is filed under its year.',
-      'Download Excel saves the lines you are looking at (the tab and the search) as an Excel file, with a clickable link to each receipt. A copy of the whole ledger is also saved every night in Accounting, Purchases, Ledger_Backups.'
+      `Download Excel saves the lines you are looking at (the tab and the search) as an Excel file, with a clickable link to each receipt. A copy of the whole ledger is also saved every night in ${OUTPUT_DESTINATION.live.parentFolder}, ${OUTPUT_DESTINATION.live.backupFolder}.`
     ]
   },
   {

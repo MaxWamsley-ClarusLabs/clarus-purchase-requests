@@ -80,6 +80,8 @@ export const messages = {
   spOther: (status: number) => `SharePoint returned error ${status}.`,
   flowNeedsLists: 'Create the lists first (step 1).',
   flowLibraryMissing: (path: string) => `The folder ${path} could not be found, or you do not have access to it.`,
+  flowFolderMissing: (path: string) =>
+    `The folder ${path} was not found, or you do not have access to it, so no flow package was made. Create it in SharePoint (the app never creates it), then try again.`,
   notSetUp: 'Purchase Requests is not set up on this site yet. An administrator needs to open Set-up in the app.',
 
   submitConfirm: 'After you submit, the request is locked. It can only be changed if an administrator returns it to you.',

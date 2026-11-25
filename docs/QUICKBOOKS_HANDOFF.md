@@ -42,7 +42,7 @@ Do not build or change the purchase app, its flow, its SharePoint lists or its c
 
 Employees enter purchase requests in a SharePoint app. Most purchases (about 95%) are bought by the approver, Max, who approves, buys, attaches the receipt and chooses Mark purchased. When an employee buys instead, a vendor total of $500 or more goes to Max first, and the employee submits after buying with receipts attached. In both cases a Power Automate flow then creates a request folder and emails Max.
 
-**Where:** Executive Team site, `Shared Documents/01_Company Documents/Accounting/Purchases/Purchases_To_Process/<request folder>/`. After processing, the folder is moved to `Accounting/Purchases/<year>/` (the year of the earliest purchase date). The request is then marked Processed in the app. Both of those are Max's steps (SOP Part B5).
+**Where:** Forms and Apps site, `Documents / App Output / Purchases_To_Process / <request folder>` (since app version 1.0.5.0, P-064; the Executive Team site is retired, and earlier folders PR-0006 to PR-0013 stay there). After processing, Max moves the folder into Internal Records > Accounting and Receipts. The request is then marked Processed in the app. Both of those are Max's steps (SOP Part B5).
 
 **Folder name:** `YYYY-MM-DD_Employee-Name_Business-Purpose_PR-0042`. The date is the earliest purchase date. A corrected resubmission adds `_R2`, `_R3`. The request number is `PR-` plus four digits.
 

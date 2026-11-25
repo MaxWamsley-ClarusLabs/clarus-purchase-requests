@@ -602,6 +602,25 @@ Max said that about 95% of purchases are bought by the person who approves them,
 
 ---
 
+## P-064. The flows write to App Output on the Forms and Apps site, and never create the folders
+
+- **Date:** 2026-11-25
+- **Status:** Decided (Max, in the 2026-11-25 workshop, with the answers of the policy app: decisions D30 and D32 there). **Replaces P-008's fixed Live destination, and the destinations of P-058 and P-059.** Version 1.0.5.0.
+- **Decision:**
+  1. **The Executive Team site is retired and gets nothing.** The Live destination is the Forms and Apps site, `https://claruslabsusa.sharepoint.com/sites/FormsandApps`, library Documents (address `Shared Documents`), folder `App Output`.
+  2. **Three folders inside it:** `Purchases_To_Process` (each request's `PR-####` folder, naming and files unchanged), `Purchase_Receipts` (the receipt archive, replaces P-058's place) and `Ledger_Backups` (the nightly backup, replaces P-059's place). Test mode is unchanged in place: `Purchases_Test` on the Forms and Apps site, with the same three names inside.
+  3. **Max creates and restricts the folders.** Nothing in code creates them or sets permissions. The flows used to create the parent folders and the archive and backup folders on the first run; they now only check them, for Live and for Test alike (Max, option A). Only each request's own `PR-####` folder and its folder in the archive are made by the flow.
+  4. **A missing folder is reported clearly:** Set-up makes no package and names the folder; a submitted request is marked Failed with the message and the administrator is emailed (Retry packaging after the folder is back); the nightly backup writes nothing and emails the administrator.
+  5. **One place:** `app/src/export/outputDestination.ts` holds the site, library and folder names; the flow generator, the backup flow, the Set-up checks and the paths shown on screen read from it.
+  6. **Filing:** Max files processed requests in Internal Records > Accounting and Receipts. The app writes nothing there. The screen text no longer says "Accounting > Purchases > year".
+  7. **Which connection needs write access:** the SharePoint connection of whoever imports the flows (Max's account). It must keep Edit on `App Output` once Max restricts it.
+- **Not changed:** existing requests and the three lists, the older folders on the Executive Team site (PR-0006 to PR-0013 stay there; nothing is moved or deleted), and the CSV and file contents.
+- **Older requests:** receipt links on requests packaged before 1.0.5.0 may point to the retired site. They are left alone and Max lists them from the Purchase Submissions list (SOP B9a).
+- **Unverified (checked at the Test flow, `flow/FLOW.md`, `docs/CHECKPOINT.md` Part 11):** that the folder check answers false for a missing or unreadable folder, and that Edit is enough for the flow to make its folders.
+- **Where a change goes:** `app/src/export/outputDestination.ts`, then the flow packages are made again from Set-up and imported again.
+
+---
+
 ## Status of strategy items
 
 Items in `docs/STRATEGY.md` labelled **Open** remain open until Max answers. See `docs/QUESTIONS_FOR_MAX.md`.

@@ -46,12 +46,12 @@ export const SAMPLE_USERS: Record<'jane' | 'sam' | 'admin' | 'bea', CurrentUser>
 
 /** Where the flow says the receipts were archived for good, for the preview (P-058). A made-up address. */
 export function packagedArchiveLink(folderNameText: string): string {
-  return `https://contoso.sharepoint.com/sites/ExecutiveTeam/Shared%20Documents/01_Company%20Documents/Accounting/Purchases/Purchase_Receipts/${folderNameText}`;
+  return `https://contoso.sharepoint.com/sites/FormsandApps/Shared%20Documents/App%20Output/Purchase_Receipts/${folderNameText}`;
 }
 
 /** Where the flow says a package went, for the preview (P-008). */
 export function packagedFolderLink(folderNameText: string): string {
-  return `Accounting > Purchases > Purchases_To_Process > ${folderNameText}`;
+  return `App Output > Purchases_To_Process > ${folderNameText}`;
 }
 
 function file(id: string, fileName: string, sizeBytes: number, fingerprint: string, kind: FileKind): AttachedFile {

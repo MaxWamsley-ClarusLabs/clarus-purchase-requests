@@ -67,6 +67,7 @@ import { asSentence } from '../text';
 import { filesBesideGrid, gridMinWidth } from '../theme';
 import { VENDOR_APPROVAL_LABEL, boughtBeforeNote, changedMessages, quoteSummary, rowsText, vendorRows } from '../vendorRows';
 import { latestSubmission } from './admin/adminData';
+import { LIVE_REQUESTS_PATH_TEXT } from '../../export/outputDestination';
 
 const SAVE_DELAY_MS = 500;
 const STEP_NUMBER: Record<RequestStep, number> = { details: 1, purchases: 2, review: 3 };
@@ -1107,8 +1108,8 @@ export function RequestWorkspace(props: { requestId: number; step: RequestStep }
           }
         >
           <p style={{ margin: 0 }}>
-            A folder with the receipts, the quotes and a spreadsheet is made in Accounting for processing, and the administrator is emailed. There is no
-            approval step and no certification: the request is marked as recorded by {app.user.displayName}. It is locked once recorded.
+            A folder with the receipts, the quotes and a spreadsheet is made in {LIVE_REQUESTS_PATH_TEXT} for processing, and the administrator is emailed.
+            There is no approval step and no certification: the request is marked as recorded by {app.user.displayName}. It is locked once recorded.
           </p>
         </Dialog>
       ) : null}
@@ -1508,7 +1509,7 @@ function DetailsStep(props: {
 /** What happens after the administrator records a purchase (P-051). */
 const RECORDING_NEXT_STEPS = [
   'Choose Record purchase. There is no approval and no certification.',
-  'A folder with the receipts, the quotes and a spreadsheet is made in Accounting for processing, and you are emailed.',
+  `A folder with the receipts, the quotes and a spreadsheet is made in ${LIVE_REQUESTS_PATH_TEXT} for processing, and you are emailed.`,
   'The request is locked and marked as recorded by you. Process it and mark it processed as usual.'
 ];
 

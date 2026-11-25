@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { dateRange } from '../../../domain/dates';
 import { messages } from '../../../domain/messages';
 import { formatCents } from '../../../domain/money';
 import {
@@ -39,6 +38,7 @@ import { SentRowsCard } from '../../components/SentRowsCard';
 import { VendorTotals } from '../../components/VendorTotals';
 import { changedMessages, vendorRows } from '../../vendorRows';
 import { latestSubmission } from './adminData';
+import { FILING_PLACE_TEXT, LIVE_REQUESTS_PATH_TEXT } from '../../../export/outputDestination';
 
 /** Reads the app's own CSV back into rows for the preview. */
 function parseCsv(text: string): string[][] {
@@ -82,7 +82,7 @@ const TABS: [Tab, string][] = [
 ];
 
 /** Where the flow puts a request's folder (P-008). */
-const TO_PROCESS = 'Accounting > Purchases > Purchases_To_Process';
+const TO_PROCESS = LIVE_REQUESTS_PATH_TEXT;
 
 /** The vendors flagged "bought before approval", with their totals, from the approved totals if there are any, else those sent (P-017). */
 function boughtBeforeText(request: PurchaseRequest): string {
@@ -183,7 +183,6 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
   const retryPackage = latestPackage && retryRefusal(latestPackage, submissions, request.status, now) === '' ? latestPackage : undefined;
   const noValidApproval =
     (request.status === 'Approved' || request.status === 'Submitted' || request.status === 'Processed') && (state === 'needed' || state === 'changed');
-  const year = dateRange(lines.map((l) => l.date)).first.slice(0, 4);
 
   // Category edits: the choices that differ from what is stored, and any that cannot be saved (P-024).
   const canEditCategories = canConfirmCategories(request.status);
@@ -426,8 +425,7 @@ export function AdminRequestPage(props: { requestId: number }): React.ReactEleme
           <div>
             <strong>Folder:</strong> <span className="ctx-code">{`${TO_PROCESS} > ${latestPackage.folderName}`}</span>
             <br />
-            When you have processed it, move the folder into{' '}
-            <span className="ctx-code">Accounting &gt; Purchases &gt; {year || '<year of the earliest purchase date>'}</span> and click Mark processed.
+            When you have processed it, move the folder into <span className="ctx-code">{FILING_PLACE_TEXT}</span> and click Mark processed.
           </div>
         </div>
       ) : null}

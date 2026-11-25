@@ -8,6 +8,7 @@ import { Icon } from '../../components/Icon';
 import { RecordPurchaseButton } from '../../components/RecordPurchaseButton';
 import { latestByRequest, requestsToProcess } from './adminData';
 import { useAdminLists } from './useAdminLists';
+import { FILING_PLACE_TEXT, LIVE_REQUESTS_PATH_TEXT } from '../../../export/outputDestination';
 
 export function RequestsToProcessPage(): React.ReactElement {
   const app = useApp();
@@ -19,7 +20,7 @@ export function RequestsToProcessPage(): React.ReactElement {
     <>
       <HeaderCard
         title="Requests to process"
-        subtitle="Submitted requests waiting for you. Their folders are in Accounting > Purchases > Purchases_To_Process."
+        subtitle={`Submitted requests waiting for you. Their folders are in ${LIVE_REQUESTS_PATH_TEXT}.`}
         actions={<RecordPurchaseButton />}
       />
       {loadError ? (
@@ -82,8 +83,7 @@ export function RequestsToProcessPage(): React.ReactElement {
         )}
       </Card>
       <div className="ctx-hint">
-        After processing a request: move its folder from Purchases_To_Process into the Purchases folder for the year of the earliest purchase date, then open
-        the request here and click Mark processed.
+        After processing a request: move its folder from Purchases_To_Process into {FILING_PLACE_TEXT}, then open the request here and click Mark processed.
       </div>
     </>
   );
